@@ -7,8 +7,8 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://nfse:nfse@localhost:5432/nfse")
-os.environ.setdefault("DATABASE_URL_TEST", "postgresql+asyncpg://nfse:nfse@localhost:5432/nfse_test")
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://nfse:nfse@localhost:5433/nfse")
+os.environ.setdefault("DATABASE_URL_TEST", "postgresql+asyncpg://nfse:nfse@localhost:5433/nfse_test")
 os.environ.setdefault("FERNET_KEY", "zH9m1yv3xVvV8v0T6t3s9m2m9m2m9m2m9m2m9m2m9m0=")
 os.environ.setdefault("JWT_SECRET", "test-secret-nao-use-em-producao")
 
