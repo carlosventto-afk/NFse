@@ -48,9 +48,10 @@ capturado pelo webhook).
 - Certificado A1 (e-CNPJ) da empresa, inscrição municipal, e confirmação de
   adesão do município ao Sistema Nacional.
 - Código de tributação nacional (`c_trib_nac`, LC116) do serviço de lavagem de
-  roupa — a ser enviado pelo usuário. Necessário para o adaptador e para
-  decidir se a identificação do tomador pode ser omitida em algum cenário (ver
-  "Riscos e decisões em aberto").
+  roupa. Evidência do usuário aponta para o item LC116 14.10 (tinturaria e
+  lavanderia — CNAE 9601-7/01-00); o dígito de desdobro de 6 posições ainda
+  precisa ser confirmado contra a tabela oficial do ANEXO antes de emitir de
+  verdade.
 
 ## Arquitetura
 
@@ -89,10 +90,13 @@ Componentes:
    tabela (sem fila dedicada) — volume de uma lavanderia não justifica
    Celery/Redis agora; trocar a implementação do worker depois é uma mudança
    isolada.
-3. **Núcleo fiscal**: `nfse_core/`, usado como está (dependência interna, sem
-   modificação inicial) — exceto se a investigação da obrigatoriedade do
-   tomador (ver riscos) justificar um ajuste pontual em `dps.py`, testado em
-   homologação antes de ir para produção.
+3. **Núcleo fiscal**: `nfse_core/`, com um ajuste pontual e deliberado em
+   `dps.py`: o documento do tomador (CPF/CNPJ) passa a ser opcional — quando
+   ausente, o bloco `toma` inteiro é omitido do XML, em vez de levantar
+   `ValueError`. Justificado por evidência real (ver "Riscos e decisões em
+   aberto"), mas **não verificado contra o validador real da SEFIN** até a
+   primeira emissão em homologação — nenhuma outra mudança entra no núcleo
+   fiscal nesta fase.
 4. **Portal web**: login por empresa, listagem de emissões com filtro por
    período/status, download do XML autorizado (o documento fiscal) e do PDF
    (com fallback próprio se a API do ADN falhar — `ARMADILHAS.md` item 10),
@@ -112,7 +116,8 @@ Componentes:
   (nulo quando `origem=manual`; chave de idempotência única por empresa
   quando presente), status (pendente/autorizada/rejeitada/cancelada), numero,
   serie, dps_id, chave_acesso, xml_dps, xml_nfse, erros (json traduzido),
-  tomador (cpf/cnpj, nome — vem do payload Stone ou do formulário manual),
+  tomador (cpf/cnpj **opcional**, nome — vem do payload Stone ou do
+  formulário manual; nota emitida sem documento do tomador quando ausente),
   valor, criada_por (usuário, quando manual), criada_em.
 
 Numeração é um contador transacional por `empresa_id` + série
@@ -132,9 +137,10 @@ Numeração é um contador transacional por `empresa_id` + série
 
 **Manual (portal):**
 
-1. Usuário autenticado preenche o formulário (tomador, descrição, valor).
-   Validação de CPF/CNPJ e valor positivo acontece na submissão, antes de
-   consumir número — mesma regra do adaptador automático.
+1. Usuário autenticado preenche o formulário (tomador — documento opcional,
+   descrição, valor). Quando informado, o CPF/CNPJ é validado (11 ou 14
+   dígitos); valor positivo é sempre obrigatório. Isso acontece na submissão,
+   antes de consumir número.
 2. Dentro de uma transação, reserva o próximo número e grava a linha
    `pendente` (`origem=manual`, `criada_por=usuário`, sem `stone_charge_id`).
 
@@ -151,12 +157,22 @@ Numeração é um contador transacional por `empresa_id` + série
 
 ## Riscos e decisões em aberto
 
-- **Identificação do tomador (CPF/CNPJ)**: o `nfse_core/dps.py` atual exige
-  esse campo sempre, levantando `ValueError` se ausente. Como o ISS do
-  serviço de lavagem de roupa é devido no próprio município do prestador, é
-  possível que o leiaute nacional não exija essa identificação neste caso
-  específico — mas isso só será confirmado com o código de tributação real e
-  teste em homologação. Até lá, o adaptador trata o campo como obrigatório.
+- **Identificação do tomador (CPF/CNPJ) — decidido**: o usuário forneceu uma
+  NFS-e real, emitida pela prefeitura de Belém/PA para o mesmo CNPJ/serviço
+  de lavanderia, com o tomador explicitamente como "NÃO IDENTIFICADO" (campo
+  em branco) — a nota foi aceita (depois cancelada por outro motivo, erro de
+  preenchimento, não relacionado ao tomador). Essa é evidência real de que a
+  identificação do tomador não é sempre obrigatória para este tipo de
+  serviço/município. Decisão: `nfse_core/dps.py` é ajustado para tornar
+  `toma_cpf_cnpj` opcional — quando ausente, o bloco `toma` inteiro é omitido
+  do XML (mesmo formato observado na nota real), em vez de levantar
+  `ValueError`. Isto é uma mudança no núcleo fiscal vendorizado, feita fora
+  do padrão normal do kit ("não simplifique sem testar em produção
+  restrita") porque a evidência que a motiva é de fora do próprio sistema —
+  por isso ela é tratada como **não verificada** até a primeira emissão real
+  em homologação confirmar que a SEFIN Nacional aceita a mesma coisa que a
+  prefeitura de Belém aceitou. Nenhuma emissão em `producao` acontece antes
+  dessa confirmação.
 - **Payload real do webhook Stone**: o exemplo público do evento
   `charge.paid` (API Connect) traz `order.id`, `amount`, `customer.id`,
   `customer.name`, mas não confirma CPF/CNPJ do cliente nem o mecanismo de
@@ -172,6 +188,9 @@ Numeração é um contador transacional por `empresa_id` + série
 
 - `nfse-nacional-kit/exemplos/00_teste_local.py` continua sendo o teste de
   fumaça do núcleo fiscal (sem rede, sem certificado) — não muda.
+- Teste do ajuste em `dps.py`: `build_dps_xml` sem `toma_cpf_cnpj` produz um
+  XML válido sem o bloco `toma`, e com `toma_cpf_cnpj` continua produzindo o
+  bloco como antes — cobre os dois caminhos do `if`.
 - Testes do adaptador: payload Stone (exemplo documentado) → `DpsData`
   corretamente montada.
 - Testes de idempotência do recebedor de webhook (mesmo `stone_charge_id`
