@@ -1,14 +1,16 @@
 import functools
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.crypto import hash_senha
 from app.db import get_db
 from app.main import app
-from app.models import AmbienteEnum, Emissao, Empresa, StatusEmissao
+from app.models import AmbienteEnum, Emissao, Empresa, OrigemEmissao, StatusEmissao
 
 
 async def _empresa_com_token(db_session) -> Empresa:
@@ -95,6 +97,39 @@ async def test_webhook_stone_e_idempotente(db_session):
         )
     ).scalars().all()
     assert len(total) == 1
+
+
+@pytest.mark.asyncio
+async def test_indice_unico_rejeita_stone_charge_id_duplicado_na_mesma_empresa(db_session):
+    """Garante a idempotencia no nivel do banco, nao so na checagem da aplicacao.
+
+    Insere duas Emissao com o mesmo (empresa_id, stone_charge_id) diretamente
+    via session.add()/flush(), sem passar pelo router — contornando de
+    proposito a checagem de "ja existe" que o endpoint faz antes de inserir.
+    Se o indice parcial unico ix_emissoes_empresa_stone_charge_id (definido em
+    app/models.py) for removido ou alterado por engano no futuro, este teste
+    quebra.
+    """
+    empresa = await _empresa_com_token(db_session)
+
+    primeira = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.webhook, stone_charge_id="ch_dup",
+        status=StatusEmissao.pendente, serie="1", numero=1,
+        descricao="Lavagem", valor=Decimal("10.00"), competencia=date.today().replace(day=1),
+    )
+    db_session.add(primeira)
+    await db_session.flush()
+
+    segunda = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.webhook, stone_charge_id="ch_dup",
+        status=StatusEmissao.pendente, serie="1", numero=2,
+        descricao="Lavagem", valor=Decimal("10.00"), competencia=date.today().replace(day=1),
+    )
+    db_session.add(segunda)
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+    await db_session.rollback()
 
 
 @pytest.mark.asyncio

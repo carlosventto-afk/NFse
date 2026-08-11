@@ -1,5 +1,6 @@
 from datetime import date
 
+import bcrypt
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +13,12 @@ from app.numeracao import reservar_proximo_numero
 
 router = APIRouter(prefix="/webhooks/stone", tags=["webhook-stone"])
 
+# Hash bcrypt "de mentira", calculado uma unica vez no import. Usado quando a
+# empresa nao existe, para que `verificar_senha` sempre rode contra um hash
+# de formato real — assim "empresa inexistente" e "token errado" respondem
+# em tempo comparavel e nao viram um oraculo de timing para o 404 identico.
+_HASH_FALSO = bcrypt.hashpw(b"dummy", bcrypt.gensalt()).decode()
+
 
 @router.post("/{empresa_id}")
 async def receber_webhook_stone(
@@ -21,7 +28,9 @@ async def receber_webhook_stone(
     session: AsyncSession = Depends(get_db),
 ) -> dict:
     empresa = await session.get(Empresa, empresa_id)
-    if empresa is None or not verificar_senha(x_webhook_token, empresa.webhook_token_hash):
+    hash_para_comparar = empresa.webhook_token_hash if empresa is not None else _HASH_FALSO
+    token_valido = verificar_senha(x_webhook_token, hash_para_comparar)
+    if empresa is None or not token_valido:
         raise HTTPException(status_code=404)
 
     payload = await request.json()
