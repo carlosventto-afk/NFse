@@ -120,8 +120,9 @@ def build_dps_xml(data: DpsData) -> bytes:
     # formato da nota real) em vez de bloquear a emissao. NAO VERIFICADO
     # contra o validador real da SEFIN Nacional ainda — so contra o
     # município/portal de Belem. Confirmar em homologacao antes de producao.
-    toma_doc = _digits(data.toma_cpf_cnpj)
-    if toma_doc and len(toma_doc) not in (11, 14):
+    toma_raw = (data.toma_cpf_cnpj or "").strip()
+    toma_doc = _digits(toma_raw)
+    if toma_raw and len(toma_doc) not in (11, 14):
         raise ValueError("CPF/CNPJ do tomador, quando informado, deve ter 11 ou 14 digitos")
     if data.v_serv <= 0:
         raise ValueError("Valor do serviço deve ser positivo")

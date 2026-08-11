@@ -50,3 +50,16 @@ def test_build_dps_xml_com_documento_invalido_ainda_levanta_erro():
         assert False, "deveria ter levantado ValueError"
     except ValueError as exc:
         assert "tomador" in str(exc).lower()
+
+
+def test_build_dps_xml_com_documento_so_letras_levanta_erro_em_vez_de_omitir():
+    # "abc" nao deve degradar silenciosamente para "sem tomador" so porque
+    # _digits() remove os nao-digitos e sobra string vazia. Algo foi
+    # informado (nao e ausencia real), entao tem que levantar erro.
+    dados = _dados_base(toma_cpf_cnpj="abc")
+
+    try:
+        build_dps_xml(dados)
+        assert False, "deveria ter levantado ValueError"
+    except ValueError as exc:
+        assert "tomador" in str(exc).lower()
