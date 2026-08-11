@@ -63,3 +63,18 @@ def test_build_dps_xml_com_documento_so_letras_levanta_erro_em_vez_de_omitir():
         assert False, "deveria ter levantado ValueError"
     except ValueError as exc:
         assert "tomador" in str(exc).lower()
+
+
+def test_build_dps_xml_com_documento_so_espacos_e_tratado_como_ausente():
+    # Comportamento intencional: espacos em branco equivalem a "nada
+    # informado" (strip-then-check e pratica padrao), nao a "documento
+    # invalido informado". Diferente de "abc", que tem conteudo real que
+    # nao e um documento valido. Isso tambem casa com a evidencia real de
+    # Belem/PA: campo em branco, nao lixo digitado.
+    dados = _dados_base(toma_cpf_cnpj="   ", toma_nome="")
+
+    xml = build_dps_xml(dados)
+
+    root = etree.fromstring(xml)
+    inf = root.find(f"{{{NFSE_NS}}}infDPS")
+    assert inf.find(f"{{{NFSE_NS}}}toma") is None
