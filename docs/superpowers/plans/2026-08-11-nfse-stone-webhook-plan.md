@@ -10,13 +10,13 @@
 
 ## Global Constraints
 
-- `nfse_core/` (vendorizado neste repo a partir do kit) **não é modificado** nesta fase — nenhuma nota real ainda foi emitida por este sistema, então não há base para alterar `dps.py`/`signer.py` sem violar a regra do próprio kit ("não simplifique sem reproduzir contra produção restrita" — `nfse-nacional-kit/nfse-nacional-kit/CLAUDE.md`). Se algum ajuste for necessário, é uma tarefa separada, testada em homologação.
-- Ambiente da SEFIN é sempre `homologacao` até decisão explícita de trocar para `producao` (nunca hardcode `producao`).
+- `nfse_core/` (vendorizado neste repo a partir do kit) recebe **um único ajuste deliberado**, na Task 7: tornar o documento do tomador (`toma_cpf_cnpj`) opcional em `dps.py`, omitindo o bloco `toma` inteiro quando ausente em vez de levantar `ValueError`. Justificado por uma NFS-e real (Belém/PA, mesmo CNPJ/serviço) emitida com tomador "NÃO IDENTIFICADO" — ver spec, seção "Riscos e decisões em aberto". Fora desse ajuste pontual, nenhuma outra linha de `nfse_core/` muda nesta fase — qualquer outra alteração é tarefa separada, testada em homologação, seguindo a regra do próprio kit ("não simplifique sem reproduzir contra produção restrita" — `nfse-nacional-kit/nfse-nacional-kit/CLAUDE.md`).
+- Ambiente da SEFIN é sempre `homologacao` até decisão explícita de trocar para `producao` (nunca hardcode `producao`) — o ajuste de tomador opcional acima **não foi validado contra a SEFIN real**, então essa regra vale com força redobrada até a primeira emissão limpa em homologação.
 - PFX e senha do certificado nunca aparecem em log, mensagem de erro ou resposta HTTP. `.env` fica fora do git (`.gitignore` já existe no kit; o `.gitignore` da raiz do projeto precisa cobrir o mesmo).
 - Toda emissão (webhook ou manual) grava um registro em `emissoes` **antes** de qualquer chamada à SEFIN.
 - Numeração é sempre obtida via `UPDATE ... RETURNING` transacional (`reservar_proximo_numero`) — nunca `max(numero) + 1`.
 - Todo endpoint autenticado escopa dados pelo `empresa_id` do usuário logado (nunca por um `empresa_id` recebido do cliente) — evita um usuário de uma empresa ver dados de outra.
-- **Decisão de implementação que opera o risco registrado na spec:** como o payload documentado publicamente do webhook `charge.paid` da Stone não inclui CPF/CNPJ do cliente, uma emissão de origem `webhook` nasce com status `aguardando_documento` (sem número reservado ainda) em vez de `pendente`. Um operador completa o documento do tomador pelo portal (endpoint da Task 9), momento em que o número é reservado e o status vira `pendente`. Isso é consistente com a regra do kit de nunca queimar um número antes de ter certeza dos dados — e não é uma mudança na spec, é a forma concreta de cumprir o que ela já descreve.
+- Documento do tomador (CPF/CNPJ) é **opcional** em toda a cadeia — modelo, adaptador, emissão manual e webhook. Nome do tomador é gravado quando disponível, mas não bloqueia a emissão sozinho.
 
 ---
 
@@ -24,13 +24,14 @@
 
 ```
 NotaFiscal/
-  nfse_core/                       # cópia intacta de nfse-nacional-kit/nfse-nacional-kit/nfse_core
+  nfse_core/                       # copia de nfse-nacional-kit/nfse-nacional-kit/nfse_core,
+                                    # com um ajuste pontual em dps.py (Task 7 — tomador opcional)
   app/
     __init__.py
     config.py                      # Settings (pydantic-settings)
     db.py                          # engine/session async + get_db()
     models.py                      # Base, enums, Empresa, Usuario, Emissao
-    schemas.py                     # Pydantic: EmissaoOut, EmissaoManualIn, CompletarTomadorIn, TokenOut
+    schemas.py                     # Pydantic: EmissaoOut, EmissaoManualIn, TokenOut
     crypto.py                      # cifrar/decifrar (Fernet), hash_senha/verificar_senha (bcrypt)
     security.py                    # criar_token, get_current_user, get_current_admin
     numeracao.py                   # reservar_proximo_numero
@@ -43,7 +44,7 @@ NotaFiscal/
       auth.py                       # POST /auth/login
       usuarios.py                   # POST /usuarios (admin cria operador na própria empresa)
       webhook_stone.py              # POST /webhooks/stone/{empresa_id}
-      emissoes.py                   # POST /emissoes/manual, PATCH /emissoes/{id}/tomador,
+      emissoes.py                   # POST /emissoes/manual,
                                      # GET /emissoes, GET /emissoes/{id}/xml, GET /emissoes/{id}/pdf
       dashboard.py                  # GET /dashboard
     worker.py                       # processar_uma_pendente, loop_worker
@@ -58,15 +59,21 @@ NotaFiscal/
   tests/
     conftest.py
     test_health.py
+    test_models_migration.py
     test_crypto.py
+    test_criar_empresa.py
+    test_auth.py
     test_numeracao.py
+    test_nfse_core_dps_tomador_opcional.py
     test_adapters_dps_builder.py
     test_adapters_stone.py
     test_emissoes_manual.py
     test_webhook_stone.py
     test_worker.py
+    test_danfe.py
     test_emissoes_download.py
     test_dashboard.py
+    test_main_rotas_registradas.py
   docker-compose.yml
   requirements.txt
   requirements-dev.txt
@@ -358,7 +365,6 @@ class AmbienteEnum(str, enum.Enum):
 
 
 class StatusEmissao(str, enum.Enum):
-    aguardando_documento = "aguardando_documento"
     pendente = "pendente"
     autorizada = "autorizada"
     rejeitada = "rejeitada"
@@ -1325,17 +1331,159 @@ git commit -m "feat: numeracao transacional de emissoes (UPDATE...RETURNING)"
 
 ---
 
-### Task 7: Adaptador comum de DPS
+### Task 7: Tomador opcional no núcleo fiscal + adaptador comum de DPS
+
+Esta task tem duas partes: primeiro um ajuste cirúrgico em `nfse_core/dps.py`
+(o único ponto do núcleo fiscal vendorizado que este plano modifica — ver
+Global Constraints), depois o adaptador que usa esse núcleo. O ajuste é
+necessário porque o adaptador precisa poder montar uma `DpsData` sem
+documento do tomador (webhook da Stone não traz CPF/CNPJ do cliente, e há
+evidência real de que a SEFIN aceita isso para este serviço/município — ver
+spec).
 
 **Files:**
+- Modify: `nfse_core/dps.py`
 - Create: `app/adapters/__init__.py`, `app/adapters/dps_builder.py`
-- Test: `tests/test_adapters_dps_builder.py`
+- Test: `tests/test_nfse_core_dps_tomador_opcional.py`, `tests/test_adapters_dps_builder.py`
 
 **Interfaces:**
-- Consumes: `nfse_core.DpsData`, `app.models.Empresa`, `app.models.AmbienteEnum`.
-- Produces: `DadosEmissao` (dataclass: `tomador_cpf_cnpj: str`, `tomador_nome: str`, `tomador_email: str | None`, `descricao: str`, `valor: Decimal`, `competencia: date`), `montar_dps_data(empresa: Empresa, serie: str, numero: int, dados: DadosEmissao) -> DpsData`.
+- Consumes: `nfse_core.DpsData`, `nfse_core.build_dps_xml`, `app.models.Empresa`, `app.models.AmbienteEnum`.
+- Produces: `DadosEmissao` (dataclass: `tomador_cpf_cnpj: str | None`, `tomador_nome: str | None`, `tomador_email: str | None`, `descricao: str`, `valor: Decimal`, `competencia: date`), `montar_dps_data(empresa: Empresa, serie: str, numero: int, dados: DadosEmissao) -> DpsData`. `nfse_core.build_dps_xml` passa a aceitar `DpsData.toma_cpf_cnpj` vazio/`None` sem levantar `ValueError`.
 
-- [ ] **Step 1: Escrever o teste**
+- [ ] **Step 1: Escrever `tests/test_nfse_core_dps_tomador_opcional.py`**
+
+```python
+from datetime import date, datetime, timezone
+from decimal import Decimal
+
+from lxml import etree
+
+from nfse_core import DpsData, build_dps_xml
+from nfse_core.dps import NFSE_NS
+
+
+def _dados_base(**overrides) -> DpsData:
+    base = dict(
+        tp_amb=2, dh_emi=datetime.now(timezone.utc), serie="1", numero=1,
+        competencia=date(2026, 8, 1), prest_cnpj="12345678000199", prest_im="123456",
+        c_loc_emi="1501402", op_simp_nac=3, toma_cpf_cnpj="98765432100",
+        toma_nome="Cliente Teste", c_trib_nac="141001", x_desc_serv="Lavagem de roupa",
+        v_serv=Decimal("49.90"),
+    )
+    base.update(overrides)
+    return DpsData(**base)
+
+
+def test_build_dps_xml_sem_tomador_omite_bloco_toma_inteiro():
+    dados = _dados_base(toma_cpf_cnpj=None, toma_nome="")
+
+    xml = build_dps_xml(dados)
+
+    root = etree.fromstring(xml)
+    inf = root.find(f"{{{NFSE_NS}}}infDPS")
+    assert inf.find(f"{{{NFSE_NS}}}toma") is None
+
+
+def test_build_dps_xml_com_tomador_mantem_bloco_toma_como_antes():
+    dados = _dados_base()
+
+    xml = build_dps_xml(dados)
+
+    root = etree.fromstring(xml)
+    inf = root.find(f"{{{NFSE_NS}}}infDPS")
+    toma = inf.find(f"{{{NFSE_NS}}}toma")
+    assert toma is not None
+    assert toma.find(f"{{{NFSE_NS}}}CPF").text == "98765432100"
+    assert toma.find(f"{{{NFSE_NS}}}xNome").text == "Cliente Teste"
+
+
+def test_build_dps_xml_com_documento_invalido_ainda_levanta_erro():
+    dados = _dados_base(toma_cpf_cnpj="123")  # nem 11 nem 14 digitos
+
+    try:
+        build_dps_xml(dados)
+        assert False, "deveria ter levantado ValueError"
+    except ValueError as exc:
+        assert "tomador" in str(exc).lower()
+```
+
+- [ ] **Step 2: Rodar e confirmar falha**
+
+Run: `pytest tests/test_nfse_core_dps_tomador_opcional.py -v`
+Expected: FAIL — o primeiro teste falha porque `build_dps_xml` hoje levanta `ValueError("CPF/CNPJ do tomador ausente ou inválido")` quando `toma_cpf_cnpj` está vazio.
+
+- [ ] **Step 3: Ajustar `nfse_core/dps.py`**
+
+Localize este trecho em `build_dps_xml` (dentro do bloco de validações no início da função):
+
+```python
+    toma_doc = _digits(data.toma_cpf_cnpj)
+    if len(toma_doc) not in (11, 14):
+        raise ValueError("CPF/CNPJ do tomador ausente ou inválido")
+```
+
+Troque por:
+
+```python
+    # Documento do tomador e OPCIONAL — ajuste de 11/08/2026, nao presente no
+    # kit original. Evidencia: NFS-e real (Belem/PA, mesmo CNPJ/servico de
+    # lavanderia) emitida com tomador "NAO IDENTIFICADO" e aceita. Quando o
+    # documento esta ausente, o bloco <toma> inteiro e omitido (replica o
+    # formato da nota real) em vez de bloquear a emissao. NAO VERIFICADO
+    # contra o validador real da SEFIN Nacional ainda — so contra o
+    # município/portal de Belem. Confirmar em homologacao antes de producao.
+    toma_doc = _digits(data.toma_cpf_cnpj)
+    if toma_doc and len(toma_doc) not in (11, 14):
+        raise ValueError("CPF/CNPJ do tomador, quando informado, deve ter 11 ou 14 digitos")
+```
+
+Depois, localize o bloco que monta o elemento `toma`:
+
+```python
+    toma = _el(inf, "toma")
+    _el(toma, "CPF" if len(toma_doc) == 11 else "CNPJ", toma_doc)
+    _el(toma, "xNome", _sanitize_text(data.toma_nome)[:300])
+    if data.toma_email:
+        _el(toma, "email", data.toma_email.strip()[:80])
+```
+
+Troque por:
+
+```python
+    if toma_doc:
+        toma = _el(inf, "toma")
+        _el(toma, "CPF" if len(toma_doc) == 11 else "CNPJ", toma_doc)
+        _el(toma, "xNome", _sanitize_text(data.toma_nome)[:300])
+        if data.toma_email:
+            _el(toma, "email", data.toma_email.strip()[:80])
+```
+
+Nenhuma outra linha de `dps.py` muda — em particular, a validação de
+`prest_cnpj`, `c_loc_emi` e `v_serv` continua exatamente como estava.
+
+- [ ] **Step 4: Rodar e confirmar sucesso**
+
+Run: `pytest tests/test_nfse_core_dps_tomador_opcional.py -v`
+Expected: PASS (3 testes)
+
+- [ ] **Step 5: Rodar o smoke test original do kit para garantir que nada quebrou**
+
+Run: `python nfse-nacional-kit/nfse-nacional-kit/exemplos/00_teste_local.py`
+Expected: `[OK] Tudo certo` — este script usa `DpsData` com tomador preenchido, então exercita exatamente o caminho que não deveria ter mudado.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add nfse_core/dps.py tests/test_nfse_core_dps_tomador_opcional.py
+git commit -m "fix(nfse_core): documento do tomador passa a ser opcional na DPS
+
+Evidencia real (NFS-e de Belem/PA, mesmo CNPJ/servico) mostra tomador
+NAO IDENTIFICADO aceito. Bloco <toma> agora e omitido quando o
+documento esta ausente, em vez de bloquear a emissao. Nao verificado
+contra a SEFIN Nacional real ainda -- confirmar em homologacao."
+```
+
+- [ ] **Step 7: Escrever o teste do adaptador**
 
 ```python
 from datetime import date, datetime, timezone
@@ -1347,8 +1495,8 @@ from app.models import AmbienteEnum, Empresa
 
 def _empresa() -> Empresa:
     return Empresa(
-        cnpj="12345678000199", inscricao_municipal="123456", municipio_ibge="3550308",
-        op_simp_nac=3, codigo_tributacao="140106", descricao_servico_padrao="Lavagem de roupa",
+        cnpj="12345678000199", inscricao_municipal="123456", municipio_ibge="1501402",
+        op_simp_nac=3, codigo_tributacao="141001", descricao_servico_padrao="Lavagem de roupa",
         ambiente=AmbienteEnum.homologacao, certificado_pfx_cifrado="x",
         certificado_senha_cifrada="x", certificado_valido_ate=datetime.now(timezone.utc),
         webhook_token_hash="x",
@@ -1369,11 +1517,11 @@ def test_montar_dps_data_mapeia_empresa_e_dados_corretamente():
     assert dps_data.numero == 42
     assert dps_data.prest_cnpj == "12345678000199"
     assert dps_data.prest_im == "123456"
-    assert dps_data.c_loc_emi == "3550308"
+    assert dps_data.c_loc_emi == "1501402"
     assert dps_data.op_simp_nac == 3
     assert dps_data.toma_cpf_cnpj == "98765432100"
     assert dps_data.toma_nome == "Cliente Teste"
-    assert dps_data.c_trib_nac == "140106"
+    assert dps_data.c_trib_nac == "141001"
     assert dps_data.x_desc_serv == "Lavagem de 5kg de roupa"
     assert dps_data.v_serv == Decimal("49.90")
 
@@ -1389,16 +1537,28 @@ def test_montar_dps_data_producao_usa_tp_amb_1():
     dps_data = montar_dps_data(empresa, serie="1", numero=1, dados=dados)
 
     assert dps_data.tp_amb == 1
+
+
+def test_montar_dps_data_sem_documento_do_tomador_passa_none_adiante():
+    dados = DadosEmissao(
+        tomador_cpf_cnpj=None, tomador_nome="Cliente Sem Documento", tomador_email=None,
+        descricao="Lavagem", valor=Decimal("15.00"), competencia=date(2026, 8, 1),
+    )
+
+    dps_data = montar_dps_data(_empresa(), serie="1", numero=2, dados=dados)
+
+    assert dps_data.toma_cpf_cnpj is None
+    assert dps_data.toma_nome == "Cliente Sem Documento"
 ```
 
-- [ ] **Step 2: Rodar e confirmar falha**
+- [ ] **Step 8: Rodar e confirmar falha**
 
 Run: `pytest tests/test_adapters_dps_builder.py -v`
 Expected: FAIL com `ModuleNotFoundError: No module named 'app.adapters'`
 
-- [ ] **Step 3: Implementar `app/adapters/__init__.py`** (vazio)
+- [ ] **Step 9: Implementar `app/adapters/__init__.py`** (vazio)
 
-- [ ] **Step 4: Implementar `app/adapters/dps_builder.py`**
+- [ ] **Step 10: Implementar `app/adapters/dps_builder.py`**
 
 ```python
 from dataclasses import dataclass
@@ -1411,8 +1571,8 @@ from nfse_core import DpsData
 
 @dataclass
 class DadosEmissao:
-    tomador_cpf_cnpj: str
-    tomador_nome: str
+    tomador_cpf_cnpj: str | None
+    tomador_nome: str | None
     tomador_email: str | None
     descricao: str
     valor: Decimal
@@ -1439,16 +1599,16 @@ def montar_dps_data(empresa: Empresa, serie: str, numero: int, dados: DadosEmiss
     )
 ```
 
-- [ ] **Step 5: Rodar e confirmar sucesso**
+- [ ] **Step 11: Rodar e confirmar sucesso**
 
 Run: `pytest tests/test_adapters_dps_builder.py -v`
-Expected: PASS
+Expected: PASS (3 testes)
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 12: Commit**
 
 ```bash
 git add app/adapters/__init__.py app/adapters/dps_builder.py tests/test_adapters_dps_builder.py
-git commit -m "feat: adaptador comum empresa+dados -> DpsData"
+git commit -m "feat: adaptador comum empresa+dados -> DpsData, tomador opcional"
 ```
 
 ---
@@ -1463,7 +1623,7 @@ git commit -m "feat: adaptador comum empresa+dados -> DpsData"
 
 **Interfaces:**
 - Consumes: `app.numeracao.reservar_proximo_numero`, `app.security.get_current_user`, `app.models.Emissao`, `app.models.OrigemEmissao`, `app.models.StatusEmissao`.
-- Produces: `EmissaoManualIn` (Pydantic, valida `cpf_cnpj` com 11 ou 14 dígitos e `valor > 0`), `EmissaoOut`. Router `emissoes.router` com `POST /emissoes/manual` (mais rotas nas Tasks 9 e 11).
+- Produces: `EmissaoManualIn` (Pydantic, `cpf_cnpj` **opcional** — quando informado, precisa ter 11 ou 14 dígitos; `valor` sempre `> 0`), `EmissaoOut`. Router `emissoes.router` com `POST /emissoes/manual` (mais rotas nas Tasks 9 e 11).
 
 - [ ] **Step 1: Acrescentar a `app/schemas.py`**
 
@@ -1476,7 +1636,7 @@ def _somente_digitos(valor: str) -> str:
 
 
 class EmissaoManualIn(BaseModel):
-    cpf_cnpj: str
+    cpf_cnpj: str | None = None
     nome: str
     email: str | None = None
     descricao: str
@@ -1485,10 +1645,12 @@ class EmissaoManualIn(BaseModel):
 
     @field_validator("cpf_cnpj")
     @classmethod
-    def cpf_cnpj_valido(cls, v: str) -> str:
+    def cpf_cnpj_valido(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
         digitos = _somente_digitos(v)
         if len(digitos) not in (11, 14):
-            raise ValueError("cpf_cnpj deve ter 11 (CPF) ou 14 (CNPJ) digitos")
+            raise ValueError("cpf_cnpj, quando informado, deve ter 11 (CPF) ou 14 (CNPJ) digitos")
         return digitos
 
     @field_validator("valor")
@@ -1604,6 +1766,30 @@ async def test_emissao_manual_com_cpf_invalido_nao_reserva_numero(db_session):
         assert empresa.proximo_numero == 1  # nao avancou
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_emissao_manual_sem_documento_do_tomador_e_aceita(db_session):
+    empresa, token = await _empresa_e_usuario(db_session)
+
+    app.dependency_overrides[get_db] = lambda: _yield_session(db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                "/emissoes/manual",
+                json={
+                    "nome": "Cliente Sem Documento",
+                    "descricao": "Lavagem", "valor": "10.00", "competencia": "2026-08-01",
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 201
+        corpo = resposta.json()
+        assert corpo["numero"] == 1
+        assert corpo["tomador_cpf_cnpj"] is None
+    finally:
+        app.dependency_overrides.clear()
 ```
 
 - [ ] **Step 3: Rodar e confirmar falha**
@@ -1666,7 +1852,7 @@ app.include_router(emissoes.router)
 - [ ] **Step 6: Rodar e confirmar sucesso**
 
 Run: `pytest tests/test_emissoes_manual.py -v`
-Expected: PASS (2 testes)
+Expected: PASS (3 testes)
 
 - [ ] **Step 7: Commit**
 
@@ -1677,17 +1863,20 @@ git commit -m "feat: emissao manual de nota pelo portal"
 
 ---
 
-### Task 9: Webhook Stone (idempotência) + completar tomador
+### Task 9: Webhook Stone (idempotência)
+
+Como o documento do tomador agora é opcional em toda a cadeia (Task 7), o
+webhook não precisa mais de um estado intermediário à espera de dados — ele
+reserva o número e grava `pendente` diretamente, com `tomador_cpf_cnpj=None`
+quando o payload não traz o documento (o caso de hoje).
 
 **Files:**
 - Create: `app/adapters/stone.py`, `app/routers/webhook_stone.py`
-- Modify: `app/routers/emissoes.py` (acrescenta `PATCH /emissoes/{id}/tomador`)
-- Modify: `app/schemas.py` (acrescenta `CompletarTomadorIn`)
 - Modify: `app/main.py` (registra o router do webhook)
 - Test: `tests/test_adapters_stone.py`, `tests/test_webhook_stone.py`
 
 **Interfaces:**
-- Produces: `StoneChargePaidEvent` (dataclass: `charge_id: str`, `customer_id: str`, `customer_name: str`, `valor: Decimal`), `parse_stone_charge_paid(payload: dict) -> StoneChargePaidEvent` (levanta `ValueError` se campo essencial faltar). Router `webhook_stone.router` com `POST /webhooks/stone/{empresa_id}`. `CompletarTomadorIn` (mesma validação de `cpf_cnpj` de `EmissaoManualIn`). `PATCH /emissoes/{id}/tomador` em `emissoes.router`.
+- Produces: `StoneChargePaidEvent` (dataclass: `charge_id: str`, `customer_id: str`, `customer_name: str`, `valor: Decimal`), `parse_stone_charge_paid(payload: dict) -> StoneChargePaidEvent` (levanta `ValueError` se campo essencial faltar). Router `webhook_stone.router` com `POST /webhooks/stone/{empresa_id}`.
 
 - [ ] **Step 1: Escrever `tests/test_adapters_stone.py`**
 
@@ -1743,10 +1932,12 @@ def parse_stone_charge_paid(payload: dict) -> StoneChargePaidEvent:
     """Extrai os campos documentados publicamente do evento charge.paid.
 
     Nao inclui CPF/CNPJ do cliente porque o payload de exemplo publico da
-    Stone Connect nao o traz — por isso a emissao criada a partir daqui
-    nasce em status aguardando_documento (ver app/routers/webhook_stone.py).
-    Este parser sera ajustado quando o payload real (conta de parceiro
-    ativa) confirmar nomes de campo e a presenca ou ausencia do documento.
+    Stone Connect nao o traz. Isso e aceitavel porque o documento do tomador
+    e opcional na emissao (ver Task 7 e a spec) — a nota sai sem ele. Este
+    parser sera revisado quando o payload real (conta de parceiro ativa)
+    confirmar os nomes de campo; se o documento passar a vir no payload,
+    o router pode passa-lo direto para `tomador_cpf_cnpj` como um bonus,
+    sem exigir nenhuma mudanca estrutural.
     """
     try:
         charge_id = str(payload["id"])
@@ -1773,7 +1964,7 @@ Expected: PASS
 - [ ] **Step 5: Escrever `tests/test_webhook_stone.py`**
 
 ```python
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -1803,7 +1994,7 @@ async def _yield_session(session):
 
 
 @pytest.mark.asyncio
-async def test_webhook_stone_cria_emissao_aguardando_documento(db_session):
+async def test_webhook_stone_cria_emissao_pendente_sem_documento_do_tomador(db_session):
     empresa = await _empresa_com_token(db_session)
 
     app.dependency_overrides[get_db] = lambda: _yield_session(db_session)
@@ -1828,9 +2019,11 @@ async def test_webhook_stone_cria_emissao_aguardando_documento(db_session):
     emissao = (
         await db_session.execute(select(Emissao).where(Emissao.empresa_id == empresa.id))
     ).scalar_one()
-    assert emissao.status == StatusEmissao.aguardando_documento
+    assert emissao.status == StatusEmissao.pendente
     assert emissao.stone_charge_id == "ch_abc123"
-    assert emissao.numero is None  # numero so e reservado ao completar o tomador
+    assert emissao.numero == 1  # reservado na hora, sem esperar documento
+    assert emissao.tomador_cpf_cnpj is None
+    assert emissao.tomador_nome == "Cliente Stone"
 
 
 @pytest.mark.asyncio
@@ -1887,45 +2080,6 @@ async def test_webhook_stone_rejeita_token_errado(db_session):
         app.dependency_overrides.clear()
 
 
-@pytest.mark.asyncio
-async def test_completar_tomador_reserva_numero_e_vira_pendente(db_session):
-    from app.crypto import hash_senha as _hash
-    from app.models import PapelUsuario, Usuario
-    from app.security import criar_token
-
-    empresa = await _empresa_com_token(db_session)
-    usuario = Usuario(
-        empresa_id=empresa.id, email="op@teste.com",
-        senha_hash=_hash("senha-forte-123"), papel=PapelUsuario.operador,
-    )
-    db_session.add(usuario)
-    emissao = Emissao(
-        empresa_id=empresa.id, origem="webhook", stone_charge_id="ch_pendente_doc",
-        status=StatusEmissao.aguardando_documento, descricao="Lavagem de roupa",
-        valor=49.90, competencia=date(2026, 8, 1), tomador_nome="Cliente Sem Doc",
-    )
-    db_session.add(emissao)
-    await db_session.commit()
-    await db_session.refresh(usuario)
-    await db_session.refresh(emissao)
-    token = criar_token(usuario)
-
-    app.dependency_overrides[get_db] = lambda: _yield_session(db_session)
-    try:
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resposta = await client.patch(
-                f"/emissoes/{emissao.id}/tomador",
-                json={"cpf_cnpj": "98765432100", "nome": "Cliente Sem Doc"},
-                headers={"Authorization": f"Bearer {token}"},
-            )
-        assert resposta.status_code == 200
-        corpo = resposta.json()
-        assert corpo["status"] == "pendente"
-        assert corpo["numero"] == 1
-        assert corpo["tomador_cpf_cnpj"] == "98765432100"
-    finally:
-        app.dependency_overrides.clear()
 ```
 
 - [ ] **Step 6: Rodar e confirmar falha**
@@ -1933,25 +2087,11 @@ async def test_completar_tomador_reserva_numero_e_vira_pendente(db_session):
 Run: `pytest tests/test_webhook_stone.py -v`
 Expected: FAIL com `ModuleNotFoundError: No module named 'app.routers.webhook_stone'`
 
-- [ ] **Step 7: Acrescentar a `app/schemas.py`**
+- [ ] **Step 7: Implementar `app/routers/webhook_stone.py`**
 
 ```python
-class CompletarTomadorIn(BaseModel):
-    cpf_cnpj: str
-    nome: str | None = None
+from datetime import date
 
-    @field_validator("cpf_cnpj")
-    @classmethod
-    def cpf_cnpj_valido(cls, v: str) -> str:
-        digitos = _somente_digitos(v)
-        if len(digitos) not in (11, 14):
-            raise ValueError("cpf_cnpj deve ter 11 (CPF) ou 14 (CNPJ) digitos")
-        return digitos
-```
-
-- [ ] **Step 8: Implementar `app/routers/webhook_stone.py`**
-
-```python
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1960,7 +2100,7 @@ from app.adapters.stone import parse_stone_charge_paid
 from app.crypto import verificar_senha
 from app.db import get_db
 from app.models import Emissao, Empresa, OrigemEmissao, StatusEmissao
-from datetime import date
+from app.numeracao import reservar_proximo_numero
 
 router = APIRouter(prefix="/webhooks/stone", tags=["webhook-stone"])
 
@@ -1992,11 +2132,14 @@ async def receber_webhook_stone(
     if existente is not None:
         return {"duplicado": True, "emissao_id": str(existente.id)}
 
+    serie, numero = await reservar_proximo_numero(session, empresa.id)
     emissao = Emissao(
         empresa_id=empresa.id,
         origem=OrigemEmissao.webhook,
         stone_charge_id=evento.charge_id,
-        status=StatusEmissao.aguardando_documento,
+        status=StatusEmissao.pendente,
+        serie=serie,
+        numero=numero,
         tomador_nome=evento.customer_name,
         descricao=empresa.descricao_servico_padrao,
         valor=evento.valor,
@@ -2008,45 +2151,7 @@ async def receber_webhook_stone(
     return {"criado": True, "emissao_id": str(emissao.id)}
 ```
 
-- [ ] **Step 9: Acrescentar `PATCH /emissoes/{id}/tomador` a `app/routers/emissoes.py`**
-
-```python
-import uuid
-
-from fastapi import HTTPException
-
-from app.models import StatusEmissao
-from app.schemas import CompletarTomadorIn
-
-
-@router.patch("/{emissao_id}/tomador", response_model=EmissaoOut)
-async def completar_tomador(
-    emissao_id: uuid.UUID,
-    dados: CompletarTomadorIn,
-    usuario: Usuario = Depends(get_current_user),
-    session: AsyncSession = Depends(get_db),
-) -> Emissao:
-    emissao = await session.get(Emissao, emissao_id)
-    if emissao is None or emissao.empresa_id != usuario.empresa_id:
-        raise HTTPException(status_code=404)
-    if emissao.status != StatusEmissao.aguardando_documento:
-        raise HTTPException(status_code=409, detail="Emissao nao esta aguardando documento do tomador")
-
-    serie, numero = await reservar_proximo_numero(session, usuario.empresa_id)
-    emissao.tomador_cpf_cnpj = dados.cpf_cnpj
-    if dados.nome:
-        emissao.tomador_nome = dados.nome
-    emissao.serie = serie
-    emissao.numero = numero
-    emissao.status = StatusEmissao.pendente
-    await session.commit()
-    await session.refresh(emissao)
-    return emissao
-```
-
-(o `import uuid` e o `from fastapi import HTTPException` vão no topo do arquivo, junto dos imports já existentes de `app/routers/emissoes.py` da Task 8)
-
-- [ ] **Step 10: Registrar o router em `app/main.py`**
+- [ ] **Step 8: Registrar o router em `app/main.py`**
 
 ```python
 from app.routers import auth, emissoes, usuarios, webhook_stone
@@ -2054,16 +2159,16 @@ from app.routers import auth, emissoes, usuarios, webhook_stone
 app.include_router(webhook_stone.router)
 ```
 
-- [ ] **Step 11: Rodar e confirmar sucesso**
+- [ ] **Step 9: Rodar e confirmar sucesso**
 
 Run: `pytest tests/test_webhook_stone.py -v`
-Expected: PASS (4 testes)
+Expected: PASS (3 testes)
 
-- [ ] **Step 12: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add app/adapters/stone.py app/routers/webhook_stone.py app/routers/emissoes.py app/schemas.py app/main.py tests/test_adapters_stone.py tests/test_webhook_stone.py
-git commit -m "feat: webhook Stone idempotente com fluxo de documento pendente"
+git add app/adapters/stone.py app/routers/webhook_stone.py app/main.py tests/test_adapters_stone.py tests/test_webhook_stone.py
+git commit -m "feat: webhook Stone idempotente, emite sem exigir documento do tomador"
 ```
 
 ---
@@ -2081,6 +2186,8 @@ git commit -m "feat: webhook Stone idempotente com fluxo de documento pendente"
 - [ ] **Step 1: Escrever o teste**
 
 ```python
+import base64
+import gzip
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
@@ -2092,11 +2199,11 @@ from app.models import AmbienteEnum, Emissao, Empresa, OrigemEmissao, StatusEmis
 import app.worker as worker
 
 
-async def _empresa_e_emissao_pendente(db_session) -> Emissao:
+async def _empresa_e_emissao_pendente(db_session, tomador_cpf_cnpj: str | None = "98765432100") -> Emissao:
     fernet_key = get_settings().fernet_key
     empresa = Empresa(
-        cnpj="12345678000199", inscricao_municipal="1", municipio_ibge="3550308",
-        op_simp_nac=3, codigo_tributacao="140106", descricao_servico_padrao="Lavagem",
+        cnpj="12345678000199", inscricao_municipal="1", municipio_ibge="1501402",
+        op_simp_nac=3, codigo_tributacao="141001", descricao_servico_padrao="Lavagem",
         ambiente=AmbienteEnum.homologacao,
         certificado_pfx_cifrado=cifrar("pfx-fake-base64", fernet_key),
         certificado_senha_cifrada=cifrar("senha-fake", fernet_key),
@@ -2107,7 +2214,7 @@ async def _empresa_e_emissao_pendente(db_session) -> Emissao:
     await db_session.flush()
     emissao = Emissao(
         empresa_id=empresa.id, origem=OrigemEmissao.manual, status=StatusEmissao.pendente,
-        serie="1", numero=1, tomador_cpf_cnpj="98765432100", tomador_nome="Cliente",
+        serie="1", numero=1, tomador_cpf_cnpj=tomador_cpf_cnpj, tomador_nome="Cliente",
         descricao="Lavagem de roupa", valor=Decimal("49.90"), competencia=date(2026, 8, 1),
     )
     db_session.add(emissao)
@@ -2116,12 +2223,7 @@ async def _empresa_e_emissao_pendente(db_session) -> Emissao:
     return emissao
 
 
-@pytest.mark.asyncio
-async def test_processar_uma_pendente_marca_autorizada_em_sucesso(db_session, monkeypatch):
-    emissao = await _empresa_e_emissao_pendente(db_session)
-
-    monkeypatch.setattr(worker, "sign_dps", lambda xml, pfx, senha: b"<DPS assinada/>")
-
+def _cliente_falso_autorizado():
     class ClienteFalso:
         def __init__(self, *args, **kwargs):
             pass
@@ -2130,15 +2232,23 @@ async def test_processar_uma_pendente_marca_autorizada_em_sucesso(db_session, mo
             return {
                 "_http_status": 201,
                 "chaveAcesso": "1" * 50,
-                "nfseXmlGZipB64": __import__("base64").b64encode(
-                    __import__("gzip").compress(b"<NFSe>autorizada</NFSe>")
+                "nfseXmlGZipB64": base64.b64encode(
+                    gzip.compress(b"<NFSe>autorizada</NFSe>")
                 ).decode(),
             }
 
         async def close(self) -> None:
             pass
 
-    monkeypatch.setattr(worker, "SefinClient", ClienteFalso)
+    return ClienteFalso
+
+
+@pytest.mark.asyncio
+async def test_processar_uma_pendente_marca_autorizada_em_sucesso(db_session, monkeypatch):
+    emissao = await _empresa_e_emissao_pendente(db_session)
+
+    monkeypatch.setattr(worker, "sign_dps", lambda xml, pfx, senha: b"<DPS assinada/>")
+    monkeypatch.setattr(worker, "SefinClient", _cliente_falso_autorizado())
 
     processou = await worker.processar_uma_pendente(db_session)
 
@@ -2147,6 +2257,23 @@ async def test_processar_uma_pendente_marca_autorizada_em_sucesso(db_session, mo
     assert emissao.status == StatusEmissao.autorizada
     assert emissao.chave_acesso == "1" * 50
     assert emissao.xml_nfse == b"<NFSe>autorizada</NFSe>"
+
+
+@pytest.mark.asyncio
+async def test_processar_uma_pendente_autoriza_mesmo_sem_documento_do_tomador(db_session, monkeypatch):
+    """Cobre o caso do webhook Stone: emissao sem CPF/CNPJ do tomador (Task 7
+    tornou isso opcional em build_dps_xml) precisa passar pelo worker sem
+    levantar excecao."""
+    emissao = await _empresa_e_emissao_pendente(db_session, tomador_cpf_cnpj=None)
+
+    monkeypatch.setattr(worker, "sign_dps", lambda xml, pfx, senha: b"<DPS assinada/>")
+    monkeypatch.setattr(worker, "SefinClient", _cliente_falso_autorizado())
+
+    processou = await worker.processar_uma_pendente(db_session)
+
+    assert processou is True
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.autorizada
 
 
 @pytest.mark.asyncio
@@ -2276,7 +2403,7 @@ async def loop_worker(session_factory: async_sessionmaker, intervalo_segundos: f
 - [ ] **Step 4: Rodar e confirmar sucesso**
 
 Run: `pytest tests/test_worker.py -v`
-Expected: PASS (3 testes)
+Expected: PASS (4 testes)
 
 - [ ] **Step 5: Commit**
 
@@ -2765,7 +2892,6 @@ def test_todas_as_rotas_esperadas_estao_registradas():
         "/usuarios",
         "/webhooks/stone/{empresa_id}",
         "/emissoes/manual",
-        "/emissoes/{emissao_id}/tomador",
         "/emissoes",
         "/emissoes/{emissao_id}/xml",
         "/emissoes/{emissao_id}/pdf",
@@ -2811,7 +2937,9 @@ Exige o Postgres do `docker compose` no ar (banco `nfse_test`).
 ## Checklist antes da primeira nota real (fora do automatizável por teste)
 
 - [ ] `python nfse-nacional-kit/nfse-nacional-kit/exemplos/00_teste_local.py` — smoke test do núcleo fiscal, sem rede.
-- [ ] Cadastro de parceiro Stone aprovado (`partner.stone.com.br/formulario`) e webhook real recebido pelo menos uma vez em ambiente de teste — confirmar se o payload real inclui CPF/CNPJ do tomador; se incluir, ajustar `app/adapters/stone.py` para preencher `tomador_cpf_cnpj` direto e pular o status `aguardando_documento`.
+- [ ] **Confirmar contra a SEFIN Nacional real (homologação) que a emissão sem documento do tomador é aceita** — o ajuste da Task 7 replica o que a prefeitura de Belém/PA aceitou, mas isso nunca foi testado contra o validador do Sistema Nacional. Se for rejeitado, o fallback é coletar o documento antes de emitir (ex: reativar um formulário de complemento no portal) — mas só decida isso depois do teste real, não antes.
+- [ ] Confirmar o código de tributação nacional (6 dígitos) exato para "14.10 — Tinturaria e lavanderia" contra a tabela oficial de desdobros do ANEXO — `141001` usado nos testes deste plano é um palpite baseado no padrão observado, não uma fonte oficial.
+- [ ] Cadastro de parceiro Stone aprovado (`partner.stone.com.br/formulario`) e webhook real recebido pelo menos uma vez em ambiente de teste — confirmar nomes de campo exatos do payload real; se o CPF/CNPJ do tomador vier disponível, é uma melhoria simples ajustar `app/adapters/stone.py` para preenchê-lo (não é obrigatório, já que a emissão funciona sem ele).
 - [ ] Confirmar em <https://www.gov.br/nfse> que o município aderiu ao Sistema Nacional.
 - [ ] Emissão limpa em `homologacao` (produção restrita) com o certificado A1 real da empresa.
 - [ ] Só depois de uma emissão limpa em homologação, trocar `Empresa.ambiente` para `producao`.
