@@ -982,7 +982,12 @@ def criar_token(usuario: Usuario, settings: Settings | None = None) -> str:
     payload = {
         "sub": str(usuario.id),
         "empresa_id": str(usuario.empresa_id),
-        "papel": usuario.papel.value,
+        # PapelUsuario(...) normaliza tanto o enum quanto o str puro que o
+        # SQLAlchemy devolve apos um round-trip no banco (a coluna e String,
+        # nao um Enum do SQLAlchemy — .value direto quebra com AttributeError
+        # quando o valor veio de uma leitura/refresh, nao de uma instancia
+        # recem-construida em memoria).
+        "papel": PapelUsuario(usuario.papel).value,
         "exp": datetime.now(timezone.utc) + timedelta(hours=settings.jwt_ttl_horas),
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
@@ -2325,7 +2330,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.adapters.dps_builder import DadosEmissao, montar_dps_data
 from app.config import Settings, get_settings
 from app.crypto import decifrar
-from app.models import Emissao, Empresa, StatusEmissao
+from app.models import AmbienteEnum, Emissao, Empresa, StatusEmissao
 from nfse_core import SefinClient, SefinError, build_dps_xml, ler_resposta_emissao, sign_dps
 
 
@@ -2367,7 +2372,11 @@ async def processar_uma_pendente(session: AsyncSession, settings: Settings | Non
         assinado = sign_dps(xml, pfx_base64, senha)
         emissao.xml_dps = assinado
 
-        cliente = SefinClient(empresa.ambiente.value, pfx_base64, senha)
+        # AmbienteEnum(...) normaliza tanto o enum quanto o str puro que o
+        # SQLAlchemy devolve apos um session.get() (coluna e String, nao um
+        # Enum do SQLAlchemy — .value direto em cima do valor recem-carregado
+        # do banco quebra com AttributeError; ver Task 5).
+        cliente = SefinClient(AmbienteEnum(empresa.ambiente).value, pfx_base64, senha)
         try:
             bruta = await cliente.emitir_dps(assinado)
         finally:
@@ -2649,7 +2658,7 @@ from fastapi import Query, Response
 from app.config import Settings, get_settings
 from app.crypto import decifrar
 from app.danfe import gerar_danfse_fallback
-from app.models import Empresa, StatusEmissao
+from app.models import AmbienteEnum, Empresa, StatusEmissao
 from nfse_core import SefinClient
 from sqlalchemy import select
 
@@ -2707,7 +2716,11 @@ async def baixar_pdf(
     pfx_base64 = decifrar(empresa.certificado_pfx_cifrado, settings.fernet_key)
     senha = decifrar(empresa.certificado_senha_cifrada, settings.fernet_key) if empresa.certificado_senha_cifrada else None
 
-    pdf = await SefinClient.fetch_danfse_pdf(empresa.ambiente.value, pfx_base64, senha, emissao.chave_acesso)
+    # AmbienteEnum(...) normaliza o valor recem-carregado do banco — ver
+    # comentario equivalente no worker.py (Task 10) e o bug original na Task 5.
+    pdf = await SefinClient.fetch_danfse_pdf(
+        AmbienteEnum(empresa.ambiente).value, pfx_base64, senha, emissao.chave_acesso
+    )
     if pdf is None:
         pdf = gerar_danfse_fallback(emissao, empresa)
     return Response(content=pdf, media_type="application/pdf")
