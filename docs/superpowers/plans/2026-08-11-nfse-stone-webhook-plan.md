@@ -1361,6 +1361,7 @@ spec).
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
+import pytest
 from lxml import etree
 
 from nfse_core import DpsData, build_dps_xml
@@ -1405,11 +1406,19 @@ def test_build_dps_xml_com_tomador_mantem_bloco_toma_como_antes():
 def test_build_dps_xml_com_documento_invalido_ainda_levanta_erro():
     dados = _dados_base(toma_cpf_cnpj="123")  # nem 11 nem 14 digitos
 
-    try:
+    with pytest.raises(ValueError, match="tomador"):
         build_dps_xml(dados)
-        assert False, "deveria ter levantado ValueError"
-    except ValueError as exc:
-        assert "tomador" in str(exc).lower()
+
+
+def test_build_dps_xml_com_lixo_nao_numerico_levanta_erro_em_vez_de_omitir():
+    """'abc' nao e um documento ausente — e um documento invalido. _digits()
+    reduziria isso a "" (falsy), que pareceria ausente; a validacao precisa
+    checar o valor ORIGINAL antes de extrair digitos, senao um documento
+    malformado vira silenciosamente "sem tomador" em vez de erro."""
+    dados = _dados_base(toma_cpf_cnpj="abc")
+
+    with pytest.raises(ValueError, match="tomador"):
+        build_dps_xml(dados)
 ```
 
 - [ ] **Step 2: Rodar e confirmar falha**
@@ -1437,8 +1446,15 @@ Troque por:
     # formato da nota real) em vez de bloquear a emissao. NAO VERIFICADO
     # contra o validador real da SEFIN Nacional ainda — so contra o
     # município/portal de Belem. Confirmar em homologacao antes de producao.
-    toma_doc = _digits(data.toma_cpf_cnpj)
-    if toma_doc and len(toma_doc) not in (11, 14):
+    #
+    # A checagem de "ausente" e sobre o valor ORIGINAL (toma_raw), nao sobre
+    # o resultado de _digits(): "abc" nao e um documento ausente, e um
+    # documento invalido — se checassemos toma_doc (que _digits() reduz a ""
+    # para qualquer string sem numeros), um documento malformado colapsaria
+    # silenciosamente para "sem tomador" em vez de dar erro.
+    toma_raw = (data.toma_cpf_cnpj or "").strip()
+    toma_doc = _digits(toma_raw)
+    if toma_raw and len(toma_doc) not in (11, 14):
         raise ValueError("CPF/CNPJ do tomador, quando informado, deve ter 11 ou 14 digitos")
 ```
 
@@ -1469,12 +1485,25 @@ Nenhuma outra linha de `dps.py` muda — em particular, a validação de
 - [ ] **Step 4: Rodar e confirmar sucesso**
 
 Run: `pytest tests/test_nfse_core_dps_tomador_opcional.py -v`
-Expected: PASS (3 testes)
+Expected: PASS (4 testes)
 
-- [ ] **Step 5: Rodar o smoke test original do kit para garantir que nada quebrou**
+- [ ] **Step 5: Confirmar que o caminho com tomador preenchido continua idêntico**
 
-Run: `python nfse-nacional-kit/nfse-nacional-kit/exemplos/00_teste_local.py`
-Expected: `[OK] Tudo certo` — este script usa `DpsData` com tomador preenchido, então exercita exatamente o caminho que não deveria ter mudado.
+`nfse-nacional-kit/nfse-nacional-kit/exemplos/00_teste_local.py` **não serve para
+isso**: o script insere o diretório do kit original no início do `sys.path`
+(`sys.path.insert(0, ...)`), então `from nfse_core import ...` ali sempre
+resolve para a cópia original em `nfse-nacional-kit/`, nunca para a cópia do
+projeto em `nfse_core/` que este passo acabou de editar — rodá-lo não prova
+nada sobre a mudança.
+
+A prova real já está no Step 1: `test_build_dps_xml_com_tomador_mantem_bloco_toma_como_antes`
+importa `nfse_core` a partir da raiz do projeto (via `pythonpath=.` do
+`pytest.ini`) e confere que o bloco `<toma>` sai com `CPF`/`xNome`
+corretos quando o documento está presente — é essa cópia, a modificada,
+que está sob teste.
+
+Run: `pytest tests/test_nfse_core_dps_tomador_opcional.py -v`
+Expected: PASS nos 4 testes (o de ausência, o de presença, o de documento inválido, e o de lixo não-numérico) — reconfirma que nada no caminho pré-existente mudou de comportamento.
 
 - [ ] **Step 6: Commit**
 
