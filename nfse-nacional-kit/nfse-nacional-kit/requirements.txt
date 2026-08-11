@@ -1,0 +1,5 @@
+# Dependências do núcleo NFS-e. São só três, de propósito — nenhuma delas é
+# framework: o kit não impõe FastAPI, Django, SQLAlchemy nem nada do gênero.
+lxml>=5.2.0          # montagem e canonicalização do XML (C14N 2.0 é obrigatório aqui)
+cryptography>=42.0   # leitura do PFX/PKCS#12 e assinatura RSA-SHA1
+httpx>=0.27.0        # cliente HTTP com suporte a mTLS (certificado no transporte)

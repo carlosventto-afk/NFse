@@ -1,0 +1,16 @@
+# Segredos — nunca versionar
+.env
+*.pfx
+*.p12
+*.pem
+*.b64.txt
+cert*.txt
+
+# Saída dos exemplos (contém dados fiscais reais)
+*.xml
+!docs/**/*.xml
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
