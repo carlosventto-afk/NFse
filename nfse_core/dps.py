@@ -113,9 +113,16 @@ def build_dps_xml(data: DpsData) -> bytes:
         raise ValueError("CNPJ do prestador (unidade) não configurado")
     if len(_digits(data.c_loc_emi)) != 7:
         raise ValueError("Código IBGE do município emissor inválido (esperado 7 dígitos)")
+    # Documento do tomador e OPCIONAL — ajuste de 11/08/2026, nao presente no
+    # kit original. Evidencia: NFS-e real (Belem/PA, mesmo CNPJ/servico de
+    # lavanderia) emitida com tomador "NAO IDENTIFICADO" e aceita. Quando o
+    # documento esta ausente, o bloco <toma> inteiro e omitido (replica o
+    # formato da nota real) em vez de bloquear a emissao. NAO VERIFICADO
+    # contra o validador real da SEFIN Nacional ainda — so contra o
+    # município/portal de Belem. Confirmar em homologacao antes de producao.
     toma_doc = _digits(data.toma_cpf_cnpj)
-    if len(toma_doc) not in (11, 14):
-        raise ValueError("CPF/CNPJ do tomador ausente ou inválido")
+    if toma_doc and len(toma_doc) not in (11, 14):
+        raise ValueError("CPF/CNPJ do tomador, quando informado, deve ter 11 ou 14 digitos")
     if data.v_serv <= 0:
         raise ValueError("Valor do serviço deve ser positivo")
 
@@ -147,11 +154,12 @@ def build_dps_xml(data: DpsData) -> bytes:
         _el(reg, "regApTribSN", str(data.reg_ap_trib_sn))
     _el(reg, "regEspTrib", str(data.reg_esp_trib))
 
-    toma = _el(inf, "toma")
-    _el(toma, "CPF" if len(toma_doc) == 11 else "CNPJ", toma_doc)
-    _el(toma, "xNome", _sanitize_text(data.toma_nome)[:300])
-    if data.toma_email:
-        _el(toma, "email", data.toma_email.strip()[:80])
+    if toma_doc:
+        toma = _el(inf, "toma")
+        _el(toma, "CPF" if len(toma_doc) == 11 else "CNPJ", toma_doc)
+        _el(toma, "xNome", _sanitize_text(data.toma_nome)[:300])
+        if data.toma_email:
+            _el(toma, "email", data.toma_email.strip()[:80])
 
     serv = _el(inf, "serv")
     loc = _el(serv, "locPrest")
