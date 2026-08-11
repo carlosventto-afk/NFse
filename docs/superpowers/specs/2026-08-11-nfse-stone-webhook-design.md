@@ -14,15 +14,18 @@ ver `nfse-nacional-kit/nfse-nacional-kit/docs/INTEGRACAO.md`.
 O objetivo deste projeto é construir o sistema em volta desse núcleo: receber
 uma notificação de pagamento da Stone (venda de serviço de lavagem de roupa),
 emitir a NFS-e automaticamente, registrar tudo em banco, e oferecer um portal
-onde um usuário da empresa consulta as emissões, baixa o XML/PDF e acompanha
-valores acumulados.
+onde um usuário da empresa consulta as emissões, baixa o XML/PDF, acompanha
+valores acumulados e, quando necessário, emite uma nota manualmente (fora do
+gatilho automático do webhook).
 
 ## Objetivo
 
 Automatizar emissão de NFS-e Nacional disparada por pagamento aprovado na
 Stone, com registro auditável e portal de consulta/download — para uma ou mais
 empresas (multiempresa desde o modelo de dados, ainda que hoje só uma empresa
-utilize).
+utilize). O portal também permite emissão manual, para cobranças fora do fluxo
+Stone (ex: venda não passou pela maquininha, reemissão de um caso não
+capturado pelo webhook).
 
 ## Fora de escopo (por ora)
 
@@ -52,22 +55,26 @@ utilize).
 ## Arquitetura
 
 ```
-Stone (evento charge.paid)
-        |  webhook HTTP
-        v
-[Recebedor do webhook]  -- valida origem, dedup por stone_charge_id
-        |  grava linha "pendente" em emissoes (mesma transação que reserva o número)
-        v
-[tabela emissoes, status=pendente]
-        |  worker consome
-        v
-[Worker de emissão]
-   monta DPS (adaptador) -> assina (nfse_core.signer) -> envia (nfse_core.client)
-        |
-        v
-  atualiza emissoes: autorizada (chave_acesso, xml_nfse) | rejeitada (erros)
-        |
-        v
+Stone (evento charge.paid)              Portal web (formulário manual)
+        |  webhook HTTP                          |  usuário preenche tomador/valor
+        v                                         v
+[Recebedor do webhook] -- dedup            [Emissão manual]
+  por stone_charge_id                     sem stone_charge_id
+        |                                         |
+        +------------------+----------------------+
+                            v
+        grava linha "pendente" em emissoes (mesma transação que reserva o número)
+                            v
+                [tabela emissoes, status=pendente]
+                            |  worker consome
+                            v
+                    [Worker de emissão]
+        monta DPS (adaptador) -> assina (nfse_core.signer) -> envia (nfse_core.client)
+                            |
+                            v
+          atualiza emissoes: autorizada (chave_acesso, xml_nfse) | rejeitada (erros)
+                            |
+                            v
 [Portal web] <- usuário faz login, lista emissões, baixa XML/PDF, vê acumulados
 ```
 
@@ -89,7 +96,10 @@ Componentes:
 4. **Portal web**: login por empresa, listagem de emissões com filtro por
    período/status, download do XML autorizado (o documento fiscal) e do PDF
    (com fallback próprio se a API do ADN falhar — `ARMADILHAS.md` item 10),
-   painel de valor acumulado por período.
+   painel de valor acumulado por período, e um formulário de **emissão
+   manual** — usuário informa tomador (CPF/CNPJ, nome), descrição e valor, e a
+   emissão segue o mesmo caminho (reserva de número, worker, mesmo
+   `nfse_core`) que a automática, só sem `stone_charge_id`.
 
 ## Modelo de dados (essencial)
 
@@ -98,10 +108,12 @@ Componentes:
   transacional), ambiente (homologação/produção), código de tributação padrão
   do serviço.
 - `usuarios`: vinculado a `empresa_id`, papel (admin/operador).
-- `emissoes`: `empresa_id`, `stone_charge_id` (chave de idempotência, único
-  por empresa), status (pendente/autorizada/rejeitada/cancelada), numero,
+- `emissoes`: `empresa_id`, `origem` (webhook/manual), `stone_charge_id`
+  (nulo quando `origem=manual`; chave de idempotência única por empresa
+  quando presente), status (pendente/autorizada/rejeitada/cancelada), numero,
   serie, dps_id, chave_acesso, xml_dps, xml_nfse, erros (json traduzido),
-  valor, criada_em.
+  tomador (cpf/cnpj, nome — vem do payload Stone ou do formulário manual),
+  valor, criada_por (usuário, quando manual), criada_em.
 
 Numeração é um contador transacional por `empresa_id` + série
 (`UPDATE ... RETURNING`), conforme `INTEGRACAO.md` do kit — nunca
@@ -109,13 +121,28 @@ Numeração é um contador transacional por `empresa_id` + série
 
 ## Fluxo de emissão
 
+**Automático (webhook):**
+
 1. Webhook chega → valida origem → verifica se `stone_charge_id` já existe
    para a empresa (idempotência: Stone pode reenviar o mesmo evento).
 2. Se novo: dentro de uma transação, reserva o próximo número e grava a linha
-   `pendente`. Isso acontece **antes** de qualquer chamada à SEFIN — se o
-   processo morrer no meio, sobra um registro pendente rastreável.
-3. Worker pega a linha pendente, monta a `DpsData` via adaptador (mapeia
-   payload Stone → campos da DPS), assina, envia à SEFIN.
+   `pendente` (`origem=webhook`). Isso acontece **antes** de qualquer chamada
+   à SEFIN — se o processo morrer no meio, sobra um registro pendente
+   rastreável.
+
+**Manual (portal):**
+
+1. Usuário autenticado preenche o formulário (tomador, descrição, valor).
+   Validação de CPF/CNPJ e valor positivo acontece na submissão, antes de
+   consumir número — mesma regra do adaptador automático.
+2. Dentro de uma transação, reserva o próximo número e grava a linha
+   `pendente` (`origem=manual`, `criada_por=usuário`, sem `stone_charge_id`).
+
+**Comum aos dois (worker):**
+
+3. Worker pega a linha pendente, monta a `DpsData` via adaptador, assina,
+   envia à SEFIN — o worker não distingue `origem`, o caminho é o mesmo a
+   partir daqui.
 4. Resposta interpretada de forma tolerante (`ler_resposta_emissao`); grava
    `autorizada` (com XML e chave de acesso) ou `rejeitada` (com erros
    traduzidos).
@@ -149,6 +176,9 @@ Numeração é um contador transacional por `empresa_id` + série
   corretamente montada.
 - Testes de idempotência do recebedor de webhook (mesmo `stone_charge_id`
   duas vezes não duplica emissão nem consome dois números).
+- Testes do formulário de emissão manual: validação de CPF/CNPJ e valor antes
+  de reservar número; resultado grava `origem=manual` e segue o mesmo caminho
+  do worker que a emissão automática.
 - Emissão real em `homologacao` (produção restrita) antes de qualquer nota em
   `producao` — não pulável, é a única forma de pegar divergência de validador
   (`CLAUDE.md` do kit).
