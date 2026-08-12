@@ -102,19 +102,25 @@ async def baixar_pdf(
         raise HTTPException(status_code=404, detail="Nota nao autorizada")
 
     empresa = await session.get(Empresa, emissao.empresa_id)
-    pfx_base64 = decifrar(empresa.certificado_pfx_cifrado, settings.fernet_key)
-    senha = decifrar(empresa.certificado_senha_cifrada, settings.fernet_key) if empresa.certificado_senha_cifrada else None
 
     # AmbienteEnum(...) normaliza o valor recem-carregado do banco — ver
     # comentario equivalente no worker.py (Task 10) e o bug original na Task 5.
     #
     # `fetch_danfse_pdf` promete devolver None em vez de levantar quando o ADN
     # nao responde, mas antes disso ela chama load_pfx_pem, que levanta
-    # CertificateError com certificado vencido/senha errada. O except e
+    # CertificateError com certificado vencido/senha errada — e `decifrar`
+    # levanta InvalidToken se a FERNET_KEY nao bater. O except e
     # deliberadamente amplo: QUALQUER falha em alcancar o PDF oficial deve cair
-    # no fallback local — a razao de existir do fallback e o usuario sempre
-    # receber um PDF, nunca um 500 (ARMADILHAS.md item 10).
+    # no fallback local, que nem precisa do certificado — a razao de existir do
+    # fallback e o usuario sempre receber um PDF, nunca um 500
+    # (ARMADILHAS.md item 10).
     try:
+        pfx_base64 = decifrar(empresa.certificado_pfx_cifrado, settings.fernet_key)
+        senha = (
+            decifrar(empresa.certificado_senha_cifrada, settings.fernet_key)
+            if empresa.certificado_senha_cifrada
+            else None
+        )
         pdf = await SefinClient.fetch_danfse_pdf(
             AmbienteEnum(empresa.ambiente).value, pfx_base64, senha, emissao.chave_acesso
         )

@@ -116,6 +116,9 @@ async def test_admin_cria_operador_na_propria_empresa(db_session):
     [
         # bcrypt.hashpw levanta ValueError acima de 72 bytes -> era 500
         ("senha", "S" * 73),
+        # 72 caracteres acentuados = 144 bytes: passa do max_length e ainda
+        # assim estouraria no bcrypt, que conta BYTES
+        ("senha", "á" * 72),
         # Usuario.email e String(255) -> era StringDataRightTruncationError (500)
         ("email", "u" * 250 + "@exemplo.com.br"),
     ],

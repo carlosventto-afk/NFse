@@ -39,6 +39,11 @@ class UsuarioCriarIn(BaseModel):
     def senha_minima(cls, v: str) -> str:
         if len(v) < 8:
             raise ValueError("senha precisa ter ao menos 8 caracteres")
+        # O limite do bcrypt e em BYTES, nao em caracteres: 72 caracteres
+        # acentuados passam do `max_length` e ainda assim fariam `hash_senha`
+        # levantar ValueError (= 500) mais adiante.
+        if len(v.encode()) > TAMANHO_SENHA_MAX:
+            raise ValueError(f"senha nao pode passar de {TAMANHO_SENHA_MAX} bytes")
         return v
 
     @field_validator("papel")
