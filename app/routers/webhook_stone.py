@@ -1,3 +1,4 @@
+import uuid
 from datetime import date
 
 import bcrypt
@@ -22,7 +23,12 @@ _HASH_FALSO = bcrypt.hashpw(b"dummy", bcrypt.gensalt()).decode()
 
 @router.post("/{empresa_id}")
 async def receber_webhook_stone(
-    empresa_id: str,
+    # uuid.UUID (e nao str): o FastAPI recusa um valor mal formado com 422
+    # antes de chegar aqui. Com `str`, o valor ia cru para o session.get() e
+    # virava asyncpg.DataError (500) — e antes da checagem do token, o que
+    # tambem furava o 404 de tempo constante logo abaixo (dava para separar
+    # "UUID mal formado" de "UUID valido porem inexistente").
+    empresa_id: uuid.UUID,
     request: Request,
     x_webhook_token: str = Header(...),
     session: AsyncSession = Depends(get_db),
@@ -37,7 +43,14 @@ async def receber_webhook_stone(
     if payload.get("type") != "charge.paid":
         return {"ignorado": True}
 
-    evento = parse_stone_charge_paid(payload)
+    # parse_stone_charge_paid levanta ValueError quando falta um campo
+    # documentado. Deixar escapar viraria 500 — e a Stone REENVIA 5xx, entao um
+    # payload permanentemente malformado viraria retry infinito. 400 diz "nao
+    # reenvie, o problema esta no corpo".
+    try:
+        evento = parse_stone_charge_paid(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     existente = (
         await session.execute(
@@ -57,7 +70,9 @@ async def receber_webhook_stone(
         status=StatusEmissao.pendente,
         serie=serie,
         numero=numero,
-        tomador_nome=evento.customer_name,
+        # Emissao.tomador_nome e String(300) e o nome vem de fora: sem o corte,
+        # um nome maior estoura StringDataRightTruncationError (500) no insert.
+        tomador_nome=evento.customer_name[:300],
         descricao=empresa.descricao_servico_padrao,
         valor=evento.valor,
         competencia=date.today().replace(day=1),

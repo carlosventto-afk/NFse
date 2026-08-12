@@ -133,6 +133,107 @@ async def test_indice_unico_rejeita_stone_charge_id_duplicado_na_mesma_empresa(d
 
 
 @pytest.mark.asyncio
+async def test_webhook_stone_rejeita_empresa_id_nao_uuid_com_422(db_session):
+    """empresa_id nao-UUID chegava cru no session.get() e virava asyncpg.DataError
+    (500). Pior: isso acontecia ANTES da checagem do token, dando ao atacante um
+    jeito de distinguir "UUID mal formado" de "UUID valido porem inexistente" —
+    justamente o que o 404 de tempo constante evita. Tipando o path param como
+    uuid.UUID, o FastAPI recusa com 422 antes de entrar no handler."""
+    await _empresa_com_token(db_session)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                "/webhooks/stone/nao-e-um-uuid",
+                json={"type": "charge.paid", "id": "x", "amount": 100,
+                      "customer": {"id": "1", "name": "A"}},
+                headers={"X-Webhook-Token": "token-secreto"},
+            )
+        assert resposta.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_webhook_stone_devolve_400_para_payload_malformado(db_session):
+    """parse_stone_charge_paid levanta ValueError quando falta campo documentado.
+    Sem tratamento, virava 500 — e a Stone REENVIA 5xx, entao um payload
+    permanentemente malformado viraria retry infinito."""
+    empresa = await _empresa_com_token(db_session)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                f"/webhooks/stone/{empresa.id}",
+                json={"type": "charge.paid", "id": "ch_sem_customer", "amount": 100},
+                headers={"X-Webhook-Token": "token-secreto"},
+            )
+        assert resposta.status_code == 400
+        assert "payload da Stone incompleto" in resposta.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
+
+    nenhuma = (
+        await db_session.execute(select(Emissao).where(Emissao.empresa_id == empresa.id))
+    ).scalars().all()
+    assert nenhuma == []
+
+
+@pytest.mark.asyncio
+async def test_webhook_stone_trunca_nome_do_tomador_no_tamanho_da_coluna(db_session):
+    """Emissao.tomador_nome e String(300): nome maior vindo da Stone causava
+    StringDataRightTruncationError (500) em vez de ser aceito."""
+    empresa = await _empresa_com_token(db_session)
+    nome_gigante = "N" * 500
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                f"/webhooks/stone/{empresa.id}",
+                json={"type": "charge.paid", "id": "ch_nome_longo", "amount": 4990,
+                      "customer": {"id": "cus_1", "name": nome_gigante}},
+                headers={"X-Webhook-Token": "token-secreto"},
+            )
+        assert resposta.status_code == 200
+        assert resposta.json()["criado"] is True
+    finally:
+        app.dependency_overrides.clear()
+
+    emissao = (
+        await db_session.execute(select(Emissao).where(Emissao.empresa_id == empresa.id))
+    ).scalar_one()
+    assert emissao.tomador_nome == "N" * 300
+
+
+@pytest.mark.asyncio
+async def test_webhook_stone_rejeita_token_longo_sem_estourar_500(db_session):
+    """bcrypt.checkpw levanta ValueError acima de 72 bytes: um header
+    X-Webhook-Token gigante virava 500 (e um oraculo para descobrir empresas
+    existentes). Precisa cair no mesmo 404 de token errado."""
+    empresa = await _empresa_com_token(db_session)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                f"/webhooks/stone/{empresa.id}",
+                json={"type": "charge.paid", "id": "x", "amount": 100,
+                      "customer": {"id": "1", "name": "A"}},
+                headers={"X-Webhook-Token": "T" * 200},
+            )
+        assert resposta.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
 async def test_webhook_stone_rejeita_token_errado(db_session):
     empresa = await _empresa_com_token(db_session)
 

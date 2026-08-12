@@ -91,6 +91,44 @@ async def test_emissao_manual_com_cpf_invalido_nao_reserva_numero(db_session):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "campo, valor_excessivo",
+    [
+        ("nome", "N" * 301),          # Emissao.tomador_nome String(300)
+        ("descricao", "D" * 2001),    # Emissao.descricao String(2000)
+        ("email", "e" * 70 + "@exemplo.com.br"),  # Emissao.tomador_email String(80)
+        ("valor", "1000000000000.00"),  # Emissao.valor Numeric(14, 2)
+    ],
+)
+async def test_emissao_manual_recusa_campo_maior_que_a_coluna_com_422(
+    db_session, campo, valor_excessivo
+):
+    """Sem limite no schema, o excesso so era detectado no INSERT e virava 500
+    (StringDataRightTruncationError / numeric field overflow)."""
+    empresa, token = await _empresa_e_usuario(db_session)
+    corpo = {
+        "nome": "Cliente", "descricao": "Lavagem",
+        "valor": "10.00", "competencia": "2026-08-01",
+    }
+    corpo[campo] = valor_excessivo
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                "/emissoes/manual", json=corpo,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 422
+
+        await db_session.refresh(empresa)
+        assert empresa.proximo_numero == 1  # nao reservou numero
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
 async def test_emissao_manual_sem_documento_do_tomador_e_aceita(db_session):
     empresa, token = await _empresa_e_usuario(db_session)
 

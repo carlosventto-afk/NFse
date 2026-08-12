@@ -110,5 +110,66 @@ async def test_admin_cria_operador_na_propria_empresa(db_session):
         app.dependency_overrides.clear()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "campo, valor_excessivo",
+    [
+        # bcrypt.hashpw levanta ValueError acima de 72 bytes -> era 500
+        ("senha", "S" * 73),
+        # Usuario.email e String(255) -> era StringDataRightTruncationError (500)
+        ("email", "u" * 250 + "@exemplo.com.br"),
+    ],
+)
+async def test_criar_usuario_recusa_campo_excessivo_com_422(db_session, campo, valor_excessivo):
+    empresa = await _empresa_minima(db_session)
+    admin = Usuario(
+        empresa_id=empresa.id, email="admin4@teste.com",
+        senha_hash=hash_senha("senha-forte-123"), papel=PapelUsuario.admin,
+    )
+    db_session.add(admin)
+    await db_session.commit()
+    await db_session.refresh(admin)
+    token = criar_token(admin)
+
+    corpo = {"email": "novo@teste.com", "senha": "senha-valida-123", "papel": "operador"}
+    corpo[campo] = valor_excessivo
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                "/usuarios", json=corpo, headers={"Authorization": f"Bearer {token}"}
+            )
+        assert resposta.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_login_com_senha_absurdamente_longa_devolve_401_e_nao_500(db_session):
+    """bcrypt.checkpw levanta ValueError acima de 72 bytes: sem o guarda em
+    `verificar_senha`, uma senha gigante no login virava 500."""
+    empresa = await _empresa_minima(db_session)
+    usuario = Usuario(
+        empresa_id=empresa.id, email="admin5@teste.com",
+        senha_hash=hash_senha("senha-forte-123"), papel=PapelUsuario.admin,
+    )
+    db_session.add(usuario)
+    await db_session.commit()
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                "/auth/login",
+                data={"username": "admin5@teste.com", "password": "x" * 500},
+            )
+        assert resposta.status_code == 401
+    finally:
+        app.dependency_overrides.clear()
+
+
 async def _yield_session(session):
     yield session

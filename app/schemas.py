@@ -3,7 +3,21 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+# Os limites abaixo espelham a largura das colunas em app/models.py. Sem eles,
+# entrada maior que a coluna nao vira 422 (erro do cliente) e sim 500 — o
+# Postgres so reclama na hora do INSERT (StringDataRightTruncationError).
+TAMANHO_NOME = 300        # Emissao.tomador_nome String(300)
+TAMANHO_DESCRICAO = 2000  # Emissao.descricao String(2000)
+TAMANHO_EMAIL = 80        # Emissao.tomador_email String(80)
+TAMANHO_EMAIL_USUARIO = 255  # Usuario.email String(255)
+# Emissao.valor e Numeric(14, 2): 12 digitos inteiros + 2 decimais. Acima
+# disso o proprio Postgres recusa (numeric field overflow). O limite aqui e
+# so a barreira contra o 500 — nao e regra de negocio.
+VALOR_MAXIMO = Decimal("999999999999.99")
+# bcrypt recusa segredo com mais de 72 bytes (levanta ValueError em hashpw).
+TAMANHO_SENHA_MAX = 72
 
 
 def _somente_digitos(valor: str) -> str:
@@ -16,8 +30,8 @@ class TokenOut(BaseModel):
 
 
 class UsuarioCriarIn(BaseModel):
-    email: EmailStr
-    senha: str
+    email: EmailStr = Field(max_length=TAMANHO_EMAIL_USUARIO)
+    senha: str = Field(max_length=TAMANHO_SENHA_MAX)
     papel: str = "operador"
 
     @field_validator("senha")
@@ -44,11 +58,11 @@ class UsuarioOut(BaseModel):
 
 
 class EmissaoManualIn(BaseModel):
-    cpf_cnpj: str | None = None
-    nome: str
-    email: str | None = None
-    descricao: str
-    valor: Decimal
+    cpf_cnpj: str | None = Field(default=None, max_length=20)
+    nome: str = Field(max_length=TAMANHO_NOME)
+    email: str | None = Field(default=None, max_length=TAMANHO_EMAIL)
+    descricao: str = Field(max_length=TAMANHO_DESCRICAO)
+    valor: Decimal = Field(le=VALOR_MAXIMO)
     competencia: date
 
     @field_validator("cpf_cnpj")
