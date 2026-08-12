@@ -33,6 +33,7 @@ class StatusEmissao(str, enum.Enum):
 class OrigemEmissao(str, enum.Enum):
     webhook = "webhook"
     manual = "manual"
+    csv = "csv"
 
 
 class PapelUsuario(str, enum.Enum):

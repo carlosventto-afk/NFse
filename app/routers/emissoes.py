@@ -1,11 +1,13 @@
 import logging
 import uuid
 from datetime import date
+from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.stone_csv import CabecalhoInvalidoError, NotaCandidata, parsear_relatorio_stone
 from app.config import Settings, get_settings
 from app.crypto import decifrar
 from app.danfe import gerar_danfse_fallback
@@ -133,3 +135,79 @@ async def baixar_pdf(
     if pdf is None:
         pdf = gerar_danfse_fallback(emissao, empresa)
     return Response(content=pdf, media_type="application/pdf")
+
+
+async def _processar_csv(
+    conteudo: bytes, usuario: Usuario, session: AsyncSession, *, confirmar: bool,
+) -> dict:
+    try:
+        resultado = parsear_relatorio_stone(conteudo)
+    except CabecalhoInvalidoError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    ignoradas = dict(resultado.ignoradas)
+    ignoradas["ja_emitida_anteriormente"] = 0
+
+    stone_ids = [nota.stone_charge_id for nota in resultado.notas]
+    existentes: set[str] = set()
+    if stone_ids:
+        linhas = await session.execute(
+            select(Emissao.stone_charge_id).where(
+                Emissao.empresa_id == usuario.empresa_id,
+                Emissao.stone_charge_id.in_(stone_ids),
+            )
+        )
+        existentes = {linha[0] for linha in linhas}
+
+    notas_validas: list[NotaCandidata] = []
+    for nota in resultado.notas:
+        if nota.stone_charge_id in existentes:
+            ignoradas["ja_emitida_anteriormente"] += 1
+            continue
+        notas_validas.append(nota)
+
+    if confirmar and notas_validas:
+        empresa = await session.get(Empresa, usuario.empresa_id)
+        for nota in notas_validas:
+            serie, numero = await reservar_proximo_numero(session, usuario.empresa_id)
+            emissao = Emissao(
+                empresa_id=usuario.empresa_id,
+                origem=OrigemEmissao.csv,
+                stone_charge_id=nota.stone_charge_id,
+                status=StatusEmissao.pendente,
+                serie=serie,
+                numero=numero,
+                descricao=empresa.descricao_servico_padrao,
+                valor=nota.valor,
+                competencia=nota.data_da_venda.date().replace(day=1),
+                criada_por_usuario_id=usuario.id,
+            )
+            session.add(emissao)
+        await session.commit()
+
+    valor_total = sum((nota.valor for nota in notas_validas), Decimal("0"))
+    return {
+        "total_notas": len(notas_validas),
+        "valor_total": str(valor_total.quantize(Decimal("0.01"))),
+        "ignoradas": ignoradas,
+    }
+
+
+@router.post("/csv/preview")
+async def preview_csv(
+    arquivo: UploadFile = File(...),
+    usuario: Usuario = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    conteudo = await arquivo.read()
+    return await _processar_csv(conteudo, usuario, session, confirmar=False)
+
+
+@router.post("/csv/confirmar")
+async def confirmar_csv(
+    arquivo: UploadFile = File(...),
+    usuario: Usuario = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    conteudo = await arquivo.read()
+    return await _processar_csv(conteudo, usuario, session, confirmar=True)
