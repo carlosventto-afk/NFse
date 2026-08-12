@@ -1,2 +1,9 @@
 .worktrees/
 nfse-nacional-kit.zip
+.venv/
+__pycache__/
+*.pyc
+.env
+*.pfx
+*.pem
+*.b64.txt
