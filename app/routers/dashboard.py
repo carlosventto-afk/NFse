@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.models import Emissao, StatusEmissao, Usuario
+from app.periodo import fim_do_dia_brt, inicio_do_dia_brt
 from app.security import get_current_user
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -23,8 +24,11 @@ async def dashboard(
         select(Emissao.status, func.coalesce(func.sum(Emissao.valor), 0))
         .where(
             Emissao.empresa_id == usuario.empresa_id,
-            Emissao.criada_em >= inicio,
-            Emissao.criada_em < fim + timedelta(days=1),
+            # Limites em BRT, nao no TimeZone da sessao do Postgres (UTC):
+            # sem isso, a nota das 21:30 BRT do dia 31 cai no mes seguinte.
+            # Ver app/periodo.py.
+            Emissao.criada_em >= inicio_do_dia_brt(inicio),
+            Emissao.criada_em < fim_do_dia_brt(fim),
         )
         .group_by(Emissao.status)
     )

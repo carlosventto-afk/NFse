@@ -11,6 +11,7 @@ from app.db import get_db
 from app.main import app
 from app.models import AmbienteEnum, Emissao, Empresa, OrigemEmissao, PapelUsuario, StatusEmissao, Usuario
 from app.security import criar_token
+from nfse_core import CertificateError
 
 
 async def _empresa_usuario_emissao_autorizada(db_session):
@@ -83,6 +84,74 @@ async def test_baixar_xml_devolve_documento_autorizado(db_session):
         assert resposta.status_code == 200
         assert resposta.content == b"<NFSe>ok</NFSe>"
         assert resposta.headers["content-type"].startswith("application/xml")
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "excecao",
+    [
+        # fetch_danfse_pdf chama load_pfx_pem antes de qualquer rede: com o
+        # certificado vencido/senha errada ela LEVANTA, nao devolve None.
+        CertificateError("Certificado A1 invalido ou senha incorreta"),
+        # E qualquer outra falha inesperada tambem nao pode virar 500: o
+        # fallback existe justamente para o usuario sempre receber um PDF.
+        RuntimeError("falha inesperada ao falar com o ADN"),
+    ],
+)
+async def test_baixar_pdf_cai_no_fallback_quando_a_busca_oficial_levanta(
+    db_session, monkeypatch, excecao
+):
+    empresa, usuario, emissao = await _empresa_usuario_emissao_autorizada(db_session)
+    token = criar_token(usuario)
+
+    import app.routers.emissoes as emissoes_router
+
+    async def _fetch_danfse_pdf_explodindo(*args, **kwargs):
+        raise excecao
+
+    monkeypatch.setattr(
+        emissoes_router.SefinClient, "fetch_danfse_pdf", staticmethod(_fetch_danfse_pdf_explodindo)
+    )
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.get(
+                f"/emissoes/{emissao.id}/pdf", headers={"Authorization": f"Bearer {token}"}
+            )
+        assert resposta.status_code == 200
+        assert resposta.content.startswith(b"%PDF")
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_listar_emissoes_usa_limites_de_dia_em_brt(db_session):
+    """Nota emitida as 21:30 BRT do dia 31/08 fica gravada como 00:30 UTC de
+    01/09. Comparando `date` cru contra timestamptz (Postgres em UTC) ela
+    sumiria do filtro de agosto — e apareceria no de setembro."""
+    empresa, usuario, emissao = await _empresa_usuario_emissao_autorizada(db_session)
+    emissao.criada_em = datetime(2026, 9, 1, 0, 30, tzinfo=timezone.utc)  # 31/08 21:30 BRT
+    await db_session.commit()
+    token = criar_token(usuario)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            agosto = await client.get(
+                "/emissoes", params={"inicio": "2026-08-01", "fim": "2026-08-31"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            setembro = await client.get(
+                "/emissoes", params={"inicio": "2026-09-01", "fim": "2026-09-30"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert [item["id"] for item in agosto.json()] == [str(emissao.id)]
+        assert setembro.json() == []
     finally:
         app.dependency_overrides.clear()
 

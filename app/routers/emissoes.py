@@ -1,5 +1,6 @@
+import logging
 import uuid
-from datetime import date, timedelta
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
@@ -11,9 +12,12 @@ from app.danfe import gerar_danfse_fallback
 from app.db import get_db
 from app.models import AmbienteEnum, Emissao, Empresa, OrigemEmissao, StatusEmissao, Usuario
 from app.numeracao import reservar_proximo_numero
+from app.periodo import fim_do_dia_brt, inicio_do_dia_brt
 from app.schemas import EmissaoManualIn, EmissaoOut
 from app.security import get_current_user
 from nfse_core import SefinClient
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/emissoes", tags=["emissoes"])
 
@@ -56,10 +60,13 @@ async def listar_emissoes(
     stmt = select(Emissao).where(Emissao.empresa_id == usuario.empresa_id)
     if status is not None:
         stmt = stmt.where(Emissao.status == status)
+    # Limites ancorados em BRT: `criada_em` e timestamptz e comparar com um
+    # `date` cru deixaria o Postgres converter pelo TimeZone da sessao (UTC),
+    # jogando as notas do fim da noite para o dia/mes seguinte. Ver app/periodo.py.
     if inicio is not None:
-        stmt = stmt.where(Emissao.criada_em >= inicio)
+        stmt = stmt.where(Emissao.criada_em >= inicio_do_dia_brt(inicio))
     if fim is not None:
-        stmt = stmt.where(Emissao.criada_em < fim + timedelta(days=1))
+        stmt = stmt.where(Emissao.criada_em < fim_do_dia_brt(fim))
     stmt = stmt.order_by(Emissao.criada_em.desc())
     return list((await session.execute(stmt)).scalars().all())
 
@@ -100,9 +107,23 @@ async def baixar_pdf(
 
     # AmbienteEnum(...) normaliza o valor recem-carregado do banco — ver
     # comentario equivalente no worker.py (Task 10) e o bug original na Task 5.
-    pdf = await SefinClient.fetch_danfse_pdf(
-        AmbienteEnum(empresa.ambiente).value, pfx_base64, senha, emissao.chave_acesso
-    )
+    #
+    # `fetch_danfse_pdf` promete devolver None em vez de levantar quando o ADN
+    # nao responde, mas antes disso ela chama load_pfx_pem, que levanta
+    # CertificateError com certificado vencido/senha errada. O except e
+    # deliberadamente amplo: QUALQUER falha em alcancar o PDF oficial deve cair
+    # no fallback local — a razao de existir do fallback e o usuario sempre
+    # receber um PDF, nunca um 500 (ARMADILHAS.md item 10).
+    try:
+        pdf = await SefinClient.fetch_danfse_pdf(
+            AmbienteEnum(empresa.ambiente).value, pfx_base64, senha, emissao.chave_acesso
+        )
+    except Exception:
+        logger.warning(
+            "falha ao buscar o DANFSe oficial da emissao %s; usando o fallback local",
+            emissao.id, exc_info=True,
+        )
+        pdf = None
     if pdf is None:
         pdf = gerar_danfse_fallback(emissao, empresa)
     return Response(content=pdf, media_type="application/pdf")
