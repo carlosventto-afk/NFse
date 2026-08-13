@@ -6,6 +6,7 @@ import LoginPage from "./pages/LoginPage";
 import SelecionarEmpresaPage from "./pages/SelecionarEmpresaPage";
 import AceitarConvitePage from "./pages/AceitarConvitePage";
 import CadastroEmpresaPage from "./pages/CadastroEmpresaPage";
+import ClientesPage from "./pages/ClientesPage";
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
             <Route element={<Layout />}>
               <Route path="/emissoes" element={<p>Emissoes (Task 8)</p>} />
               <Route path="/cadastro-empresa" element={<CadastroEmpresaPage />} />
+              <Route path="/clientes" element={<ClientesPage />} />
             </Route>
           </Route>
         </Routes>
