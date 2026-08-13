@@ -49,7 +49,7 @@ async def test_listar_emissoes_filtra_por_status(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.get(
-                "/emissoes", params={"status": "autorizada"},
+                "/api/emissoes", params={"status": "autorizada"},
                 headers={"Authorization": f"Bearer {token}"},
             )
         assert resposta.status_code == 200
@@ -70,7 +70,7 @@ async def test_baixar_xml_devolve_documento_autorizado(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.get(
-                f"/emissoes/{emissao.id}/xml", headers={"Authorization": f"Bearer {token}"}
+                f"/api/emissoes/{emissao.id}/xml", headers={"Authorization": f"Bearer {token}"}
             )
         assert resposta.status_code == 200
         assert resposta.content == b"<NFSe>ok</NFSe>"
@@ -111,7 +111,7 @@ async def test_baixar_pdf_cai_no_fallback_quando_a_busca_oficial_levanta(
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.get(
-                f"/emissoes/{emissao.id}/pdf", headers={"Authorization": f"Bearer {token}"}
+                f"/api/emissoes/{emissao.id}/pdf", headers={"Authorization": f"Bearer {token}"}
             )
         assert resposta.status_code == 200
         assert resposta.content.startswith(b"%PDF")
@@ -134,11 +134,11 @@ async def test_listar_emissoes_usa_limites_de_dia_em_brt(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             agosto = await client.get(
-                "/emissoes", params={"inicio": "2026-08-01", "fim": "2026-08-31"},
+                "/api/emissoes", params={"inicio": "2026-08-01", "fim": "2026-08-31"},
                 headers={"Authorization": f"Bearer {token}"},
             )
             setembro = await client.get(
-                "/emissoes", params={"inicio": "2026-09-01", "fim": "2026-09-30"},
+                "/api/emissoes", params={"inicio": "2026-09-01", "fim": "2026-09-30"},
                 headers={"Authorization": f"Bearer {token}"},
             )
         assert [item["id"] for item in agosto.json()] == [str(emissao.id)]
@@ -166,7 +166,7 @@ async def test_baixar_pdf_usa_fallback_quando_adn_nao_responde(db_session, monke
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.get(
-                f"/emissoes/{emissao.id}/pdf", headers={"Authorization": f"Bearer {token}"}
+                f"/api/emissoes/{emissao.id}/pdf", headers={"Authorization": f"Bearer {token}"}
             )
         assert resposta.status_code == 200
         assert resposta.content.startswith(b"%PDF")

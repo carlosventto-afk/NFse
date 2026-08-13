@@ -11,7 +11,7 @@ from app.config import Settings, get_settings
 from app.db import get_db
 from app.models import PapelUsuario, Usuario
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
 @dataclass

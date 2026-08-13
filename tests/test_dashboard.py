@@ -39,7 +39,7 @@ async def test_dashboard_soma_valores_por_status(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.get(
-                "/dashboard", params={"inicio": "2026-08-01", "fim": "2026-08-31"},
+                "/api/dashboard", params={"inicio": "2026-08-01", "fim": "2026-08-31"},
                 headers={"Authorization": f"Bearer {token}"},
             )
         assert resposta.status_code == 200
@@ -70,11 +70,11 @@ async def test_dashboard_usa_limites_de_dia_em_brt(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             agosto = await client.get(
-                "/dashboard", params={"inicio": "2026-08-01", "fim": "2026-08-31"},
+                "/api/dashboard", params={"inicio": "2026-08-01", "fim": "2026-08-31"},
                 headers={"Authorization": f"Bearer {token}"},
             )
             setembro = await client.get(
-                "/dashboard", params={"inicio": "2026-09-01", "fim": "2026-09-30"},
+                "/api/dashboard", params={"inicio": "2026-09-01", "fim": "2026-09-30"},
                 headers={"Authorization": f"Bearer {token}"},
             )
         assert agosto.json()["total_autorizado"] == "50.00"

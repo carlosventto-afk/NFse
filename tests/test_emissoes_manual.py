@@ -30,7 +30,7 @@ async def test_emissao_manual_reserva_numero_e_cria_pendente(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/emissoes/manual",
+                "/api/emissoes/manual",
                 json={
                     "cpf_cnpj": "98765432100", "nome": "Cliente Manual",
                     "descricao": "Lavagem de edredom", "valor": "35.00",
@@ -57,7 +57,7 @@ async def test_emissao_manual_com_cpf_invalido_nao_reserva_numero(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/emissoes/manual",
+                "/api/emissoes/manual",
                 json={
                     "cpf_cnpj": "123", "nome": "Cliente Invalido",
                     "descricao": "Lavagem", "valor": "10.00", "competencia": "2026-08-01",
@@ -99,7 +99,7 @@ async def test_emissao_manual_recusa_campo_maior_que_a_coluna_com_422(
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/emissoes/manual", json=corpo,
+                "/api/emissoes/manual", json=corpo,
                 headers={"Authorization": f"Bearer {token}"},
             )
         assert resposta.status_code == 422
@@ -119,7 +119,7 @@ async def test_emissao_manual_sem_documento_do_tomador_e_aceita(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/emissoes/manual",
+                "/api/emissoes/manual",
                 json={
                     "nome": "Cliente Sem Documento",
                     "descricao": "Lavagem", "valor": "10.00", "competencia": "2026-08-01",
@@ -150,7 +150,7 @@ async def test_listar_emissoes_sem_empresa_ativa_devolve_409(db_session):
     try:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resposta = await client.get("/emissoes", headers={"Authorization": f"Bearer {token}"})
+            resposta = await client.get("/api/emissoes", headers={"Authorization": f"Bearer {token}"})
         assert resposta.status_code == 409
     finally:
         app.dependency_overrides.clear()

@@ -23,11 +23,11 @@ async def test_login_com_uma_empresa_so_ja_sai_com_empresa_ativa(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/auth/login", data={"username": "unica@teste.com", "password": "senha-forte-123"}
+                "/api/auth/login", data={"username": "unica@teste.com", "password": "senha-forte-123"}
             )
             assert resposta.status_code == 200
             empresas = await client.get(
-                "/auth/empresas",
+                "/api/auth/empresas",
                 headers={"Authorization": f"Bearer {resposta.json()['access_token']}"},
             )
     finally:
@@ -47,7 +47,7 @@ async def test_login_com_senha_errada_devolve_401(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/auth/login", data={"username": "admin2@teste.com", "password": "errada"}
+                "/api/auth/login", data={"username": "admin2@teste.com", "password": "errada"}
             )
         assert resposta.status_code == 401
     finally:
@@ -65,7 +65,7 @@ async def test_login_com_senha_absurdamente_longa_devolve_401_e_nao_500(db_sessi
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/auth/login", data={"username": "admin5@teste.com", "password": "x" * 500}
+                "/api/auth/login", data={"username": "admin5@teste.com", "password": "x" * 500}
             )
         assert resposta.status_code == 401
     finally:
@@ -96,19 +96,19 @@ async def test_login_com_duas_empresas_nao_sai_com_empresa_ativa_ate_trocar(db_s
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             login = await client.post(
-                "/auth/login", data={"username": "multi@teste.com", "password": "senha-forte-123"}
+                "/api/auth/login", data={"username": "multi@teste.com", "password": "senha-forte-123"}
             )
             token_sem_empresa = login.json()["access_token"]
 
             listagem = await client.get(
-                "/auth/empresas", headers={"Authorization": f"Bearer {token_sem_empresa}"}
+                "/api/auth/empresas", headers={"Authorization": f"Bearer {token_sem_empresa}"}
             )
             assert {item["empresa_id"] for item in listagem.json()} == {
                 str(empresa_a.id), str(empresa_b.id),
             }
 
             troca = await client.post(
-                "/auth/trocar-empresa",
+                "/api/auth/trocar-empresa",
                 json={"empresa_id": str(empresa_b.id)},
                 headers={"Authorization": f"Bearer {token_sem_empresa}"},
             )
@@ -137,7 +137,7 @@ async def test_trocar_empresa_sem_vinculo_devolve_403(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/auth/trocar-empresa",
+                "/api/auth/trocar-empresa",
                 json={"empresa_id": str(empresa_alheia.id)},
                 headers={"Authorization": f"Bearer {token}"},
             )

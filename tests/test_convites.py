@@ -42,7 +42,7 @@ async def test_admin_plataforma_convida_titular_e_convite_e_criado(db_session, m
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/convites",
+                "/api/convites",
                 json={"email": "titular@teste.com", "plano_id": str(plano.id)},
                 headers={"Authorization": f"Bearer {token}"},
             )
@@ -76,7 +76,7 @@ async def test_aceitar_convite_de_titular_cria_usuario_com_plano_sem_vinculo_de_
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/convites/aceitar", json={"token": "token-titular-123", "senha": "senha-nova-123"}
+                "/api/convites/aceitar", json={"token": "token-titular-123", "senha": "senha-nova-123"}
             )
         assert resposta.status_code == 200
     finally:
@@ -109,7 +109,7 @@ async def test_admin_de_empresa_convida_operador_para_a_empresa_ativa(db_session
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/convites",
+                "/api/convites",
                 json={"email": "operador@teste.com", "papel": "operador"},
                 headers={"Authorization": f"Bearer {token}"},
             )
@@ -132,7 +132,7 @@ async def test_operador_nao_pode_convidar(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/convites",
+                "/api/convites",
                 json={"email": "x@teste.com", "papel": "operador"},
                 headers={"Authorization": f"Bearer {token}"},
             )
@@ -157,7 +157,7 @@ async def test_aceitar_convite_de_email_novo_cria_usuario_e_vinculo(db_session, 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/convites/aceitar",
+                "/api/convites/aceitar",
                 json={"token": "token-de-teste-123", "senha": "senha-nova-123"},
             )
         assert resposta.status_code == 200
@@ -200,7 +200,7 @@ async def test_aceitar_convite_de_usuario_existente_nao_pede_senha(db_session):
     try:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resposta = await client.post("/convites/aceitar", json={"token": "token-existente-123"})
+            resposta = await client.post("/api/convites/aceitar", json={"token": "token-existente-123"})
         assert resposta.status_code == 200
     finally:
         app.dependency_overrides.clear()
@@ -231,7 +231,7 @@ async def test_aceitar_convite_expirado_devolve_400(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/convites/aceitar", json={"token": "token-expirado-123", "senha": "senha-nova-123"}
+                "/api/convites/aceitar", json={"token": "token-expirado-123", "senha": "senha-nova-123"}
             )
         assert resposta.status_code == 400
     finally:
@@ -255,11 +255,11 @@ async def test_novo_convite_para_o_mesmo_email_invalida_o_anterior(db_session, m
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             primeiro = await client.post(
-                "/convites", json={"email": "x@teste.com", "papel": "operador"},
+                "/api/convites", json={"email": "x@teste.com", "papel": "operador"},
                 headers={"Authorization": f"Bearer {token}"},
             )
             await client.post(
-                "/convites", json={"email": "x@teste.com", "papel": "admin"},
+                "/api/convites", json={"email": "x@teste.com", "papel": "admin"},
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:

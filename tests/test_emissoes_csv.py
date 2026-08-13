@@ -45,7 +45,7 @@ async def test_preview_csv_nao_grava_nada_e_devolve_resumo_correto(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/emissoes/csv/preview",
+                "/api/emissoes/csv/preview",
                 files={"arquivo": ("relatorio.csv", conteudo, "text/csv")},
                 headers={"Authorization": f"Bearer {token}"},
             )
@@ -81,7 +81,7 @@ async def test_confirmar_csv_cria_emissoes_pendentes_com_numero_reservado(db_ses
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/emissoes/csv/confirmar",
+                "/api/emissoes/csv/confirmar",
                 files={"arquivo": ("relatorio.csv", conteudo, "text/csv")},
                 headers={"Authorization": f"Bearer {token}"},
             )
@@ -120,12 +120,12 @@ async def test_confirmar_csv_duas_vezes_nao_duplica_nem_reserva_numero_de_novo(d
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             primeira = await client.post(
-                "/emissoes/csv/confirmar",
+                "/api/emissoes/csv/confirmar",
                 files={"arquivo": ("relatorio.csv", conteudo, "text/csv")},
                 headers={"Authorization": f"Bearer {token}"},
             )
             segunda = await client.post(
-                "/emissoes/csv/confirmar",
+                "/api/emissoes/csv/confirmar",
                 files={"arquivo": ("relatorio.csv", conteudo, "text/csv")},
                 headers={"Authorization": f"Bearer {token}"},
             )
@@ -162,12 +162,12 @@ async def test_confirmar_csv_nao_cruza_dedupe_nem_visibilidade_entre_empresas(db
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta_a = await client.post(
-                "/emissoes/csv/confirmar",
+                "/api/emissoes/csv/confirmar",
                 files={"arquivo": ("relatorio.csv", conteudo, "text/csv")},
                 headers={"Authorization": f"Bearer {token_a}"},
             )
             resposta_b = await client.post(
-                "/emissoes/csv/confirmar",
+                "/api/emissoes/csv/confirmar",
                 files={"arquivo": ("relatorio.csv", conteudo, "text/csv")},
                 headers={"Authorization": f"Bearer {token_b}"},
             )
@@ -195,7 +195,7 @@ async def test_csv_com_cabecalho_invalido_devolve_400_sem_gravar_nada(db_session
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/emissoes/csv/confirmar",
+                "/api/emissoes/csv/confirmar",
                 files={"arquivo": ("relatorio.csv", conteudo, "text/csv")},
                 headers={"Authorization": f"Bearer {token}"},
             )

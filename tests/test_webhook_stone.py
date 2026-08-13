@@ -43,7 +43,7 @@ async def test_webhook_stone_cria_emissao_pendente_sem_documento_do_tomador(db_s
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                f"/webhooks/stone/{empresa.id}",
+                f"/api/webhooks/stone/{empresa.id}",
                 json={
                     "type": "charge.paid",
                     "id": "ch_abc123",
@@ -80,11 +80,11 @@ async def test_webhook_stone_e_idempotente(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             primeira = await client.post(
-                f"/webhooks/stone/{empresa.id}", json=payload,
+                f"/api/webhooks/stone/{empresa.id}", json=payload,
                 headers={"X-Webhook-Token": "token-secreto"},
             )
             segunda = await client.post(
-                f"/webhooks/stone/{empresa.id}", json=payload,
+                f"/api/webhooks/stone/{empresa.id}", json=payload,
                 headers={"X-Webhook-Token": "token-secreto"},
             )
         assert primeira.status_code == 200
@@ -150,7 +150,7 @@ async def test_webhook_stone_rejeita_empresa_id_nao_uuid_com_422(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/webhooks/stone/nao-e-um-uuid",
+                "/api/webhooks/stone/nao-e-um-uuid",
                 json={"type": "charge.paid", "id": "x", "amount": 100,
                       "customer": {"id": "1", "name": "A"}},
                 headers={"X-Webhook-Token": "token-secreto"},
@@ -172,7 +172,7 @@ async def test_webhook_stone_devolve_400_para_payload_malformado(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                f"/webhooks/stone/{empresa.id}",
+                f"/api/webhooks/stone/{empresa.id}",
                 json={"type": "charge.paid", "id": "ch_sem_customer", "amount": 100},
                 headers={"X-Webhook-Token": "token-secreto"},
             )
@@ -199,7 +199,7 @@ async def test_webhook_stone_trunca_nome_do_tomador_no_tamanho_da_coluna(db_sess
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                f"/webhooks/stone/{empresa.id}",
+                f"/api/webhooks/stone/{empresa.id}",
                 json={"type": "charge.paid", "id": "ch_nome_longo", "amount": 4990,
                       "customer": {"id": "cus_1", "name": nome_gigante}},
                 headers={"X-Webhook-Token": "token-secreto"},
@@ -227,7 +227,7 @@ async def test_webhook_stone_rejeita_token_longo_sem_estourar_500(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                f"/webhooks/stone/{empresa.id}",
+                f"/api/webhooks/stone/{empresa.id}",
                 json={"type": "charge.paid", "id": "x", "amount": 100,
                       "customer": {"id": "1", "name": "A"}},
                 headers={"X-Webhook-Token": "T" * 200},
@@ -246,7 +246,7 @@ async def test_webhook_stone_rejeita_token_errado(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                f"/webhooks/stone/{empresa.id}",
+                f"/api/webhooks/stone/{empresa.id}",
                 json={"type": "charge.paid", "id": "x", "amount": 100, "customer": {"id": "1", "name": "A"}},
                 headers={"X-Webhook-Token": "token-errado"},
             )

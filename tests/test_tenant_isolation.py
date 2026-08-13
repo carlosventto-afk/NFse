@@ -70,10 +70,10 @@ async def test_listagem_nao_mostra_emissao_de_outra_empresa(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             de_b = await client.get(
-                "/emissoes", headers={"Authorization": f"Bearer {criar_token(usuario_b, empresa_id=empresa_b.id, papel=PapelUsuario.admin)}"}
+                "/api/emissoes", headers={"Authorization": f"Bearer {criar_token(usuario_b, empresa_id=empresa_b.id, papel=PapelUsuario.admin)}"}
             )
             de_a = await client.get(
-                "/emissoes", headers={"Authorization": f"Bearer {criar_token(usuario_a, empresa_id=empresa_a.id, papel=PapelUsuario.admin)}"}
+                "/api/emissoes", headers={"Authorization": f"Bearer {criar_token(usuario_a, empresa_id=empresa_a.id, papel=PapelUsuario.admin)}"}
             )
         assert de_b.status_code == 200
         assert de_b.json() == []  # a emissao existe no banco, mas nao e da B
@@ -91,11 +91,11 @@ async def test_download_de_xml_de_outra_empresa_devolve_404(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             de_b = await client.get(
-                f"/emissoes/{emissao_de_a.id}/xml",
+                f"/api/emissoes/{emissao_de_a.id}/xml",
                 headers={"Authorization": f"Bearer {criar_token(usuario_b, empresa_id=empresa_b.id, papel=PapelUsuario.admin)}"},
             )
             de_a = await client.get(
-                f"/emissoes/{emissao_de_a.id}/xml",
+                f"/api/emissoes/{emissao_de_a.id}/xml",
                 headers={"Authorization": f"Bearer {criar_token(usuario_a, empresa_id=empresa_a.id, papel=PapelUsuario.admin)}"},
             )
         assert de_b.status_code == 404
@@ -126,11 +126,11 @@ async def test_download_de_pdf_de_outra_empresa_devolve_404(db_session, monkeypa
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             de_b = await client.get(
-                f"/emissoes/{emissao_de_a.id}/pdf",
+                f"/api/emissoes/{emissao_de_a.id}/pdf",
                 headers={"Authorization": f"Bearer {criar_token(usuario_b, empresa_id=empresa_b.id, papel=PapelUsuario.admin)}"},
             )
             de_a = await client.get(
-                f"/emissoes/{emissao_de_a.id}/pdf",
+                f"/api/emissoes/{emissao_de_a.id}/pdf",
                 headers={"Authorization": f"Bearer {criar_token(usuario_a, empresa_id=empresa_a.id, papel=PapelUsuario.admin)}"},
             )
         assert de_b.status_code == 404
@@ -153,11 +153,11 @@ async def test_dashboard_nao_soma_valores_de_outra_empresa(db_session):
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             periodo = {"inicio": "2020-01-01", "fim": "2030-12-31"}
             de_b = await client.get(
-                "/dashboard", params=periodo,
+                "/api/dashboard", params=periodo,
                 headers={"Authorization": f"Bearer {criar_token(usuario_b, empresa_id=empresa_b.id, papel=PapelUsuario.admin)}"},
             )
             de_a = await client.get(
-                "/dashboard", params=periodo,
+                "/api/dashboard", params=periodo,
                 headers={"Authorization": f"Bearer {criar_token(usuario_a, empresa_id=empresa_a.id, papel=PapelUsuario.admin)}"},
             )
         assert de_b.json()["total_autorizado"] == "0.00"
@@ -198,7 +198,7 @@ async def test_isolamento_atraves_de_troca_de_empresa_ativa(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             listagem = await client.get(
-                "/emissoes", headers={"Authorization": f"Bearer {token_ativo_em_b}"}
+                "/api/emissoes", headers={"Authorization": f"Bearer {token_ativo_em_b}"}
             )
         assert listagem.status_code == 200
         # mesmo titular, mas com B como empresa ativa: nao ve a nota da empresa A

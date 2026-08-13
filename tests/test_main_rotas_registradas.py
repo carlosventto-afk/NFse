@@ -12,22 +12,26 @@ def test_todas_as_rotas_esperadas_estao_registradas():
 
     esperadas = {
         "/health",
-        "/auth/login",
-        "/auth/empresas",
-        "/auth/trocar-empresa",
-        "/convites",
-        "/convites/aceitar",
-        "/webhooks/stone/{empresa_id}",
-        "/emissoes/manual",
-        "/emissoes",
-        "/emissoes/{emissao_id}/xml",
-        "/emissoes/{emissao_id}/pdf",
-        "/emissoes/csv/preview",
-        "/emissoes/csv/confirmar",
-        "/dashboard",
+        "/api/auth/login",
+        "/api/auth/empresas",
+        "/api/auth/trocar-empresa",
+        "/api/convites",
+        "/api/convites/aceitar",
+        "/api/webhooks/stone/{empresa_id}",
+        "/api/emissoes/manual",
+        "/api/emissoes",
+        "/api/emissoes/{emissao_id}/xml",
+        "/api/emissoes/{emissao_id}/pdf",
+        "/api/emissoes/csv/preview",
+        "/api/emissoes/csv/confirmar",
+        "/api/dashboard",
     }
     faltando = esperadas - caminhos
     assert not faltando, f"rotas nao registradas: {faltando}"
 
-    inesperadas = caminhos & {"/usuarios"}
-    assert not inesperadas, f"rota removida ainda presente: {inesperadas}"
+    inesperadas = {
+        c for c in caminhos
+        if c not in esperadas and c != "/health"
+        and not c.startswith("/openapi") and not c.startswith("/docs") and not c.startswith("/redoc")
+    }
+    assert not inesperadas, f"rotas sem prefixo /api ou inesperadas: {inesperadas}"
