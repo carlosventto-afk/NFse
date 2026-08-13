@@ -1,11 +1,14 @@
 """Bootstrap de uma empresa (fora da API — roda por quem tem o .pfx em mãos).
 
+O titular precisa já existir no sistema (criado por convite aceito — ver
+POST /convites) e ter um plano vinculado com limite de empresas disponível.
+
 Uso:
     python scripts/criar_empresa.py --cnpj 12345678000199 --im 123456 \
         --municipio 3550308 --regime 3 --cod-tributacao 140106 \
         --descricao "Servicos de lavagem de roupa" --ambiente homologacao \
         --pfx caminho/certificado.pfx --senha-certificado "..." \
-        --admin-email admin@empresa.com --admin-senha "..."
+        --titular-email titular@empresa.com
 """
 from __future__ import annotations
 
@@ -15,11 +18,12 @@ import base64
 import secrets
 from pathlib import Path
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crypto import cifrar, hash_senha
 from app.db import SessionLocal
-from app.models import AmbienteEnum, Empresa, PapelUsuario, Usuario
+from app.models import AmbienteEnum, Empresa, PapelUsuario, Plano, Usuario, UsuarioEmpresa
 from nfse_core import CertificateError, conferir_titularidade, inspecionar
 
 
@@ -36,9 +40,28 @@ async def criar_empresa(
     pfx_base64: str,
     senha_certificado: str,
     webhook_token: str,
-    admin_email: str,
-    admin_senha: str,
+    titular_email: str,
 ) -> Empresa:
+    titular = (
+        await session.execute(select(Usuario).where(Usuario.email == titular_email))
+    ).scalar_one_or_none()
+    if titular is None:
+        raise ValueError(f"Nenhum usuario encontrado com o e-mail {titular_email}")
+    if titular.plano_id is None:
+        raise ValueError(f"Usuario {titular_email} nao tem plano vinculado")
+
+    plano = await session.get(Plano, titular.plano_id)
+    empresas_do_titular = (
+        await session.execute(
+            select(func.count()).select_from(Empresa).where(Empresa.titular_id == titular.id)
+        )
+    ).scalar_one()
+    if empresas_do_titular >= plano.limite_empresas:
+        raise ValueError(
+            f"Titular {titular_email} ja atingiu o limite de {plano.limite_empresas} "
+            f"empresa(s) do plano {plano.nome}"
+        )
+
     try:
         info = inspecionar(pfx_base64, senha_certificado)
     except CertificateError as exc:
@@ -64,17 +87,12 @@ async def criar_empresa(
         certificado_senha_cifrada=cifrar(senha_certificado, fernet_key),
         certificado_valido_ate=info.valido_ate,
         webhook_token_hash=hash_senha(webhook_token),
+        titular_id=titular.id,
     )
     session.add(empresa)
     await session.flush()
 
-    admin = Usuario(
-        empresa_id=empresa.id,
-        email=admin_email,
-        senha_hash=hash_senha(admin_senha),
-        papel=PapelUsuario.admin,
-    )
-    session.add(admin)
+    session.add(UsuarioEmpresa(usuario_id=titular.id, empresa_id=empresa.id, papel=PapelUsuario.admin))
     await session.commit()
     await session.refresh(empresa)
     return empresa
@@ -97,8 +115,7 @@ async def _main() -> None:
     parser.add_argument("--ambiente", required=True, choices=["homologacao", "producao"])
     parser.add_argument("--pfx", required=True, type=Path, dest="pfx_path")
     parser.add_argument("--senha-certificado", required=True)
-    parser.add_argument("--admin-email", required=True)
-    parser.add_argument("--admin-senha", required=True)
+    parser.add_argument("--titular-email", required=True, dest="titular_email")
     parser.add_argument("--webhook-token", default=None)
     args = parser.parse_args()
 
@@ -118,8 +135,7 @@ async def _main() -> None:
             pfx_base64=pfx_base64,
             senha_certificado=args.senha_certificado,
             webhook_token=webhook_token,
-            admin_email=args.admin_email,
-            admin_senha=args.admin_senha,
+            titular_email=args.titular_email,
         )
 
     print(f"Empresa criada: {empresa.id} (CNPJ {empresa.cnpj})")
