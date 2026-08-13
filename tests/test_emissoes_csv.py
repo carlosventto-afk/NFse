@@ -207,3 +207,42 @@ async def test_csv_com_cabecalho_invalido_devolve_400_sem_gravar_nada(db_session
         await db_session.execute(select(Emissao).where(Emissao.empresa_id == empresa.id))
     ).scalars().all()
     assert total == []
+
+
+@pytest.mark.asyncio
+async def test_confirmar_csv_vincula_cliente_padrao_e_reutiliza_entre_importacoes(db_session):
+    from app.models import Cliente
+
+    empresa, token = await _empresa_e_usuario(db_session)
+    primeira = _csv("Venda;30/07/2026 14:30:04;31163337249888;1;1;27,980000;Pago")
+    segunda = _csv("Venda;30/07/2026 15:00:00;31163337249999;1;1;15,000000;Pago")
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.post(
+                "/api/emissoes/csv/confirmar",
+                files={"arquivo": ("relatorio1.csv", primeira, "text/csv")},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            await client.post(
+                "/api/emissoes/csv/confirmar",
+                files={"arquivo": ("relatorio2.csv", segunda, "text/csv")},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    clientes_padrao = (
+        await db_session.execute(
+            select(Cliente).where(Cliente.empresa_id == empresa.id, Cliente.eh_padrao_csv.is_(True))
+        )
+    ).scalars().all()
+    assert len(clientes_padrao) == 1
+
+    emissoes = (
+        await db_session.execute(select(Emissao).where(Emissao.empresa_id == empresa.id))
+    ).scalars().all()
+    assert len(emissoes) == 2
+    assert {e.cliente_id for e in emissoes} == {clientes_padrao[0].id}

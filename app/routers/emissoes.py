@@ -12,7 +12,7 @@ from app.config import Settings, get_settings
 from app.crypto import decifrar
 from app.danfe import gerar_danfse_fallback
 from app.db import get_db
-from app.models import AmbienteEnum, Emissao, Empresa, OrigemEmissao, StatusEmissao
+from app.models import AmbienteEnum, Cliente, Emissao, Empresa, OrigemEmissao, StatusEmissao
 from app.numeracao import reservar_proximo_numero
 from app.periodo import fim_do_dia_brt, inicio_do_dia_brt
 from app.schemas import EmissaoManualIn, EmissaoOut
@@ -137,6 +137,22 @@ async def baixar_pdf(
     return Response(content=pdf, media_type="application/pdf")
 
 
+async def _obter_ou_criar_cliente_padrao_csv(session: AsyncSession, empresa_id: uuid.UUID) -> Cliente:
+    cliente = (
+        await session.execute(
+            select(Cliente).where(Cliente.empresa_id == empresa_id, Cliente.eh_padrao_csv.is_(True))
+        )
+    ).scalar_one_or_none()
+    if cliente is None:
+        cliente = Cliente(
+            empresa_id=empresa_id, nome="Cliente nao identificado (importacao CSV)",
+            eh_padrao_csv=True,
+        )
+        session.add(cliente)
+        await session.flush()
+    return cliente
+
+
 async def _processar_csv(
     conteudo: bytes, contexto: ContextoAutenticado, session: AsyncSession, *, confirmar: bool,
 ) -> dict:
@@ -168,6 +184,7 @@ async def _processar_csv(
 
     if confirmar and notas_validas:
         empresa = await session.get(Empresa, contexto.empresa_id)
+        cliente_padrao = await _obter_ou_criar_cliente_padrao_csv(session, contexto.empresa_id)
         for nota in notas_validas:
             serie, numero = await reservar_proximo_numero(session, contexto.empresa_id)
             emissao = Emissao(
@@ -177,6 +194,7 @@ async def _processar_csv(
                 status=StatusEmissao.pendente,
                 serie=serie,
                 numero=numero,
+                cliente_id=cliente_padrao.id,
                 descricao=empresa.descricao_servico_padrao,
                 valor=nota.valor,
                 competencia=nota.data_da_venda.date().replace(day=1),
