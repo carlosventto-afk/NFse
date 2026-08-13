@@ -33,9 +33,14 @@ def test_todas_as_rotas_esperadas_estao_registradas():
     faltando = esperadas - caminhos
     assert not faltando, f"rotas nao registradas: {faltando}"
 
+    # /assets e /{caminho_completo:path} so existem quando frontend/dist/ ja
+    # foi gerado (npm run build) — condicional em app/main.py. Tolerados
+    # aqui porque a presenca depende do ambiente, nao sao rotas de API.
+    toleradas_spa = {"/assets", "/{caminho_completo:path}"}
+
     inesperadas = {
         c for c in caminhos
-        if c not in esperadas and c != "/health"
+        if c not in esperadas and c not in toleradas_spa
         and not c.startswith("/openapi") and not c.startswith("/docs") and not c.startswith("/redoc")
     }
     assert not inesperadas, f"rotas sem prefixo /api ou inesperadas: {inesperadas}"
