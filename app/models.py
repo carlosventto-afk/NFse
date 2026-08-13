@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import (
-    Date, DateTime, ForeignKey, Index, LargeBinary, Numeric, String, Text, text,
+    Date, DateTime, ForeignKey, Index, LargeBinary, Numeric, String, Text, UniqueConstraint, text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -41,6 +41,15 @@ class PapelUsuario(str, enum.Enum):
     operador = "operador"
 
 
+class Plano(Base):
+    __tablename__ = "planos"
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    nome: Mapped[str] = mapped_column(String(100), nullable=False)
+    limite_empresas: Mapped[int] = mapped_column(nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_agora, nullable=False)
+
+
 class Empresa(Base):
     __tablename__ = "empresas"
 
@@ -60,23 +69,59 @@ class Empresa(Base):
     certificado_senha_cifrada: Mapped[str | None] = mapped_column(Text, nullable=True)
     certificado_valido_ate: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     webhook_token_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Responsavel pela licenca desta empresa — conta contra plano.limite_empresas
+    # do titular. Nullable no banco por decisao do plano de implementacao
+    # (docs/superpowers/plans/2026-08-12-multiempresa-licenciamento-plan.md) —
+    # a obrigatoriedade real vem de scripts/criar_empresa.py.
+    titular_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
     criada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_agora, nullable=False)
 
-    usuarios: Mapped[list["Usuario"]] = relationship(back_populates="empresa")
     emissoes: Mapped[list["Emissao"]] = relationship(back_populates="empresa")
+    usuario_empresas: Mapped[list["UsuarioEmpresa"]] = relationship(back_populates="empresa")
 
 
 class Usuario(Base):
     __tablename__ = "usuarios"
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    empresa_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("empresas.id"), nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     senha_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    eh_admin_plataforma: Mapped[bool] = mapped_column(default=False, nullable=False)
+    plano_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("planos.id"), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_agora, nullable=False)
+
+    usuario_empresas: Mapped[list["UsuarioEmpresa"]] = relationship(back_populates="usuario")
+
+
+class UsuarioEmpresa(Base):
+    __tablename__ = "usuario_empresas"
+    __table_args__ = (
+        UniqueConstraint("usuario_id", "empresa_id", name="uq_usuario_empresa"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    usuario_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("usuarios.id"), nullable=False)
+    empresa_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("empresas.id"), nullable=False)
     papel: Mapped[PapelUsuario] = mapped_column(String(20), nullable=False)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_agora, nullable=False)
 
-    empresa: Mapped["Empresa"] = relationship(back_populates="usuarios")
+    usuario: Mapped["Usuario"] = relationship(back_populates="usuario_empresas")
+    empresa: Mapped["Empresa"] = relationship(back_populates="usuario_empresas")
+
+
+class Convite(Base):
+    __tablename__ = "convites"
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    empresa_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("empresas.id"), nullable=True)
+    papel: Mapped[PapelUsuario | None] = mapped_column(String(20), nullable=True)
+    plano_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("planos.id"), nullable=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    expira_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    aceito_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    criado_por_usuario_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("usuarios.id"), nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_agora, nullable=False)
 
 
 class Emissao(Base):
