@@ -1,6 +1,6 @@
 import re
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -29,37 +29,43 @@ class TokenOut(BaseModel):
     token_type: str = "bearer"
 
 
-class UsuarioCriarIn(BaseModel):
+class ConviteCriarIn(BaseModel):
     email: EmailStr = Field(max_length=TAMANHO_EMAIL_USUARIO)
-    senha: str = Field(max_length=TAMANHO_SENHA_MAX)
-    papel: str = "operador"
-
-    @field_validator("senha")
-    @classmethod
-    def senha_minima(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("senha precisa ter ao menos 8 caracteres")
-        # O limite do bcrypt e em BYTES, nao em caracteres: 72 caracteres
-        # acentuados passam do `max_length` e ainda assim fariam `hash_senha`
-        # levantar ValueError (= 500) mais adiante.
-        if len(v.encode()) > TAMANHO_SENHA_MAX:
-            raise ValueError(f"senha nao pode passar de {TAMANHO_SENHA_MAX} bytes")
-        return v
+    papel: str | None = None
+    plano_id: uuid.UUID | None = None
 
     @field_validator("papel")
     @classmethod
-    def papel_valido(cls, v: str) -> str:
-        if v not in ("admin", "operador"):
+    def papel_valido(cls, v: str | None) -> str | None:
+        if v is not None and v not in ("admin", "operador"):
             raise ValueError("papel deve ser admin ou operador")
         return v
 
 
-class UsuarioOut(BaseModel):
+class ConviteOut(BaseModel):
     id: uuid.UUID
     email: str
-    papel: str
+    empresa_id: uuid.UUID | None
+    papel: str | None
+    expira_em: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ConviteAceitarIn(BaseModel):
+    token: str
+    senha: str | None = Field(default=None, max_length=TAMANHO_SENHA_MAX)
+
+    @field_validator("senha")
+    @classmethod
+    def senha_valida(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if len(v) < 8:
+            raise ValueError("senha precisa ter ao menos 8 caracteres")
+        if len(v.encode()) > TAMANHO_SENHA_MAX:
+            raise ValueError(f"senha nao pode passar de {TAMANHO_SENHA_MAX} bytes")
+        return v
 
 
 class EmpresaVinculadaOut(BaseModel):

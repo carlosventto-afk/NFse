@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     fernet_key: str
     jwt_secret: str
     jwt_ttl_horas: int = 8
+    smtp_host: str = "smtp.hostinger.com"
+    smtp_port: int = 465
+    smtp_user: str = ""
+    smtp_password: str = ""
+    app_base_url: str = "https://nfse.gestaotecnologia.com"
 
 
 @lru_cache
