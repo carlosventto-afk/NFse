@@ -124,6 +124,46 @@ class Convite(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_agora, nullable=False)
 
 
+class Cliente(Base):
+    __tablename__ = "clientes"
+    __table_args__ = (
+        Index(
+            "ix_clientes_empresa_cpf_cnpj",
+            "empresa_id", "cpf_cnpj",
+            unique=True,
+            postgresql_where=text("cpf_cnpj IS NOT NULL"),
+        ),
+        Index(
+            "ix_clientes_empresa_padrao_csv",
+            "empresa_id",
+            unique=True,
+            postgresql_where=text("eh_padrao_csv = true"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    empresa_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("empresas.id"), nullable=False)
+    cpf_cnpj: Mapped[str | None] = mapped_column(String(14), nullable=True)
+    nome: Mapped[str] = mapped_column(String(300), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    telefone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    inscricao_estadual: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    inscricao_municipal: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    logradouro: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    numero: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    complemento: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    bairro: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    municipio_ibge: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    uf: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    cep: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    eh_padrao_csv: Mapped[bool] = mapped_column(default=False, nullable=False)
+    ativo: Mapped[bool] = mapped_column(default=True, nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_agora, nullable=False)
+    atualizado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_agora, onupdate=_agora, nullable=False
+    )
+
+
 class Emissao(Base):
     __tablename__ = "emissoes"
     __table_args__ = (
@@ -137,6 +177,7 @@ class Emissao(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     empresa_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("empresas.id"), nullable=False)
+    cliente_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("clientes.id"), nullable=True)
     origem: Mapped[OrigemEmissao] = mapped_column(String(20), nullable=False)
     stone_charge_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     status: Mapped[StatusEmissao] = mapped_column(String(30), nullable=False)
