@@ -415,3 +415,71 @@ async def test_loop_worker_sobrevive_a_excecao_inesperada(monkeypatch, caplog):
 
     assert len(chamadas) == 2  # continuou depois da excecao da primeira volta
     assert any("inesperada" in registro.message for registro in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_processar_um_cancelamento_pendente_marca_cancelada_em_sucesso(db_session, monkeypatch):
+    emissao = await _empresa_e_emissao_pendente(db_session)
+    emissao.status = StatusEmissao.cancelamento_pendente
+    emissao.chave_acesso = "1" * 50
+    emissao.motivo_cancelamento = "Servico nao prestado"
+    await db_session.commit()
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def registrar_evento(self, chave_acesso, evento_xml_assinado):
+            return {"_http_status": 200}
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(worker, "sign_evento", lambda xml, pfx, senha: b"<evento assinado/>")
+    monkeypatch.setattr(worker, "SefinClient", ClienteFalso)
+    monkeypatch.setattr(
+        worker, "ler_resposta_evento",
+        lambda bruta: worker.RespostaEvento(registrado=True, http_status=200),
+    )
+
+    processou = await worker.processar_um_cancelamento_pendente(db_session)
+
+    assert processou is True
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.cancelada
+    assert emissao.cancelada_em is not None
+
+
+@pytest.mark.asyncio
+async def test_processar_um_cancelamento_pendente_marca_erro_em_falha_de_transporte(db_session, monkeypatch):
+    emissao = await _empresa_e_emissao_pendente(db_session)
+    emissao.status = StatusEmissao.cancelamento_pendente
+    emissao.chave_acesso = "1" * 50
+    emissao.motivo_cancelamento = "Servico nao prestado"
+    await db_session.commit()
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def registrar_evento(self, chave_acesso, evento_xml_assinado):
+            raise SefinError("falha de rede")
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(worker, "sign_evento", lambda xml, pfx, senha: b"<evento assinado/>")
+    monkeypatch.setattr(worker, "SefinClient", ClienteFalso)
+
+    processou = await worker.processar_um_cancelamento_pendente(db_session)
+
+    assert processou is True
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.erro_cancelamento
+
+
+@pytest.mark.asyncio
+async def test_processar_um_cancelamento_pendente_devolve_falso_quando_fila_vazia(db_session):
+    processou = await worker.processar_um_cancelamento_pendente(db_session)
+
+    assert processou is False

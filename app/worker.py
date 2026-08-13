@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 
 from cryptography.fernet import InvalidToken
 from sqlalchemy import select
@@ -12,11 +13,16 @@ from app.crypto import decifrar
 from app.models import AmbienteEnum, Emissao, Empresa, StatusEmissao
 from nfse_core import (
     CertificateError,
+    EventoCancelamentoData,
+    RespostaEvento,
     SefinClient,
     SefinError,
     build_dps_xml,
+    build_evento_cancelamento_xml,
     ler_resposta_emissao,
+    ler_resposta_evento,
     sign_dps,
+    sign_evento,
 )
 
 logger = logging.getLogger(__name__)
@@ -166,18 +172,95 @@ async def processar_uma_pendente(session: AsyncSession, settings: Settings | Non
     return True
 
 
+async def _marcar_erro_cancelamento(session: AsyncSession, emissao: Emissao, codigo: str, titulo: str) -> None:
+    emissao.status = StatusEmissao.erro_cancelamento
+    emissao.erros = json.dumps([{"codigo": codigo, "titulo": titulo}], ensure_ascii=False)
+    await session.commit()
+
+
+async def processar_um_cancelamento_pendente(session: AsyncSession, settings: Settings | None = None) -> bool:
+    """Processa uma emissao 'cancelamento_pendente' (se houver). Retorna True se processou.
+
+    Espelha processar_uma_pendente: SELECT ... FOR UPDATE SKIP LOCKED,
+    exceptions isoladas por linha (nunca derruba o loop inteiro).
+    """
+    settings = settings or get_settings()
+
+    stmt = (
+        select(Emissao)
+        .where(Emissao.status == StatusEmissao.cancelamento_pendente)
+        .order_by(Emissao.criada_em)
+        .limit(1)
+        .with_for_update(skip_locked=True)
+    )
+    emissao = (await session.execute(stmt)).scalar_one_or_none()
+    if emissao is None:
+        return False
+
+    empresa = await session.get(Empresa, emissao.empresa_id)
+
+    try:
+        pfx_base64 = decifrar(empresa.certificado_pfx_cifrado, settings.fernet_key)
+        senha = (
+            decifrar(empresa.certificado_senha_cifrada, settings.fernet_key)
+            if empresa.certificado_senha_cifrada
+            else None
+        )
+
+        evento_data = EventoCancelamentoData(
+            chave_nfse=emissao.chave_acesso,
+            tp_amb=1 if AmbienteEnum(empresa.ambiente) == AmbienteEnum.producao else 2,
+            dh_evento=datetime.now(timezone.utc),
+            autor_cpf_cnpj=empresa.cnpj,
+            x_motivo=emissao.motivo_cancelamento or "",
+        )
+        xml_evento = build_evento_cancelamento_xml(evento_data)
+        assinado = sign_evento(xml_evento, pfx_base64, senha)
+
+        cliente = SefinClient(AmbienteEnum(empresa.ambiente).value, pfx_base64, senha)
+        try:
+            bruta = await cliente.registrar_evento(emissao.chave_acesso, assinado)
+        finally:
+            await cliente.close()
+    except SefinError as exc:
+        await _marcar_erro_cancelamento(session, emissao, "TRANSPORTE", str(exc))
+        return True
+    except (CertificateError, InvalidToken, ValueError) as exc:
+        detalhe = str(exc) or (
+            "certificado cifrado desta empresa nao pode ser decifrado com a "
+            "FERNET_KEY atual (recadastre o certificado)"
+        )
+        await _marcar_erro_cancelamento(session, emissao, "CERTIFICADO_OU_DADOS", detalhe)
+        return True
+
+    resultado = ler_resposta_evento(bruta)
+    if resultado.registrado:
+        emissao.status = StatusEmissao.cancelada
+        emissao.cancelada_em = datetime.now(timezone.utc)
+    else:
+        emissao.status = StatusEmissao.erro_cancelamento
+        emissao.erros = json.dumps(resultado.erros, ensure_ascii=False)
+
+    await session.commit()
+    return True
+
+
 async def loop_worker(session_factory: async_sessionmaker, intervalo_segundos: float = 5.0) -> None:
     while True:
         try:
             async with session_factory() as session:
-                processou = await processar_uma_pendente(session)
+                processou_emissao = await processar_uma_pendente(session)
+            async with session_factory() as session:
+                processou_cancelamento = await processar_um_cancelamento_pendente(session)
         except Exception:
             # Supervisao do loop, de proposito abrangente: o tratamento fino
             # (por tipo de erro, por linha) mora dentro de
-            # processar_uma_pendente. Aqui o unico objetivo e garantir que
-            # NENHUMA excecao inesperada — banco reiniciado, conexao derrubada,
-            # bug novo — mate o processo e pare a emissao de todas as empresas.
-            logger.exception("falha inesperada ao processar emissao pendente; o loop continua")
-            processou = False
-        if not processou:
+            # processar_uma_pendente/processar_um_cancelamento_pendente. Aqui
+            # o unico objetivo e garantir que NENHUMA excecao inesperada —
+            # banco reiniciado, conexao derrubada, bug novo — mate o processo
+            # e pare a emissao/cancelamento de todas as empresas.
+            logger.exception("falha inesperada ao processar fila pendente; o loop continua")
+            processou_emissao = False
+            processou_cancelamento = False
+        if not processou_emissao and not processou_cancelamento:
             await asyncio.sleep(intervalo_segundos)
