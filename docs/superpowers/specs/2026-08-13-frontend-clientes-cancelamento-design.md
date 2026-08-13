@@ -97,7 +97,7 @@ Tabela `clientes`, escopada por `empresa_id` (mesmo padrão de `Emissao`).
 |---|---|---|
 | `id` | UUID | sim |
 | `empresa_id` | UUID (FK) | sim |
-| `cpf_cnpj` | String(14) | sim |
+| `cpf_cnpj` | String(14) | não |
 | `nome` | String(300) | sim |
 | `email` | String(80) | não |
 | `telefone` | String(20) | não |
@@ -110,37 +110,66 @@ Tabela `clientes`, escopada por `empresa_id` (mesmo padrão de `Emissao`).
 | `municipio_ibge` | String(7) | não |
 | `uf` | String(2) | não |
 | `cep` | String(8) | não |
+| `eh_padrao_csv` | bool, default `false` | sim |
 | `ativo` | bool, default `true` | sim |
 | `criado_em` / `atualizado_em` | timestamptz | sim |
 
-Restrição única em `(empresa_id, cpf_cnpj)`. `Emissao` ganha
-`cliente_id: uuid.UUID | None` (FK para `clientes`, nullable) — preenchido
-quando a emissão é vinculada a um cliente cadastrado. A importação de CSV
-**não** popula nem vincula `Cliente` automaticamente (confirmado: o
-relatório da Stone normalmente não traz esse dado, e isso não vai ser o
-caso comum).
+`cpf_cnpj` é nullable — o CSV da Stone não traz identificação do cliente
+(confirmado: o layout real, `CATEGORIA;DATA DA VENDA;STONE ID;QTD DE
+PARCELAS;Nº DA PARCELA;VALOR BRUTO;ÚLTIMO STATUS`, não tem coluna de
+CPF/CNPJ), então toda emissão importada precisa de um cliente sem
+documento. Restrição única em `(empresa_id, cpf_cnpj)` **quando `cpf_cnpj`
+não é nulo** (índice único parcial — mesmo padrão já usado em
+`Emissao.stone_charge_id`). `eh_padrao_csv` marca o cliente-genérico
+reutilizado pela importação (ver abaixo); único por empresa, garantido por
+um segundo índice único parcial em `empresa_id WHERE eh_padrao_csv = true`.
+
+`Emissao` ganha `cliente_id: uuid.UUID | None` (FK para `clientes`,
+nullable). A confirmação da importação de CSV (`POST
+/api/emissoes/csv/confirmar`) busca o `Cliente` com `eh_padrao_csv=true`
+da empresa — criando um na primeira vez, com `nome="Cliente não
+identificado (importação CSV)"` e todos os demais campos vazios — e grava
+esse id em `cliente_id` de toda emissão criada na importação. Não existe
+nesta fase nenhum fluxo que vincule um cliente **com dados reais** a uma
+emissão específica (ver "Extensão do DPS Builder" abaixo sobre a
+consequência disso).
 
 Não há endpoint de exclusão — "inativar" é `ativo=false` via o mesmo
 endpoint de atualização (`PUT /api/clientes/{id}`), preservando histórico
-de emissões que já referenciam o cliente.
+de emissões que já referenciam o cliente. O cliente-padrão do CSV nunca
+aparece na tela de cadastro de clientes (a listagem filtra
+`eh_padrao_csv=false` por padrão).
 
 ## Extensão do DPS Builder (`nfse_core/dps.py`)
 
 `DpsData` ganha campos de endereço do tomador (`toma_end_logradouro`,
 `toma_end_numero`, `toma_end_complemento`, `toma_end_bairro`,
-`toma_end_municipio_ibge`, `toma_end_uf`, `toma_end_cep`), todos opcionais.
+`toma_end_municipio_ibge`, `toma_end_uf`, `toma_end_cep`), todos opcionais
+— mesmo padrão dos campos de tomador já existentes (`toma_cpf_cnpj`,
+`toma_nome`, `toma_email`), que também são opcionais e testados assim.
 `build_dps_xml` monta um bloco `<end>` dentro de `<toma>` quando pelo menos
 `toma_end_logradouro` e `toma_end_municipio_ibge` estiverem presentes —
 espelhando a estrutura `<end>` já usada pelo padrão ABRASF/NFS-e Nacional
-para endereço de tomador.
+para endereço de tomador. Isso é testado diretamente em `nfse_core`
+(função pura, sem dependência de banco/HTTP), do mesmo jeito que o resto
+do módulo — **não depende de nenhum caller em `app/`** para ser válido.
+
+**Escopo explicitamente cortado nesta fase:** nada em `app/` (nem
+`app/worker.py`, nem `app/adapters/dps_builder.py`) lê `Cliente` para
+popular esses campos. Como a única forma de `Emissao.cliente_id` ser
+preenchida hoje é o cliente-padrão do CSV (sempre com dados fiscais
+vazios), não existe cenário real em que o worker precisaria montar esse
+bloco — conectar `Cliente` ao worker fica para quando houver um fluxo real
+de vincular um cliente **específico e com dados completos** a uma emissão.
+`app/adapters/dps_builder.py` continua montando `DadosEmissao` só a partir
+de `Emissao.tomador_cpf_cnpj/nome/email`, como hoje.
 
 **Risco assumido (ver "Riscos" abaixo):** o kit vendorizado nunca
-implementou esse bloco — não há precedente de código para copiar os nomes
-exatos de tag/atributo, então a implementação segue o meu entendimento do
-leiaute nacional e **precisa ser validada contra a documentação oficial ou
-um envio de teste em homologação** antes de ir para produção. É aditivo e
-opcional: não quebra o fluxo de CSV (que emite sem tomador) nem o de
-manual sem cliente vinculado.
+implementou o bloco `<end>` — não há precedente de código para copiar os
+nomes exatos de tag/atributo, então a implementação segue o meu
+entendimento do leiaute nacional e **precisa ser validada contra a
+documentação oficial ou um envio de teste em homologação** antes de
+qualquer emissão real vier a usá-la.
 
 ## Cancelamento de nota
 
@@ -176,18 +205,21 @@ Segue o mesmo padrão assíncrono já usado para emissão (`app/worker.py`):
   criando dentro do seu limite de plano — mesma regra do CLI).
 - `POST /api/clientes`, `GET /api/clientes`, `GET /api/clientes/{id}`,
   `PUT /api/clientes/{id}` — qualquer usuário com empresa ativa (não exige
-  admin; cadastro de cliente é operacional).
+  admin; cadastro de cliente é operacional). `GET /api/clientes` sempre
+  exclui o cliente-padrão do CSV (`eh_padrao_csv=true`) da listagem.
 - `POST /api/emissoes/{id}/cancelar` — exige admin da empresa.
 - Todos os routers existentes passam a responder sob `/api/*` (ver
   "Arquitetura do frontend").
 
 ## Migração
 
-Uma migração Alembic cobre: tabela `clientes`, coluna `Emissao.cliente_id`
-(FK nullable), colunas `Emissao.motivo_cancelamento`/`cancelada_em`, e os
-dois valores novos de `StatusEmissao` (coluna `String`, sem `CHECK`
-constraint de banco — o enum é só Python, mesma modelagem já usada para os
-valores existentes).
+Uma migração Alembic cobre: tabela `clientes` (com os dois índices únicos
+parciais — `(empresa_id, cpf_cnpj) WHERE cpf_cnpj IS NOT NULL` e
+`empresa_id WHERE eh_padrao_csv = true`), coluna `Emissao.cliente_id` (FK
+nullable), colunas `Emissao.motivo_cancelamento`/`cancelada_em`, e os dois
+valores novos de `StatusEmissao` (coluna `String`, sem `CHECK` constraint
+de banco — o enum é só Python, mesma modelagem já usada para os valores
+existentes).
 
 ## Riscos e decisões em aberto
 
@@ -209,8 +241,13 @@ valores existentes).
 
 ## Testes
 
-- `Cliente`: CRUD completo, unicidade de `(empresa_id, cpf_cnpj)`,
-  isolamento entre empresas (mesmo padrão de `test_tenant_isolation.py`).
+- `Cliente`: CRUD completo, unicidade de `(empresa_id, cpf_cnpj)` quando
+  não nulo, isolamento entre empresas (mesmo padrão de
+  `test_tenant_isolation.py`).
+- Importação de CSV: primeira confirmação cria o cliente-padrão
+  (`eh_padrao_csv=true`) e vincula `cliente_id` em toda emissão criada;
+  segunda confirmação (outra remessa) reutiliza o mesmo cliente-padrão em
+  vez de criar um novo.
 - `POST /api/emissoes/{id}/cancelar`: rejeita quando não `autorizada`,
   rejeita operador (só admin), grava motivo e muda status.
 - `processar_um_cancelamento_pendente`: sucesso marca `cancelada` com
@@ -219,7 +256,8 @@ valores existentes).
   já testado para `processar_uma_pendente`).
 - `nfse_core/dps.py` estendido: XML gerado inclui `<end>` quando os campos
   mínimos estão presentes, omite quando ausentes (não quebra o caso sem
-  tomador).
+  tomador) — testado direto contra `build_dps_xml`, sem depender de nada
+  em `app/`.
 - `POST /api/empresas`: titular dentro do limite cria; acima do limite
   recusa (mesmas regras já testadas em `test_criar_empresa.py`, agora via
   HTTP).
