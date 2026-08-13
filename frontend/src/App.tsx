@@ -4,6 +4,7 @@ import RotaProtegida from "./components/RotaProtegida";
 import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
 import SelecionarEmpresaPage from "./pages/SelecionarEmpresaPage";
+import AceitarConvitePage from "./pages/AceitarConvitePage";
 
 export default function App() {
   return (
@@ -11,6 +12,7 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/aceitar-convite" element={<AceitarConvitePage />} />
           <Route element={<RotaProtegida />}>
             <Route path="/selecionar-empresa" element={<SelecionarEmpresaPage />} />
             <Route element={<Layout />}>
