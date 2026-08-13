@@ -21,6 +21,11 @@ completo em `docs/superpowers/specs/2026-08-11-nfse-stone-webhook-design.md`.
    (rotas de negócio) e `http://localhost:8000/health` (health check, sem
    prefixo). O frontend (plano separado) espera exatamente esse prefixo.
 8. Em outro terminal, rode o worker: `python -c "import asyncio; from app.db import SessionLocal; from app.worker import loop_worker; asyncio.run(loop_worker(SessionLocal))"`
+9. Frontend em dev: `cd frontend && npm install && npm run dev` — abre em
+   `http://localhost:5173`, com proxy para a API em `8000`.
+10. Frontend em produção: `cd frontend && npm run build` — o FastAPI passa
+    a servir `frontend/dist/` automaticamente em `/` quando esse diretório
+    existir (nenhuma configuração adicional).
 
 ## Rodando os testes
 
