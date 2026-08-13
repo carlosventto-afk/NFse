@@ -5,6 +5,7 @@ import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
 import SelecionarEmpresaPage from "./pages/SelecionarEmpresaPage";
 import AceitarConvitePage from "./pages/AceitarConvitePage";
+import CadastroEmpresaPage from "./pages/CadastroEmpresaPage";
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
             <Route path="/selecionar-empresa" element={<SelecionarEmpresaPage />} />
             <Route element={<Layout />}>
               <Route path="/emissoes" element={<p>Emissoes (Task 8)</p>} />
+              <Route path="/cadastro-empresa" element={<CadastroEmpresaPage />} />
             </Route>
           </Route>
         </Routes>
