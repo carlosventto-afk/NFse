@@ -13,13 +13,21 @@ def test_todas_as_rotas_esperadas_estao_registradas():
     esperadas = {
         "/health",
         "/auth/login",
-        "/usuarios",
+        "/auth/empresas",
+        "/auth/trocar-empresa",
+        "/convites",
+        "/convites/aceitar",
         "/webhooks/stone/{empresa_id}",
         "/emissoes/manual",
         "/emissoes",
         "/emissoes/{emissao_id}/xml",
         "/emissoes/{emissao_id}/pdf",
+        "/emissoes/csv/preview",
+        "/emissoes/csv/confirmar",
         "/dashboard",
     }
     faltando = esperadas - caminhos
     assert not faltando, f"rotas nao registradas: {faltando}"
+
+    inesperadas = caminhos & {"/usuarios"}
+    assert not inesperadas, f"rota removida ainda presente: {inesperadas}"

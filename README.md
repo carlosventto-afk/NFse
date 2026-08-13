@@ -11,7 +11,12 @@ completo em `docs/superpowers/specs/2026-08-11-nfse-stone-webhook-design.md`.
 3. Copie `.env.example` para `.env` e preencha `FERNET_KEY`/`JWT_SECRET` (comandos no próprio `.env.example`).
 4. `pip install -r requirements-dev.txt`
 5. `alembic upgrade head`
-6. Cadastre a primeira empresa: `python scripts/criar_empresa.py --cnpj ... --pfx caminho/certificado.pfx ...` (veja `--help`)
+6. Cadastre o primeiro ADM da plataforma e um plano diretamente no banco
+   (não há UI para isso ainda), depois convide um titular
+   (`POST /convites` com `plano_id`), aceite o convite
+   (`POST /convites/aceitar`), e só então cadastre a empresa:
+   `python scripts/criar_empresa.py --cnpj ... --pfx caminho/certificado.pfx
+   --titular-email titular@empresa.com ...` (veja `--help`)
 7. `uvicorn app.main:app --reload` — API em `http://localhost:8000`
 8. Em outro terminal, rode o worker: `python -c "import asyncio; from app.db import SessionLocal; from app.worker import loop_worker; asyncio.run(loop_worker(SessionLocal))"`
 
@@ -25,6 +30,10 @@ Exige o Postgres do `docker compose` no ar (banco `nfse_test`).
 
 ## Checklist antes da primeira nota real (fora do automatizável por teste)
 
+- [ ] Cadastrar ao menos um `Plano` (tabela `planos`) e um usuário com
+  `eh_admin_plataforma=true` diretamente no banco antes do primeiro uso —
+  não há endpoint para isso ainda (é o primeiro operador humano da
+  plataforma; convites exigem alguém já com essa permissão).
 - [ ] `python nfse-nacional-kit/nfse-nacional-kit/exemplos/00_teste_local.py` — smoke test do núcleo fiscal, sem rede.
 - [ ] **Confirmar contra a SEFIN Nacional real (homologação) que a emissão sem documento do tomador é aceita** — o ajuste da Task 7 replica o que a prefeitura de Belém/PA aceitou, mas isso nunca foi testado contra o validador do Sistema Nacional. Se for rejeitado, o fallback é coletar o documento antes de emitir (ex: reativar um formulário de complemento no portal) — mas só decida isso depois do teste real, não antes.
 - [ ] **`regApTribSN` (regime de apuração do Simples Nacional) ainda NÃO é configurável** — `app/adapters/dps_builder.py` nunca preenche `DpsData.reg_ap_trib_sn`, e o próprio `nfse_core/dps.py` documenta o campo como "obrigatório quando opSimpNac=3". A empresa deste projeto está cadastrada com `op_simp_nac=3` (optante ME/EPP), ou seja, cai exatamente nesse caso. A lacuna vem do exemplo incompleto do kit vendorizado, não desta implementação, e fechá-la de verdade exige uma coluna nova em `Empresa` (mudança de schema + migração) — tarefa própria, não um ajuste de última hora. **Antes da primeira emissão real com `op_simp_nac=3`, essa mudança precisa estar feita** (ou a DPS ir sem um campo que o leiaute exige). Se a empresa for MEI (`op_simp_nac=2`) ou não optante (`1`), o campo não se aplica e nada muda.
