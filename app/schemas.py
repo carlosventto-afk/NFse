@@ -62,6 +62,16 @@ class UsuarioOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class EmpresaVinculadaOut(BaseModel):
+    empresa_id: uuid.UUID
+    cnpj: str
+    papel: str
+
+
+class TrocarEmpresaIn(BaseModel):
+    empresa_id: uuid.UUID
+
+
 class EmissaoManualIn(BaseModel):
     cpf_cnpj: str | None = Field(default=None, max_length=20)
     nome: str = Field(max_length=TAMANHO_NOME)
