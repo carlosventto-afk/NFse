@@ -5,18 +5,24 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy import select
 
-from app.models import AmbienteEnum, Empresa
+from app.crypto import hash_senha
+from app.models import AmbienteEnum, Empresa, Usuario
 from app.numeracao import reservar_proximo_numero
 
 
 async def _criar_empresa(session_factory) -> uuid.UUID:
     async with session_factory() as session:
+        titular = Usuario(
+            email=f"titular-numeracao-{uuid.uuid4()}@teste.com", senha_hash=hash_senha("senha-forte-123"),
+        )
+        session.add(titular)
+        await session.flush()
         empresa = Empresa(
             cnpj="12345678000199", inscricao_municipal="1", municipio_ibge="3550308",
             op_simp_nac=3, codigo_tributacao="140106", descricao_servico_padrao="Lavagem",
             ambiente=AmbienteEnum.homologacao, certificado_pfx_cifrado="x",
             certificado_senha_cifrada="x", certificado_valido_ate=datetime.now(timezone.utc),
-            webhook_token_hash="x",
+            webhook_token_hash="x", titular_id=titular.id,
         )
         session.add(empresa)
         await session.commit()

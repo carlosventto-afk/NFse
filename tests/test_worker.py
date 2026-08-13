@@ -2,6 +2,7 @@ import asyncio
 import base64
 import gzip
 import json
+import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
@@ -9,8 +10,8 @@ import pytest
 from cryptography.fernet import Fernet
 
 from app.config import get_settings
-from app.crypto import cifrar
-from app.models import AmbienteEnum, Emissao, Empresa, OrigemEmissao, StatusEmissao
+from app.crypto import cifrar, hash_senha
+from app.models import AmbienteEnum, Emissao, Empresa, OrigemEmissao, StatusEmissao, Usuario
 from nfse_core import CertificateError, SefinError
 import app.worker as worker
 
@@ -29,6 +30,9 @@ async def _empresa_e_emissao_pendente(
     de gravar o resultado.
     """
     fernet_key = fernet_key or get_settings().fernet_key
+    titular = Usuario(email=f"titular-worker-{uuid.uuid4()}@teste.com", senha_hash=hash_senha("senha-forte-123"))
+    db_session.add(titular)
+    await db_session.flush()
     empresa = Empresa(
         cnpj="12345678000199", inscricao_municipal="1", municipio_ibge="1501402",
         op_simp_nac=3, codigo_tributacao="141001", descricao_servico_padrao="Lavagem",
@@ -36,7 +40,7 @@ async def _empresa_e_emissao_pendente(
         certificado_pfx_cifrado=cifrar("pfx-fake-base64", fernet_key),
         certificado_senha_cifrada=cifrar("senha-fake", fernet_key),
         certificado_valido_ate=datetime.now(timezone.utc),
-        webhook_token_hash="x",
+        webhook_token_hash="x", titular_id=titular.id,
     )
     db_session.add(empresa)
     await db_session.flush()

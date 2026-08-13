@@ -12,11 +12,11 @@ from app.config import Settings, get_settings
 from app.crypto import decifrar
 from app.danfe import gerar_danfse_fallback
 from app.db import get_db
-from app.models import AmbienteEnum, Emissao, Empresa, OrigemEmissao, StatusEmissao, Usuario
+from app.models import AmbienteEnum, Emissao, Empresa, OrigemEmissao, StatusEmissao
 from app.numeracao import reservar_proximo_numero
 from app.periodo import fim_do_dia_brt, inicio_do_dia_brt
 from app.schemas import EmissaoManualIn, EmissaoOut
-from app.security import get_current_user
+from app.security import ContextoAutenticado, get_empresa_ativa
 from nfse_core import SefinClient
 
 logger = logging.getLogger(__name__)
@@ -27,12 +27,12 @@ router = APIRouter(prefix="/emissoes", tags=["emissoes"])
 @router.post("/manual", response_model=EmissaoOut, status_code=201)
 async def emitir_manual(
     dados: EmissaoManualIn,
-    usuario: Usuario = Depends(get_current_user),
+    contexto: ContextoAutenticado = Depends(get_empresa_ativa),
     session: AsyncSession = Depends(get_db),
 ) -> Emissao:
-    serie, numero = await reservar_proximo_numero(session, usuario.empresa_id)
+    serie, numero = await reservar_proximo_numero(session, contexto.empresa_id)
     emissao = Emissao(
-        empresa_id=usuario.empresa_id,
+        empresa_id=contexto.empresa_id,
         origem=OrigemEmissao.manual,
         status=StatusEmissao.pendente,
         serie=serie,
@@ -43,7 +43,7 @@ async def emitir_manual(
         descricao=dados.descricao,
         valor=dados.valor,
         competencia=dados.competencia,
-        criada_por_usuario_id=usuario.id,
+        criada_por_usuario_id=contexto.usuario.id,
     )
     session.add(emissao)
     await session.commit()
@@ -56,10 +56,10 @@ async def listar_emissoes(
     status: StatusEmissao | None = Query(default=None),
     inicio: date | None = Query(default=None),
     fim: date | None = Query(default=None),
-    usuario: Usuario = Depends(get_current_user),
+    contexto: ContextoAutenticado = Depends(get_empresa_ativa),
     session: AsyncSession = Depends(get_db),
 ) -> list[Emissao]:
-    stmt = select(Emissao).where(Emissao.empresa_id == usuario.empresa_id)
+    stmt = select(Emissao).where(Emissao.empresa_id == contexto.empresa_id)
     if status is not None:
         stmt = stmt.where(Emissao.status == status)
     # Limites ancorados em BRT: `criada_em` e timestamptz e comparar com um
@@ -76,11 +76,11 @@ async def listar_emissoes(
 @router.get("/{emissao_id}/xml")
 async def baixar_xml(
     emissao_id: uuid.UUID,
-    usuario: Usuario = Depends(get_current_user),
+    contexto: ContextoAutenticado = Depends(get_empresa_ativa),
     session: AsyncSession = Depends(get_db),
 ) -> Response:
     emissao = await session.get(Emissao, emissao_id)
-    if emissao is None or emissao.empresa_id != usuario.empresa_id:
+    if emissao is None or emissao.empresa_id != contexto.empresa_id:
         raise HTTPException(status_code=404)
     if emissao.status != StatusEmissao.autorizada or not emissao.xml_nfse:
         raise HTTPException(status_code=404, detail="XML autorizado nao disponivel")
@@ -93,12 +93,12 @@ async def baixar_xml(
 @router.get("/{emissao_id}/pdf")
 async def baixar_pdf(
     emissao_id: uuid.UUID,
-    usuario: Usuario = Depends(get_current_user),
+    contexto: ContextoAutenticado = Depends(get_empresa_ativa),
     session: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> Response:
     emissao = await session.get(Emissao, emissao_id)
-    if emissao is None or emissao.empresa_id != usuario.empresa_id:
+    if emissao is None or emissao.empresa_id != contexto.empresa_id:
         raise HTTPException(status_code=404)
     if emissao.status != StatusEmissao.autorizada:
         raise HTTPException(status_code=404, detail="Nota nao autorizada")
@@ -138,7 +138,7 @@ async def baixar_pdf(
 
 
 async def _processar_csv(
-    conteudo: bytes, usuario: Usuario, session: AsyncSession, *, confirmar: bool,
+    conteudo: bytes, contexto: ContextoAutenticado, session: AsyncSession, *, confirmar: bool,
 ) -> dict:
     try:
         resultado = parsear_relatorio_stone(conteudo)
@@ -153,7 +153,7 @@ async def _processar_csv(
     if stone_ids:
         linhas = await session.execute(
             select(Emissao.stone_charge_id).where(
-                Emissao.empresa_id == usuario.empresa_id,
+                Emissao.empresa_id == contexto.empresa_id,
                 Emissao.stone_charge_id.in_(stone_ids),
             )
         )
@@ -167,11 +167,11 @@ async def _processar_csv(
         notas_validas.append(nota)
 
     if confirmar and notas_validas:
-        empresa = await session.get(Empresa, usuario.empresa_id)
+        empresa = await session.get(Empresa, contexto.empresa_id)
         for nota in notas_validas:
-            serie, numero = await reservar_proximo_numero(session, usuario.empresa_id)
+            serie, numero = await reservar_proximo_numero(session, contexto.empresa_id)
             emissao = Emissao(
-                empresa_id=usuario.empresa_id,
+                empresa_id=contexto.empresa_id,
                 origem=OrigemEmissao.csv,
                 stone_charge_id=nota.stone_charge_id,
                 status=StatusEmissao.pendente,
@@ -180,7 +180,7 @@ async def _processar_csv(
                 descricao=empresa.descricao_servico_padrao,
                 valor=nota.valor,
                 competencia=nota.data_da_venda.date().replace(day=1),
-                criada_por_usuario_id=usuario.id,
+                criada_por_usuario_id=contexto.usuario.id,
             )
             session.add(emissao)
         await session.commit()
@@ -196,18 +196,18 @@ async def _processar_csv(
 @router.post("/csv/preview")
 async def preview_csv(
     arquivo: UploadFile = File(...),
-    usuario: Usuario = Depends(get_current_user),
+    contexto: ContextoAutenticado = Depends(get_empresa_ativa),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
     conteudo = await arquivo.read()
-    return await _processar_csv(conteudo, usuario, session, confirmar=False)
+    return await _processar_csv(conteudo, contexto, session, confirmar=False)
 
 
 @router.post("/csv/confirmar")
 async def confirmar_csv(
     arquivo: UploadFile = File(...),
-    usuario: Usuario = Depends(get_current_user),
+    contexto: ContextoAutenticado = Depends(get_empresa_ativa),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
     conteudo = await arquivo.read()
-    return await _processar_csv(conteudo, usuario, session, confirmar=True)
+    return await _processar_csv(conteudo, contexto, session, confirmar=True)

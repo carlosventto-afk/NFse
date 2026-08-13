@@ -1,4 +1,5 @@
 import functools
+import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
@@ -10,16 +11,19 @@ from sqlalchemy.exc import IntegrityError
 from app.crypto import hash_senha
 from app.db import get_db
 from app.main import app
-from app.models import AmbienteEnum, Emissao, Empresa, OrigemEmissao, StatusEmissao
+from app.models import AmbienteEnum, Emissao, Empresa, OrigemEmissao, StatusEmissao, Usuario
 
 
 async def _empresa_com_token(db_session) -> Empresa:
+    titular = Usuario(email=f"titular-webhook-{uuid.uuid4()}@teste.com", senha_hash=hash_senha("senha-forte-123"))
+    db_session.add(titular)
+    await db_session.flush()
     empresa = Empresa(
         cnpj="12345678000199", inscricao_municipal="1", municipio_ibge="3550308",
         op_simp_nac=3, codigo_tributacao="140106", descricao_servico_padrao="Lavagem de roupa",
         ambiente=AmbienteEnum.homologacao, certificado_pfx_cifrado="x",
         certificado_senha_cifrada="x", certificado_valido_ate=datetime.now(timezone.utc),
-        webhook_token_hash=hash_senha("token-secreto"),
+        webhook_token_hash=hash_senha("token-secreto"), titular_id=titular.id,
     )
     db_session.add(empresa)
     await db_session.commit()

@@ -6,9 +6,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.models import Emissao, StatusEmissao, Usuario
+from app.models import Emissao, StatusEmissao
 from app.periodo import fim_do_dia_brt, inicio_do_dia_brt
-from app.security import get_current_user
+from app.security import ContextoAutenticado, get_empresa_ativa
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -17,13 +17,13 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 async def dashboard(
     inicio: date = Query(...),
     fim: date = Query(...),
-    usuario: Usuario = Depends(get_current_user),
+    contexto: ContextoAutenticado = Depends(get_empresa_ativa),
     session: AsyncSession = Depends(get_db),
 ) -> dict:
     stmt = (
         select(Emissao.status, func.coalesce(func.sum(Emissao.valor), 0))
         .where(
-            Emissao.empresa_id == usuario.empresa_id,
+            Emissao.empresa_id == contexto.empresa_id,
             # Limites em BRT, nao no TimeZone da sessao do Postgres (UTC):
             # sem isso, a nota das 21:30 BRT do dia 31 cai no mes seguinte.
             # Ver app/periodo.py.

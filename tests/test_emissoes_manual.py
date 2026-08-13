@@ -1,34 +1,16 @@
 import functools
-from datetime import datetime, timezone
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.crypto import hash_senha
 from app.db import get_db
 from app.main import app
-from app.models import AmbienteEnum, Empresa, PapelUsuario, Usuario
-from app.security import criar_token
+from app.models import Empresa
+from tests.apoio import criar_empresa_e_token
 
 
 async def _empresa_e_usuario(db_session) -> tuple[Empresa, str]:
-    empresa = Empresa(
-        cnpj="12345678000199", inscricao_municipal="1", municipio_ibge="3550308",
-        op_simp_nac=3, codigo_tributacao="140106", descricao_servico_padrao="Lavagem",
-        ambiente=AmbienteEnum.homologacao, certificado_pfx_cifrado="x",
-        certificado_senha_cifrada="x", certificado_valido_ate=datetime.now(timezone.utc),
-        webhook_token_hash="x",
-    )
-    db_session.add(empresa)
-    await db_session.flush()
-    usuario = Usuario(
-        empresa_id=empresa.id, email="op@teste.com",
-        senha_hash=hash_senha("senha-forte-123"), papel=PapelUsuario.operador,
-    )
-    db_session.add(usuario)
-    await db_session.commit()
-    await db_session.refresh(usuario)
-    return empresa, criar_token(usuario)
+    return await criar_empresa_e_token(db_session)
 
 
 async def _yield_session(session):
@@ -148,5 +130,27 @@ async def test_emissao_manual_sem_documento_do_tomador_e_aceita(db_session):
         corpo = resposta.json()
         assert corpo["numero"] == 1
         assert corpo["tomador_cpf_cnpj"] is None
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_listar_emissoes_sem_empresa_ativa_devolve_409(db_session):
+    from app.crypto import hash_senha
+    from app.models import Usuario
+    from app.security import criar_token
+
+    usuario_sem_empresa = Usuario(email="sem-empresa-ativa@teste.com", senha_hash=hash_senha("senha-forte-123"))
+    db_session.add(usuario_sem_empresa)
+    await db_session.commit()
+    await db_session.refresh(usuario_sem_empresa)
+    token = criar_token(usuario_sem_empresa)  # sem empresa_id/papel
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.get("/emissoes", headers={"Authorization": f"Bearer {token}"})
+        assert resposta.status_code == 409
     finally:
         app.dependency_overrides.clear()

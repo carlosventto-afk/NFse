@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from decimal import Decimal
 
 import functools
@@ -7,13 +6,10 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
-from app.crypto import hash_senha
 from app.db import get_db
 from app.main import app
-from app.models import (
-    AmbienteEnum, Emissao, Empresa, OrigemEmissao, PapelUsuario, StatusEmissao, Usuario,
-)
-from app.security import criar_token
+from app.models import Emissao, Empresa, OrigemEmissao, StatusEmissao
+from tests.apoio import criar_empresa_e_token
 
 CABECALHO = "CATEGORIA;DATA DA VENDA;STONE ID;QTD DE PARCELAS;Nº DA PARCELA;VALOR BRUTO;ÚLTIMO STATUS"
 
@@ -28,23 +24,10 @@ async def _yield_session(session):
 
 
 async def _empresa_e_usuario(db_session) -> tuple[Empresa, str]:
-    empresa = Empresa(
-        cnpj="12345678000199", inscricao_municipal="1", municipio_ibge="1501402",
-        op_simp_nac=3, codigo_tributacao="141001", descricao_servico_padrao="Lavagem de roupa",
-        ambiente=AmbienteEnum.homologacao, certificado_pfx_cifrado="x",
-        certificado_senha_cifrada="x", certificado_valido_ate=datetime.now(timezone.utc),
-        webhook_token_hash="x",
+    return await criar_empresa_e_token(
+        db_session, municipio_ibge="1501402", codigo_tributacao="141001",
+        descricao_servico_padrao="Lavagem de roupa",
     )
-    db_session.add(empresa)
-    await db_session.flush()
-    usuario = Usuario(
-        empresa_id=empresa.id, email="op@teste.com",
-        senha_hash=hash_senha("senha-forte-123"), papel=PapelUsuario.operador,
-    )
-    db_session.add(usuario)
-    await db_session.commit()
-    await db_session.refresh(usuario)
-    return empresa, criar_token(usuario)
 
 
 @pytest.mark.asyncio
@@ -165,23 +148,11 @@ async def test_confirmar_csv_duas_vezes_nao_duplica_nem_reserva_numero_de_novo(d
 @pytest.mark.asyncio
 async def test_confirmar_csv_nao_cruza_dedupe_nem_visibilidade_entre_empresas(db_session):
     empresa_a, token_a = await _empresa_e_usuario(db_session)
-    empresa_b = Empresa(
-        cnpj="99999999000199", inscricao_municipal="2", municipio_ibge="1501402",
-        op_simp_nac=3, codigo_tributacao="141001", descricao_servico_padrao="Lavagem de roupa B",
-        ambiente=AmbienteEnum.homologacao, certificado_pfx_cifrado="x",
-        certificado_senha_cifrada="x", certificado_valido_ate=datetime.now(timezone.utc),
-        webhook_token_hash="x",
+    empresa_b, token_b = await criar_empresa_e_token(
+        db_session, cnpj="99999999000199", email="op-b@teste.com",
+        municipio_ibge="1501402", codigo_tributacao="141001",
+        descricao_servico_padrao="Lavagem de roupa B",
     )
-    db_session.add(empresa_b)
-    await db_session.flush()
-    usuario_b = Usuario(
-        empresa_id=empresa_b.id, email="op-b@teste.com",
-        senha_hash=hash_senha("senha-forte-123"), papel=PapelUsuario.operador,
-    )
-    db_session.add(usuario_b)
-    await db_session.commit()
-    await db_session.refresh(usuario_b)
-    token_b = criar_token(usuario_b)
 
     # mesmo STONE ID em ambas as empresas — nao deveria haver colisao de dedupe
     conteudo = _csv("Venda;30/07/2026 14:30:04;31163337249888;1;1;27,980000;Pago")

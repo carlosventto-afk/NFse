@@ -5,32 +5,23 @@ from decimal import Decimal
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.crypto import cifrar, hash_senha
+from app.crypto import cifrar
 from app.config import get_settings
 from app.db import get_db
 from app.main import app
-from app.models import AmbienteEnum, Emissao, Empresa, OrigemEmissao, PapelUsuario, StatusEmissao, Usuario
+from app.models import Emissao, OrigemEmissao, PapelUsuario, StatusEmissao
 from app.security import criar_token
 from nfse_core import CertificateError
+from tests.apoio import criar_empresa_titular
 
 
 async def _empresa_usuario_emissao_autorizada(db_session):
     fernet_key = get_settings().fernet_key
-    empresa = Empresa(
-        cnpj="12345678000199", inscricao_municipal="1", municipio_ibge="3550308",
-        op_simp_nac=3, codigo_tributacao="140106", descricao_servico_padrao="Lavagem",
-        ambiente=AmbienteEnum.homologacao,
+    empresa, usuario = await criar_empresa_titular(
+        db_session,
         certificado_pfx_cifrado=cifrar("pfx-fake", fernet_key),
         certificado_senha_cifrada=cifrar("senha-fake", fernet_key),
-        certificado_valido_ate=datetime.now(timezone.utc), webhook_token_hash="x",
     )
-    db_session.add(empresa)
-    await db_session.flush()
-    usuario = Usuario(
-        empresa_id=empresa.id, email="op@teste.com",
-        senha_hash=hash_senha("senha-forte-123"), papel=PapelUsuario.operador,
-    )
-    db_session.add(usuario)
     emissao = Emissao(
         empresa_id=empresa.id, origem=OrigemEmissao.manual, status=StatusEmissao.autorizada,
         serie="1", numero=1, chave_acesso="1" * 50, xml_nfse=b"<NFSe>ok</NFSe>",
@@ -51,7 +42,7 @@ async def _yield_session(session):
 @pytest.mark.asyncio
 async def test_listar_emissoes_filtra_por_status(db_session):
     empresa, usuario, emissao = await _empresa_usuario_emissao_autorizada(db_session)
-    token = criar_token(usuario)
+    token = criar_token(usuario, empresa_id=empresa.id, papel=PapelUsuario.admin)
 
     app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
     try:
@@ -72,7 +63,7 @@ async def test_listar_emissoes_filtra_por_status(db_session):
 @pytest.mark.asyncio
 async def test_baixar_xml_devolve_documento_autorizado(db_session):
     empresa, usuario, emissao = await _empresa_usuario_emissao_autorizada(db_session)
-    token = criar_token(usuario)
+    token = criar_token(usuario, empresa_id=empresa.id, papel=PapelUsuario.admin)
 
     app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
     try:
@@ -104,7 +95,7 @@ async def test_baixar_pdf_cai_no_fallback_quando_a_busca_oficial_levanta(
     db_session, monkeypatch, excecao
 ):
     empresa, usuario, emissao = await _empresa_usuario_emissao_autorizada(db_session)
-    token = criar_token(usuario)
+    token = criar_token(usuario, empresa_id=empresa.id, papel=PapelUsuario.admin)
 
     import app.routers.emissoes as emissoes_router
 
@@ -136,7 +127,7 @@ async def test_listar_emissoes_usa_limites_de_dia_em_brt(db_session):
     empresa, usuario, emissao = await _empresa_usuario_emissao_autorizada(db_session)
     emissao.criada_em = datetime(2026, 9, 1, 0, 30, tzinfo=timezone.utc)  # 31/08 21:30 BRT
     await db_session.commit()
-    token = criar_token(usuario)
+    token = criar_token(usuario, empresa_id=empresa.id, papel=PapelUsuario.admin)
 
     app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
     try:
@@ -159,7 +150,7 @@ async def test_listar_emissoes_usa_limites_de_dia_em_brt(db_session):
 @pytest.mark.asyncio
 async def test_baixar_pdf_usa_fallback_quando_adn_nao_responde(db_session, monkeypatch):
     empresa, usuario, emissao = await _empresa_usuario_emissao_autorizada(db_session)
-    token = criar_token(usuario)
+    token = criar_token(usuario, empresa_id=empresa.id, papel=PapelUsuario.admin)
 
     import app.routers.emissoes as emissoes_router
 

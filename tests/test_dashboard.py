@@ -5,11 +5,10 @@ from decimal import Decimal
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.crypto import hash_senha
 from app.db import get_db
 from app.main import app
-from app.models import AmbienteEnum, Emissao, Empresa, OrigemEmissao, PapelUsuario, StatusEmissao, Usuario
-from app.security import criar_token
+from app.models import Emissao, OrigemEmissao, StatusEmissao
+from tests.apoio import criar_empresa_e_token
 
 
 async def _yield_session(session):
@@ -18,20 +17,7 @@ async def _yield_session(session):
 
 @pytest.mark.asyncio
 async def test_dashboard_soma_valores_por_status(db_session):
-    empresa = Empresa(
-        cnpj="12345678000199", inscricao_municipal="1", municipio_ibge="3550308",
-        op_simp_nac=3, codigo_tributacao="140106", descricao_servico_padrao="Lavagem",
-        ambiente=AmbienteEnum.homologacao, certificado_pfx_cifrado="x",
-        certificado_senha_cifrada="x", certificado_valido_ate=datetime.now(timezone.utc),
-        webhook_token_hash="x",
-    )
-    db_session.add(empresa)
-    await db_session.flush()
-    usuario = Usuario(
-        empresa_id=empresa.id, email="op@teste.com",
-        senha_hash=hash_senha("senha-forte-123"), papel=PapelUsuario.operador,
-    )
-    db_session.add(usuario)
+    empresa, token = await criar_empresa_e_token(db_session)
     db_session.add_all([
         Emissao(
             empresa_id=empresa.id, origem=OrigemEmissao.manual, status=StatusEmissao.autorizada,
@@ -47,8 +33,6 @@ async def test_dashboard_soma_valores_por_status(db_session):
         ),
     ])
     await db_session.commit()
-    await db_session.refresh(usuario)
-    token = criar_token(usuario)
 
     app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
     try:
@@ -71,20 +55,7 @@ async def test_dashboard_usa_limites_de_dia_em_brt(db_session):
     """Mesma armadilha da listagem: `criada_em` e timestamptz e o Postgres
     converte um `date` cru pelo TimeZone da sessao (UTC). A nota das 21:30 BRT
     do dia 31/08 (00:30 UTC de 01/09) tem que somar em AGOSTO."""
-    empresa = Empresa(
-        cnpj="12345678000199", inscricao_municipal="1", municipio_ibge="3550308",
-        op_simp_nac=3, codigo_tributacao="140106", descricao_servico_padrao="Lavagem",
-        ambiente=AmbienteEnum.homologacao, certificado_pfx_cifrado="x",
-        certificado_senha_cifrada="x", certificado_valido_ate=datetime.now(timezone.utc),
-        webhook_token_hash="x",
-    )
-    db_session.add(empresa)
-    await db_session.flush()
-    usuario = Usuario(
-        empresa_id=empresa.id, email="op2@teste.com",
-        senha_hash=hash_senha("senha-forte-123"), papel=PapelUsuario.operador,
-    )
-    db_session.add(usuario)
+    empresa, token = await criar_empresa_e_token(db_session, email="op2@teste.com")
     emissao = Emissao(
         empresa_id=empresa.id, origem=OrigemEmissao.manual, status=StatusEmissao.autorizada,
         serie="1", numero=1, descricao="Lavagem", valor=Decimal("50.00"),
@@ -93,8 +64,6 @@ async def test_dashboard_usa_limites_de_dia_em_brt(db_session):
     )
     db_session.add(emissao)
     await db_session.commit()
-    await db_session.refresh(usuario)
-    token = criar_token(usuario)
 
     app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
     try:
