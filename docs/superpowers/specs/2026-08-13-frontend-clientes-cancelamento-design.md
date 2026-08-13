@@ -144,9 +144,13 @@ aparece na tela de cadastro de clientes (a listagem filtra
 
 `DpsData` ganha campos de endereço do tomador (`toma_end_logradouro`,
 `toma_end_numero`, `toma_end_complemento`, `toma_end_bairro`,
-`toma_end_municipio_ibge`, `toma_end_uf`, `toma_end_cep`), todos opcionais
-— mesmo padrão dos campos de tomador já existentes (`toma_cpf_cnpj`,
-`toma_nome`, `toma_email`), que também são opcionais e testados assim.
+`toma_end_municipio_ibge`, `toma_end_cep`), todos opcionais — mesmo padrão
+dos campos de tomador já existentes (`toma_cpf_cnpj`, `toma_nome`,
+`toma_email`), que também são opcionais e testados assim. `UF` não entra
+aqui — o bloco nacional `<endNac>` identifica o município só pelo código
+IBGE (`cMun`), que já embute a UF nos dois primeiros dígitos; o campo `uf`
+do `Cliente` é só cadastral (exibição/filtro na tela), não é enviado à
+SEFIN.
 `build_dps_xml` monta um bloco `<end>` dentro de `<toma>` quando pelo menos
 `toma_end_logradouro` e `toma_end_municipio_ibge` estiverem presentes —
 espelhando a estrutura `<end>` já usada pelo padrão ABRASF/NFS-e Nacional
