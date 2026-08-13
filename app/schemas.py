@@ -128,6 +128,18 @@ class TrocarEmpresaIn(BaseModel):
     empresa_id: uuid.UUID
 
 
+class CancelarEmissaoIn(BaseModel):
+    motivo: str = Field(max_length=2000)
+    codigo_motivo: str = "9"
+
+    @field_validator("codigo_motivo")
+    @classmethod
+    def codigo_motivo_valido(cls, v: str) -> str:
+        if v not in ("1", "2", "9"):
+            raise ValueError("codigo_motivo deve ser 1 (erro na emissao), 2 (servico nao prestado) ou 9 (outros)")
+        return v
+
+
 class EmissaoManualIn(BaseModel):
     cpf_cnpj: str | None = Field(default=None, max_length=20)
     nome: str = Field(max_length=TAMANHO_NOME)

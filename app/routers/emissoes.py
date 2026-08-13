@@ -15,8 +15,8 @@ from app.db import get_db
 from app.models import AmbienteEnum, Cliente, Emissao, Empresa, OrigemEmissao, StatusEmissao
 from app.numeracao import reservar_proximo_numero
 from app.periodo import fim_do_dia_brt, inicio_do_dia_brt
-from app.schemas import EmissaoManualIn, EmissaoOut
-from app.security import ContextoAutenticado, get_empresa_ativa
+from app.schemas import CancelarEmissaoIn, EmissaoManualIn, EmissaoOut
+from app.security import ContextoAutenticado, exigir_admin_empresa, get_empresa_ativa
 from nfse_core import SefinClient
 
 logger = logging.getLogger(__name__)
@@ -229,3 +229,24 @@ async def confirmar_csv(
 ) -> dict:
     conteudo = await arquivo.read()
     return await _processar_csv(conteudo, contexto, session, confirmar=True)
+
+
+@router.post("/{emissao_id}/cancelar", response_model=EmissaoOut)
+async def cancelar_emissao(
+    emissao_id: uuid.UUID,
+    dados: CancelarEmissaoIn,
+    contexto: ContextoAutenticado = Depends(exigir_admin_empresa),
+    session: AsyncSession = Depends(get_db),
+) -> Emissao:
+    emissao = await session.get(Emissao, emissao_id)
+    if emissao is None or emissao.empresa_id != contexto.empresa_id:
+        raise HTTPException(status_code=404)
+    if emissao.status != StatusEmissao.autorizada:
+        raise HTTPException(
+            status_code=409, detail=f"So e possivel cancelar uma emissao autorizada (status atual: {emissao.status})"
+        )
+    emissao.status = StatusEmissao.cancelamento_pendente
+    emissao.motivo_cancelamento = dados.motivo
+    await session.commit()
+    await session.refresh(emissao)
+    return emissao

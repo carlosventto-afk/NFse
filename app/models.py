@@ -28,6 +28,8 @@ class StatusEmissao(str, enum.Enum):
     autorizada = "autorizada"
     rejeitada = "rejeitada"
     cancelada = "cancelada"
+    cancelamento_pendente = "cancelamento_pendente"
+    erro_cancelamento = "erro_cancelamento"
 
 
 class OrigemEmissao(str, enum.Enum):
@@ -199,5 +201,7 @@ class Emissao(Base):
     atualizada_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_agora, onupdate=_agora, nullable=False
     )
+    motivo_cancelamento: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    cancelada_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     empresa: Mapped["Empresa"] = relationship(back_populates="emissoes")
