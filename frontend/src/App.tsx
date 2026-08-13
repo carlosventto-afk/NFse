@@ -7,6 +7,7 @@ import SelecionarEmpresaPage from "./pages/SelecionarEmpresaPage";
 import AceitarConvitePage from "./pages/AceitarConvitePage";
 import CadastroEmpresaPage from "./pages/CadastroEmpresaPage";
 import ClientesPage from "./pages/ClientesPage";
+import ImportarCsvPage from "./pages/ImportarCsvPage";
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
               <Route path="/emissoes" element={<p>Emissoes (Task 8)</p>} />
               <Route path="/cadastro-empresa" element={<CadastroEmpresaPage />} />
               <Route path="/clientes" element={<ClientesPage />} />
+              <Route path="/importar-csv" element={<ImportarCsvPage />} />
             </Route>
           </Route>
         </Routes>
