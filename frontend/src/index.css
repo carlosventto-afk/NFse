@@ -1,0 +1,31 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #f4f5f7;
+  color: #1a1a1a;
+}
+a { color: #2563eb; }
+input, select, button {
+  font: inherit;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+button {
+  cursor: pointer;
+  background: #2563eb;
+  color: white;
+  border: none;
+}
+button:disabled { background: #94a3b8; cursor: not-allowed; }
+button.secundario { background: #64748b; }
+button.perigo { background: #dc2626; }
+table { border-collapse: collapse; width: 100%; background: white; }
+th, td { padding: 0.5rem; border-bottom: 1px solid #e5e7eb; text-align: left; }
+.erro { color: #dc2626; margin: 0.5rem 0; }
+.cartao { background: white; padding: 1.5rem; border-radius: 8px; max-width: 480px; margin: 2rem auto; }
+.form-linha { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.75rem; }
+.nav { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; background: white; border-bottom: 1px solid #e5e7eb; }
+.nav a { margin-right: 1rem; text-decoration: none; }
+.conteudo { padding: 1.5rem; }
