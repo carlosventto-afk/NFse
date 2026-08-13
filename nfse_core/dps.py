@@ -72,6 +72,17 @@ class DpsData:
     toma_cpf_cnpj: str = ""
     toma_nome: str = ""
     toma_email: str | None = None
+    # Endereco do tomador — nao presente no kit original; adicionado para
+    # o cadastro de clientes poder submeter dados fiscais completos.
+    # Estrutura <end><endNac> segue o padrao ABRASF/NFS-e Nacional para
+    # endereco nacional (nao ha precedente no kit vendorizado para
+    # confirmar contra — validar em homologacao antes de producao real).
+    toma_end_logradouro: str | None = None
+    toma_end_numero: str | None = None
+    toma_end_complemento: str | None = None
+    toma_end_bairro: str | None = None
+    toma_end_municipio_ibge: str | None = None
+    toma_end_cep: str | None = None
 
     # Serviço
     c_trib_nac: str = "080101"     # código de tributação nacional (LC116 item+desdobro)
@@ -161,6 +172,19 @@ def build_dps_xml(data: DpsData) -> bytes:
         _el(toma, "xNome", _sanitize_text(data.toma_nome)[:300])
         if data.toma_email:
             _el(toma, "email", data.toma_email.strip()[:80])
+        if data.toma_end_logradouro and data.toma_end_municipio_ibge:
+            end = _el(toma, "end")
+            end_nac = _el(end, "endNac")
+            _el(end_nac, "cMun", _digits(data.toma_end_municipio_ibge).zfill(7))
+            if data.toma_end_cep:
+                _el(end_nac, "CEP", _digits(data.toma_end_cep).zfill(8))
+            _el(end, "xLgr", _sanitize_text(data.toma_end_logradouro)[:200])
+            if data.toma_end_numero:
+                _el(end, "nro", _sanitize_text(data.toma_end_numero)[:60])
+            if data.toma_end_complemento:
+                _el(end, "xCpl", _sanitize_text(data.toma_end_complemento)[:60])
+            if data.toma_end_bairro:
+                _el(end, "xBairro", _sanitize_text(data.toma_end_bairro)[:60])
 
     serv = _el(inf, "serv")
     loc = _el(serv, "locPrest")
