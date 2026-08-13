@@ -68,6 +68,56 @@ class ConviteAceitarIn(BaseModel):
         return v
 
 
+class ClienteCriarIn(BaseModel):
+    cpf_cnpj: str | None = Field(default=None, max_length=14)
+    nome: str = Field(max_length=TAMANHO_NOME)
+    email: str | None = Field(default=None, max_length=TAMANHO_EMAIL)
+    telefone: str | None = Field(default=None, max_length=20)
+    inscricao_estadual: str | None = Field(default=None, max_length=20)
+    inscricao_municipal: str | None = Field(default=None, max_length=20)
+    logradouro: str | None = Field(default=None, max_length=200)
+    numero: str | None = Field(default=None, max_length=20)
+    complemento: str | None = Field(default=None, max_length=100)
+    bairro: str | None = Field(default=None, max_length=100)
+    municipio_ibge: str | None = Field(default=None, max_length=7)
+    uf: str | None = Field(default=None, max_length=2)
+    cep: str | None = Field(default=None, max_length=8)
+
+    @field_validator("cpf_cnpj")
+    @classmethod
+    def cpf_cnpj_valido(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
+        digitos = _somente_digitos(v)
+        if len(digitos) not in (11, 14):
+            raise ValueError("cpf_cnpj, quando informado, deve ter 11 (CPF) ou 14 (CNPJ) digitos")
+        return digitos
+
+
+class ClienteAtualizarIn(ClienteCriarIn):
+    ativo: bool = True
+
+
+class ClienteOut(BaseModel):
+    id: uuid.UUID
+    cpf_cnpj: str | None
+    nome: str
+    email: str | None
+    telefone: str | None
+    inscricao_estadual: str | None
+    inscricao_municipal: str | None
+    logradouro: str | None
+    numero: str | None
+    complemento: str | None
+    bairro: str | None
+    municipio_ibge: str | None
+    uf: str | None
+    cep: str | None
+    ativo: bool
+
+    model_config = {"from_attributes": True}
+
+
 class EmpresaVinculadaOut(BaseModel):
     empresa_id: uuid.UUID
     cnpj: str
