@@ -14,12 +14,13 @@ class DadosEmissao:
     descricao: str
     valor: Decimal
     competencia: date
+    dh_emi: datetime | None = None
 
 
 def montar_dps_data(empresa: Empresa, serie: str, numero: int, dados: DadosEmissao) -> DpsData:
     return DpsData(
         tp_amb=1 if empresa.ambiente == AmbienteEnum.producao else 2,
-        dh_emi=datetime.now(timezone.utc),
+        dh_emi=dados.dh_emi or datetime.now(timezone.utc),
         serie=serie,
         numero=numero,
         competencia=dados.competencia,

@@ -14,7 +14,7 @@ from app.danfe import gerar_danfse_fallback
 from app.db import get_db
 from app.models import AmbienteEnum, Cliente, Emissao, Empresa, OrigemEmissao, StatusEmissao
 from app.numeracao import reservar_proximo_numero
-from app.periodo import fim_do_dia_brt, inicio_do_dia_brt
+from app.periodo import FUSO_BRT, fim_do_dia_brt, inicio_do_dia_brt
 from app.schemas import CancelarEmissaoIn, EmissaoManualIn, EmissaoOut
 from app.security import ContextoAutenticado, exigir_admin_empresa, get_empresa_ativa
 from nfse_core import SefinClient
@@ -198,6 +198,7 @@ async def _processar_csv(
                 descricao=empresa.descricao_servico_padrao,
                 valor=nota.valor,
                 competencia=nota.data_da_venda.date().replace(day=1),
+                dh_emi_original=nota.data_ultimo_status.replace(tzinfo=FUSO_BRT),
                 criada_por_usuario_id=contexto.usuario.id,
             )
             session.add(emissao)

@@ -12,6 +12,7 @@ COLUNAS_OBRIGATORIAS = (
     "Nº DA PARCELA",
     "VALOR BRUTO",
     "ÚLTIMO STATUS",
+    "DATA DO ÚLTIMO STATUS",
 )
 
 
@@ -23,6 +24,7 @@ class CabecalhoInvalidoError(ValueError):
 class NotaCandidata:
     stone_charge_id: str
     data_da_venda: datetime
+    data_ultimo_status: datetime
     valor: Decimal
 
 
@@ -58,7 +60,7 @@ def parsear_relatorio_stone(conteudo: bytes) -> ResultadoParse:
         )
 
     resultado = ResultadoParse(notas=[])
-    grupos: dict[tuple, list[tuple[int, str, Decimal, datetime]]] = {}
+    grupos: dict[tuple, list[tuple[int, str, Decimal, datetime, datetime]]] = {}
     ordem_grupos: list[tuple] = []
 
     for linha in leitor:
@@ -73,6 +75,9 @@ def parsear_relatorio_stone(conteudo: bytes) -> ResultadoParse:
                 continue
             data_da_venda = datetime.strptime(
                 linha["DATA DA VENDA"].strip(), "%d/%m/%Y %H:%M:%S"
+            )
+            data_ultimo_status = datetime.strptime(
+                linha["DATA DO ÚLTIMO STATUS"].strip(), "%d/%m/%Y %H:%M:%S"
             )
             valor = Decimal(linha["VALOR BRUTO"].strip().replace(",", "."))
             qtd_parcelas = int(linha["QTD DE PARCELAS"].strip())
@@ -92,16 +97,17 @@ def parsear_relatorio_stone(conteudo: bytes) -> ResultadoParse:
         if chave not in grupos:
             grupos[chave] = []
             ordem_grupos.append(chave)
-        grupos[chave].append((numero_parcela, stone_id, valor, data_da_venda))
+        grupos[chave].append((numero_parcela, stone_id, valor, data_da_venda, data_ultimo_status))
 
     for chave in ordem_grupos:
         itens = sorted(grupos[chave], key=lambda item: item[0])
-        _numero_parcela, stone_charge_id, _valor, data_da_venda = itens[0]
+        _numero_parcela, stone_charge_id, _valor, data_da_venda, data_ultimo_status = itens[0]
         valor_total = sum((item[2] for item in itens), Decimal("0"))
         resultado.notas.append(
             NotaCandidata(
                 stone_charge_id=stone_charge_id,
                 data_da_venda=data_da_venda,
+                data_ultimo_status=data_ultimo_status,
                 valor=valor_total,
             )
         )

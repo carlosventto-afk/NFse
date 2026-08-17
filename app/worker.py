@@ -86,6 +86,7 @@ async def processar_uma_pendente(session: AsyncSession, settings: Settings | Non
             descricao=emissao.descricao,
             valor=emissao.valor,
             competencia=emissao.competencia,
+            dh_emi=emissao.dh_emi_original,
         )
         dps_data = montar_dps_data(empresa, emissao.serie, emissao.numero, dados)
 

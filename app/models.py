@@ -196,6 +196,10 @@ class Emissao(Base):
     descricao: Mapped[str] = mapped_column(String(2000), nullable=False)
     valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     competencia: Mapped[date] = mapped_column(Date, nullable=False)
+    # Preenchido so na importacao de CSV de periodo retroativo: sobrescreve o
+    # dhEmi da DPS (que por padrao e o momento real da emissao) pela data do
+    # pagamento historico, permitindo notas de vendas ja passadas.
+    dh_emi_original: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     criada_por_usuario_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
     criada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_agora, nullable=False)
     atualizada_em: Mapped[datetime] = mapped_column(
