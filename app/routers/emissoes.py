@@ -251,3 +251,21 @@ async def cancelar_emissao(
     await session.commit()
     await session.refresh(emissao)
     return emissao
+
+
+@router.delete("/{emissao_id}", status_code=204)
+async def excluir_emissao(
+    emissao_id: uuid.UUID,
+    contexto: ContextoAutenticado = Depends(exigir_admin_empresa),
+    session: AsyncSession = Depends(get_db),
+) -> None:
+    emissao = await session.get(Emissao, emissao_id)
+    if emissao is None or emissao.empresa_id != contexto.empresa_id:
+        raise HTTPException(status_code=404)
+    if emissao.status not in (StatusEmissao.pendente, StatusEmissao.rejeitada):
+        raise HTTPException(
+            status_code=409,
+            detail=f"So e possivel excluir emissao pendente ou rejeitada (status atual: {emissao.status})",
+        )
+    await session.delete(emissao)
+    await session.commit()

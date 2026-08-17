@@ -30,6 +30,10 @@ export function cancelarEmissao(id: string, motivo: string, codigoMotivo: string
   });
 }
 
+export function excluirEmissao(id: string): Promise<void> {
+  return apiFetch<void>(`/api/emissoes/${id}`, { method: "DELETE" });
+}
+
 export function urlXml(id: string): string {
   return `/api/emissoes/${id}/xml`;
 }

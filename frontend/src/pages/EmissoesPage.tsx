@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { cancelarEmissao, listarEmissoes, urlPdf, urlXml } from "../api/emissoes";
+import { cancelarEmissao, excluirEmissao, listarEmissoes, urlPdf, urlXml } from "../api/emissoes";
 import { obterToken } from "../api/client";
 import type { Emissao } from "../api/types";
 
@@ -40,6 +40,19 @@ export default function EmissoesPage() {
       await carregar();
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Nao foi possivel cancelar a emissao");
+    }
+  }
+
+  async function excluir(id: string) {
+    if (!window.confirm("Excluir esta emissao? Essa acao nao pode ser desfeita.")) {
+      return;
+    }
+    setErro(null);
+    try {
+      await excluirEmissao(id);
+      await carregar();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Nao foi possivel excluir a emissao");
     }
   }
 
@@ -97,6 +110,9 @@ export default function EmissoesPage() {
                       <button className="secundario" onClick={() => baixar(urlPdf(emissao.id), `${emissao.chave_acesso}.pdf`)}>PDF</button>
                       <button className="perigo" onClick={() => setCancelandoId(emissao.id)}>Cancelar</button>
                     </>
+                  )}
+                  {(emissao.status === "pendente" || emissao.status === "rejeitada") && (
+                    <button className="perigo" onClick={() => excluir(emissao.id)}>Excluir</button>
                   )}
                 </td>
               </tr>
