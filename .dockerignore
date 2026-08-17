@@ -1,0 +1,15 @@
+.git
+.claude
+.worktrees
+.pytest_cache
+frontend/node_modules
+frontend/dist
+nfse-nacional-kit
+tests
+docs
+*.pdf
+Relatorio Stone
+.env
+.env.example
+__pycache__
+*.pyc
