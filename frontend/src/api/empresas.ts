@@ -15,7 +15,8 @@ export interface DadosEmpresaForm {
 
 export function criarEmpresa(dados: DadosEmpresaForm, pfx: File): Promise<EmpresaCriada> {
   const formulario = new FormData();
-  Object.entries(dados).forEach(([chave, valor]) => formulario.append(chave, valor));
+  const dadosLimpos = { ...dados, cnpj: dados.cnpj.replace(/\D/g, "") };
+  Object.entries(dadosLimpos).forEach(([chave, valor]) => formulario.append(chave, valor));
   formulario.append("pfx", pfx);
   return apiFetch<EmpresaCriada>("/api/empresas", { method: "POST", body: formulario });
 }

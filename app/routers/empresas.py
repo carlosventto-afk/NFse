@@ -28,6 +28,10 @@ async def criar_empresa_via_api(
     if not contexto.eh_admin_plataforma and titular_email != contexto.usuario.email:
         raise HTTPException(status_code=403, detail="So e possivel criar empresa para si mesmo")
 
+    cnpj = "".join(filter(str.isdigit, cnpj))
+    if len(cnpj) != 14:
+        raise HTTPException(status_code=422, detail="CNPJ deve ter 14 digitos")
+
     pfx_bytes = await pfx.read()
     pfx_base64 = base64.b64encode(pfx_bytes).decode()
 
