@@ -76,7 +76,7 @@ export default function EmissoesPage() {
         <table>
           <thead>
             <tr>
-              <th>Numero</th><th>Origem</th><th>Status</th><th>Valor</th><th>Competencia</th><th></th>
+              <th>Numero</th><th>Origem</th><th>Status</th><th>Valor</th><th>Competencia</th><th>Erro</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -87,6 +87,9 @@ export default function EmissoesPage() {
                 <td>{emissao.status}</td>
                 <td>R$ {emissao.valor}</td>
                 <td>{emissao.competencia}</td>
+                <td className="erro" style={{ maxWidth: 320, wordBreak: "break-word" }}>
+                  {emissao.erros ?? ""}
+                </td>
                 <td>
                   {emissao.status === "autorizada" && (
                     <>
