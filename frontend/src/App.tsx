@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import RotaProtegida from "./components/RotaProtegida";
 import Layout from "./components/Layout";
@@ -18,6 +18,7 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/aceitar-convite" element={<AceitarConvitePage />} />
           <Route element={<RotaProtegida />}>
+            <Route path="/" element={<Navigate to="/selecionar-empresa" replace />} />
             <Route path="/selecionar-empresa" element={<SelecionarEmpresaPage />} />
             <Route element={<Layout />}>
               <Route path="/emissoes" element={<EmissoesPage />} />
