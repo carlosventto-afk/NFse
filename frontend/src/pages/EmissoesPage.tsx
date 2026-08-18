@@ -111,6 +111,14 @@ export default function EmissoesPage() {
                       <button className="perigo" onClick={() => setCancelandoId(emissao.id)}>Cancelar</button>
                     </>
                   )}
+                  {emissao.status === "rejeitada" && (
+                    <button
+                      className="secundario"
+                      onClick={() => baixar(urlXml(emissao.id), `DPS_${emissao.serie}_${emissao.numero}.xml`)}
+                    >
+                      XML
+                    </button>
+                  )}
                   {(emissao.status === "pendente" || emissao.status === "rejeitada") && (
                     <button className="perigo" onClick={() => excluir(emissao.id)}>Excluir</button>
                   )}

@@ -82,11 +82,22 @@ async def baixar_xml(
     emissao = await session.get(Emissao, emissao_id)
     if emissao is None or emissao.empresa_id != contexto.empresa_id:
         raise HTTPException(status_code=404)
-    if emissao.status != StatusEmissao.autorizada or not emissao.xml_nfse:
-        raise HTTPException(status_code=404, detail="XML autorizado nao disponivel")
+
+    # Autorizada: devolve o XML oficial da NFS-e (retornado pela SEFIN).
+    # Rejeitada: nao existe NFS-e — devolve o XML da DPS que foi assinado e
+    # submetido, util pra conferir o que exatamente foi enviado/recusado.
+    if emissao.status == StatusEmissao.autorizada and emissao.xml_nfse:
+        conteudo = emissao.xml_nfse
+        nome_arquivo = f"{emissao.chave_acesso}.xml"
+    elif emissao.status == StatusEmissao.rejeitada and emissao.xml_dps:
+        conteudo = emissao.xml_dps
+        nome_arquivo = f"DPS_{emissao.serie}_{emissao.numero}.xml"
+    else:
+        raise HTTPException(status_code=404, detail="XML nao disponivel para esta emissao")
+
     return Response(
-        content=emissao.xml_nfse, media_type="application/xml",
-        headers={"Content-Disposition": f'attachment; filename="{emissao.chave_acesso}.xml"'},
+        content=conteudo, media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="{nome_arquivo}"'},
     )
 
 
