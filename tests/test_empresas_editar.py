@@ -148,6 +148,31 @@ async def test_admin_limpa_inscricao_municipal(db_session):
 
 
 @pytest.mark.asyncio
+async def test_admin_define_codigo_tributacao_municipal(db_session):
+    # Belem exige esse campo (SEFIN L0017: "codigo de tributacao municipal
+    # nao foi informado") -- precisa ser possivel cadastrar.
+    empresa, titular = await criar_empresa_titular(db_session)
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.put(
+                "/api/empresas/mim",
+                data=_form_edicao(codigo_tributacao_municipal="007"),
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 200
+        assert resposta.json()["codigo_tributacao_municipal"] == "007"
+    finally:
+        app.dependency_overrides.clear()
+
+    await db_session.refresh(empresa)
+    assert empresa.codigo_tributacao_municipal == "007"
+
+
+@pytest.mark.asyncio
 async def test_admin_troca_cnpj(db_session):
     empresa, titular = await criar_empresa_titular(db_session)
     token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)

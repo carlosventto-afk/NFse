@@ -36,6 +36,8 @@ def test_montar_dps_data_mapeia_empresa_e_dados_corretamente():
     assert dps_data.toma_cpf_cnpj == "98765432100"
     assert dps_data.toma_nome == "Cliente Teste"
     assert dps_data.c_trib_nac == "141001"
+    # sem codigo_tributacao_municipal configurado, cTribMun fica ausente
+    assert dps_data.c_trib_mun is None
     assert dps_data.x_desc_serv == "Lavagem de 5kg de roupa"
     assert dps_data.v_serv == Decimal("49.90")
 
@@ -81,6 +83,19 @@ def test_montar_dps_data_usa_local_prestacao_quando_diferente_do_emissor():
 
     assert dps_data.c_loc_emi == "1501402"
     assert dps_data.c_loc_prestacao == "3304557"
+
+
+def test_montar_dps_data_repassa_codigo_tributacao_municipal_quando_cadastrado():
+    empresa = _empresa()
+    empresa.codigo_tributacao_municipal = "7"
+    dados = DadosEmissao(
+        tomador_cpf_cnpj="98765432100", tomador_nome="Cliente Teste", tomador_email=None,
+        descricao="Lavagem", valor=Decimal("10.00"), competencia=date(2026, 8, 1),
+    )
+
+    dps_data = montar_dps_data(empresa, serie="1", numero=1, dados=dados)
+
+    assert dps_data.c_trib_mun == "7"
 
 
 def test_montar_dps_data_sem_documento_do_tomador_passa_none_adiante():

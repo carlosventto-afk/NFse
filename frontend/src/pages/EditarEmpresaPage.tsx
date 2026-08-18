@@ -3,7 +3,8 @@ import { editarEmpresa, obterMinhaEmpresa, type DadosEdicaoEmpresa } from "../ap
 
 const VAZIO: DadosEdicaoEmpresa = {
   cnpj: "", inscricao_municipal: "", municipio_ibge: "", local_prestacao_ibge: "",
-  op_simp_nac: "3", codigo_tributacao: "", descricao_servico_padrao: "", ambiente: "homologacao",
+  op_simp_nac: "3", codigo_tributacao: "", codigo_tributacao_municipal: "",
+  descricao_servico_padrao: "", ambiente: "homologacao",
   senha_certificado: "",
 };
 
@@ -26,6 +27,7 @@ export default function EditarEmpresaPage() {
           local_prestacao_ibge: empresa.local_prestacao_ibge ?? "",
           op_simp_nac: String(empresa.op_simp_nac),
           codigo_tributacao: empresa.codigo_tributacao,
+          codigo_tributacao_municipal: empresa.codigo_tributacao_municipal ?? "",
           descricao_servico_padrao: empresa.descricao_servico_padrao,
           ambiente: empresa.ambiente,
           senha_certificado: "",
@@ -98,6 +100,13 @@ export default function EditarEmpresaPage() {
           <label htmlFor="cod_trib">Codigo de tributacao nacional</label>
           <input id="cod_trib" required value={dados.codigo_tributacao}
             onChange={(e) => atualizar("codigo_tributacao", e.target.value)} />
+        </div>
+        <div className="form-linha">
+          <label htmlFor="cod_trib_mun">
+            Codigo de tributacao municipal (3 digitos — so se o municipio exigir)
+          </label>
+          <input id="cod_trib_mun" maxLength={3} value={dados.codigo_tributacao_municipal}
+            onChange={(e) => atualizar("codigo_tributacao_municipal", e.target.value)} />
         </div>
         <div className="form-linha">
           <label htmlFor="descricao">Descricao padrao do servico</label>

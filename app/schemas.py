@@ -143,6 +143,7 @@ class EmpresaDetalheOut(BaseModel):
     local_prestacao_ibge: str | None
     op_simp_nac: int
     codigo_tributacao: str
+    codigo_tributacao_municipal: str | None
     descricao_servico_padrao: str
     ambiente: str
     certificado_valido_ate: datetime

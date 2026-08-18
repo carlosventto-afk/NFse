@@ -25,6 +25,7 @@ async def criar_empresa_via_api(
     local_prestacao_ibge: str | None = Form(None),
     op_simp_nac: int = Form(...),
     codigo_tributacao: str = Form(...),
+    codigo_tributacao_municipal: str | None = Form(None),
     descricao_servico_padrao: str = Form(...),
     ambiente: str = Form(...),
     senha_certificado: str = Form(...),
@@ -41,6 +42,7 @@ async def criar_empresa_via_api(
         raise HTTPException(status_code=422, detail="CNPJ deve ter 14 digitos")
     inscricao_municipal = (inscricao_municipal or "").strip() or None
     local_prestacao_ibge = (local_prestacao_ibge or "").strip() or None
+    codigo_tributacao_municipal = (codigo_tributacao_municipal or "").strip() or None
 
     pfx_bytes = await pfx.read()
     pfx_base64 = base64.b64encode(pfx_bytes).decode()
@@ -54,6 +56,7 @@ async def criar_empresa_via_api(
             local_prestacao_ibge=local_prestacao_ibge,
             op_simp_nac=op_simp_nac,
             codigo_tributacao=codigo_tributacao,
+            codigo_tributacao_municipal=codigo_tributacao_municipal,
             descricao_servico_padrao=descricao_servico_padrao,
             ambiente=ambiente,
             pfx_base64=pfx_base64,
@@ -86,6 +89,7 @@ async def editar_minha_empresa(
     local_prestacao_ibge: str | None = Form(None),
     op_simp_nac: int = Form(...),
     codigo_tributacao: str = Form(...),
+    codigo_tributacao_municipal: str | None = Form(None),
     descricao_servico_padrao: str = Form(...),
     ambiente: str = Form(...),
     senha_certificado: str | None = Form(None),
@@ -100,6 +104,7 @@ async def editar_minha_empresa(
         raise HTTPException(status_code=422, detail="Ambiente deve ser homologacao ou producao")
     inscricao_municipal = (inscricao_municipal or "").strip() or None
     local_prestacao_ibge = (local_prestacao_ibge or "").strip() or None
+    codigo_tributacao_municipal = (codigo_tributacao_municipal or "").strip() or None
 
     empresa = await session.get(Empresa, contexto.empresa_id)
 
@@ -130,6 +135,7 @@ async def editar_minha_empresa(
     empresa.local_prestacao_ibge = local_prestacao_ibge
     empresa.op_simp_nac = op_simp_nac
     empresa.codigo_tributacao = codigo_tributacao
+    empresa.codigo_tributacao_municipal = codigo_tributacao_municipal
     empresa.descricao_servico_padrao = descricao_servico_padrao
     empresa.ambiente = ambiente
 

@@ -118,7 +118,12 @@ def translate_erros(erros) -> list[dict]:
             out.append(translate("?", str(e)))
             continue
         codigo = e.get("Codigo") or e.get("codigo") or e.get("Código") or e.get("código") or "?"
-        descricao = e.get("Descricao") or e.get("descricao") or e.get("Descrição") or e.get("descrição") or ""
+        descricao = (
+            e.get("Descricao") or e.get("descricao") or e.get("Descrição") or e.get("descrição")
+            # Endpoints proprios de municipio (ex.: Belem) usam "mensagem" em
+            # vez do padrao da SEFIN Nacional — confirmado ao vivo (L0017).
+            or e.get("Mensagem") or e.get("mensagem") or ""
+        )
         complemento = e.get("complemento") or e.get("Complemento")
         item = translate(codigo, descricao)
         if complemento and complemento != descricao:

@@ -67,6 +67,10 @@ class Empresa(Base):
     local_prestacao_ibge: Mapped[str | None] = mapped_column(String(7), nullable=True)
     op_simp_nac: Mapped[int] = mapped_column(nullable=False)
     codigo_tributacao: Mapped[str] = mapped_column(String(6), nullable=False)
+    # Codigo de tributacao MUNICIPAL (3 digitos, cTribMun) -- tabela propria
+    # de cada prefeitura, distinta do codigo nacional acima. So obrigatorio
+    # para municipios com validacao propria (ex.: Belem, erro L0017).
+    codigo_tributacao_municipal: Mapped[str | None] = mapped_column(String(3), nullable=True)
     descricao_servico_padrao: Mapped[str] = mapped_column(String(2000), nullable=False)
     ambiente: Mapped[AmbienteEnum] = mapped_column(
         String(20), default=AmbienteEnum.homologacao, nullable=False

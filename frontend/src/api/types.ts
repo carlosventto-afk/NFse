@@ -82,6 +82,7 @@ export interface EmpresaDetalhe {
   local_prestacao_ibge: string | null;
   op_simp_nac: number;
   codigo_tributacao: string;
+  codigo_tributacao_municipal: string | null;
   descricao_servico_padrao: string;
   ambiente: string;
   certificado_valido_ate: string;

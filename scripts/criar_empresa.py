@@ -36,6 +36,7 @@ async def criar_empresa(
     local_prestacao_ibge: str | None = None,
     op_simp_nac: int,
     codigo_tributacao: str,
+    codigo_tributacao_municipal: str | None = None,
     descricao_servico_padrao: str,
     ambiente: str,
     pfx_base64: str,
@@ -83,6 +84,7 @@ async def criar_empresa(
         local_prestacao_ibge=local_prestacao_ibge,
         op_simp_nac=op_simp_nac,
         codigo_tributacao=codigo_tributacao,
+        codigo_tributacao_municipal=codigo_tributacao_municipal,
         descricao_servico_padrao=descricao_servico_padrao,
         ambiente=AmbienteEnum(ambiente),
         certificado_pfx_cifrado=cifrar(pfx_base64, fernet_key),
@@ -116,6 +118,9 @@ async def _main() -> None:
     )
     parser.add_argument("--regime", required=True, type=int, dest="op_simp_nac")
     parser.add_argument("--cod-tributacao", required=True, dest="codigo_tributacao")
+    parser.add_argument(
+        "--cod-tributacao-municipal", required=False, default=None, dest="codigo_tributacao_municipal",
+    )
     parser.add_argument("--descricao", required=True, dest="descricao_servico_padrao")
     parser.add_argument("--ambiente", required=True, choices=["homologacao", "producao"])
     parser.add_argument("--pfx", required=True, type=Path, dest="pfx_path")
@@ -136,6 +141,7 @@ async def _main() -> None:
             local_prestacao_ibge=args.local_prestacao_ibge,
             op_simp_nac=args.op_simp_nac,
             codigo_tributacao=args.codigo_tributacao,
+            codigo_tributacao_municipal=args.codigo_tributacao_municipal,
             descricao_servico_padrao=args.descricao_servico_padrao,
             ambiente=args.ambiente,
             pfx_base64=pfx_base64,
