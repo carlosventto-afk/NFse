@@ -171,6 +171,11 @@ async def processar_uma_pendente(session: AsyncSession, settings: Settings | Non
     else:
         emissao.status = StatusEmissao.rejeitada
         emissao.erros = resultado.erros_json()
+        # Log da resposta crua: o catalogo de erros so conhece os nomes de
+        # campo da SEFIN Nacional. Endpoints proprios de municipio (ex.:
+        # Belem) podem usar chaves diferentes pra codigo/descricao, e sem
+        # isso a mensagem chega vazia na tela sem pista de por que.
+        logger.warning("emissao %s rejeitada; resposta bruta: %s", emissao.id, bruta)
 
     await session.commit()
     return True
