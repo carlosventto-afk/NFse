@@ -21,7 +21,7 @@ export default function EditarEmpresaPage() {
       .then((empresa) => {
         setDados({
           cnpj: empresa.cnpj,
-          inscricao_municipal: empresa.inscricao_municipal,
+          inscricao_municipal: empresa.inscricao_municipal ?? "",
           municipio_ibge: empresa.municipio_ibge,
           op_simp_nac: String(empresa.op_simp_nac),
           codigo_tributacao: empresa.codigo_tributacao,
@@ -69,8 +69,8 @@ export default function EditarEmpresaPage() {
           <input id="cnpj" required value={dados.cnpj} onChange={(e) => atualizar("cnpj", e.target.value)} />
         </div>
         <div className="form-linha">
-          <label htmlFor="im">Inscricao municipal</label>
-          <input id="im" required value={dados.inscricao_municipal}
+          <label htmlFor="im">Inscricao municipal (deixe em branco se o municipio nao exigir)</label>
+          <input id="im" value={dados.inscricao_municipal}
             onChange={(e) => atualizar("inscricao_municipal", e.target.value)} />
         </div>
         <div className="form-linha">

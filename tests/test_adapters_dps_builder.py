@@ -51,6 +51,22 @@ def test_montar_dps_data_producao_usa_tp_amb_1():
     assert dps_data.tp_amb == 1
 
 
+def test_montar_dps_data_sem_inscricao_municipal_passa_none_adiante():
+    # Alguns municipios (sem cadastro complementar no CNC NFS-e) rejeitam a
+    # DPS se a IM vier preenchida (SEFIN E0120) -- empresa sem IM cadastrada
+    # precisa gerar prest_im=None, nao string vazia nem erro.
+    empresa = _empresa()
+    empresa.inscricao_municipal = None
+    dados = DadosEmissao(
+        tomador_cpf_cnpj="98765432100", tomador_nome="Cliente Teste", tomador_email=None,
+        descricao="Lavagem", valor=Decimal("10.00"), competencia=date(2026, 8, 1),
+    )
+
+    dps_data = montar_dps_data(empresa, serie="1", numero=1, dados=dados)
+
+    assert dps_data.prest_im is None
+
+
 def test_montar_dps_data_sem_documento_do_tomador_passa_none_adiante():
     dados = DadosEmissao(
         tomador_cpf_cnpj=None, tomador_nome="Cliente Sem Documento", tomador_email=None,

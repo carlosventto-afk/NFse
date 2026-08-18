@@ -31,7 +31,7 @@ async def criar_empresa(
     session: AsyncSession,
     *,
     cnpj: str,
-    inscricao_municipal: str,
+    inscricao_municipal: str | None,
     municipio_ibge: str,
     op_simp_nac: int,
     codigo_tributacao: str,
@@ -107,7 +107,7 @@ def _fernet_key_do_ambiente() -> str:
 async def _main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cnpj", required=True)
-    parser.add_argument("--im", required=True, dest="inscricao_municipal")
+    parser.add_argument("--im", required=False, default=None, dest="inscricao_municipal")
     parser.add_argument("--municipio", required=True, dest="municipio_ibge")
     parser.add_argument("--regime", required=True, type=int, dest="op_simp_nac")
     parser.add_argument("--cod-tributacao", required=True, dest="codigo_tributacao")

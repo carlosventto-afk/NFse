@@ -138,7 +138,7 @@ class NumeracaoOut(BaseModel):
 class EmpresaDetalheOut(BaseModel):
     id: uuid.UUID
     cnpj: str
-    inscricao_municipal: str
+    inscricao_municipal: str | None
     municipio_ibge: str
     op_simp_nac: int
     codigo_tributacao: str

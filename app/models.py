@@ -57,7 +57,9 @@ class Empresa(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     cnpj: Mapped[str] = mapped_column(String(14), unique=True, nullable=False)
-    inscricao_municipal: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Nullable: alguns municipios (sem cadastro complementar no CNC NFS-e)
+    # rejeitam a DPS se a IM vier preenchida (SEFIN E0120).
+    inscricao_municipal: Mapped[str | None] = mapped_column(String(20), nullable=True)
     municipio_ibge: Mapped[str] = mapped_column(String(7), nullable=False)
     op_simp_nac: Mapped[int] = mapped_column(nullable=False)
     codigo_tributacao: Mapped[str] = mapped_column(String(6), nullable=False)

@@ -77,7 +77,7 @@ export interface Numeracao {
 export interface EmpresaDetalhe {
   id: string;
   cnpj: string;
-  inscricao_municipal: string;
+  inscricao_municipal: string | null;
   municipio_ibge: string;
   op_simp_nac: number;
   codigo_tributacao: string;
