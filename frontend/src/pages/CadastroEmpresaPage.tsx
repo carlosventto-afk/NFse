@@ -3,8 +3,8 @@ import { useAuth } from "../context/AuthContext";
 import { criarEmpresa, type DadosEmpresaForm } from "../api/empresas";
 
 const VAZIO: DadosEmpresaForm = {
-  cnpj: "", inscricao_municipal: "", municipio_ibge: "", op_simp_nac: "3",
-  codigo_tributacao: "", descricao_servico_padrao: "", ambiente: "homologacao",
+  cnpj: "", inscricao_municipal: "", municipio_ibge: "", local_prestacao_ibge: "",
+  op_simp_nac: "3", codigo_tributacao: "", descricao_servico_padrao: "", ambiente: "homologacao",
   senha_certificado: "", titular_email: "",
 };
 
@@ -62,6 +62,13 @@ export default function CadastroEmpresaPage() {
           <label htmlFor="municipio">Codigo IBGE do municipio</label>
           <input id="municipio" required value={dados.municipio_ibge}
             onChange={(e) => atualizar("municipio_ibge", e.target.value)} />
+        </div>
+        <div className="form-linha">
+          <label htmlFor="local_prestacao">
+            Codigo IBGE do local da prestacao (deixe em branco se for o mesmo municipio acima)
+          </label>
+          <input id="local_prestacao" value={dados.local_prestacao_ibge}
+            onChange={(e) => atualizar("local_prestacao_ibge", e.target.value)} />
         </div>
         <div className="form-linha">
           <label htmlFor="regime">Regime (opSimpNac)</label>

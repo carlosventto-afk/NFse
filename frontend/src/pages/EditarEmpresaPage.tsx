@@ -2,8 +2,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import { editarEmpresa, obterMinhaEmpresa, type DadosEdicaoEmpresa } from "../api/empresas";
 
 const VAZIO: DadosEdicaoEmpresa = {
-  cnpj: "", inscricao_municipal: "", municipio_ibge: "", op_simp_nac: "3",
-  codigo_tributacao: "", descricao_servico_padrao: "", ambiente: "homologacao",
+  cnpj: "", inscricao_municipal: "", municipio_ibge: "", local_prestacao_ibge: "",
+  op_simp_nac: "3", codigo_tributacao: "", descricao_servico_padrao: "", ambiente: "homologacao",
   senha_certificado: "",
 };
 
@@ -23,6 +23,7 @@ export default function EditarEmpresaPage() {
           cnpj: empresa.cnpj,
           inscricao_municipal: empresa.inscricao_municipal ?? "",
           municipio_ibge: empresa.municipio_ibge,
+          local_prestacao_ibge: empresa.local_prestacao_ibge ?? "",
           op_simp_nac: String(empresa.op_simp_nac),
           codigo_tributacao: empresa.codigo_tributacao,
           descricao_servico_padrao: empresa.descricao_servico_padrao,
@@ -77,6 +78,13 @@ export default function EditarEmpresaPage() {
           <label htmlFor="municipio">Codigo IBGE do municipio</label>
           <input id="municipio" required value={dados.municipio_ibge}
             onChange={(e) => atualizar("municipio_ibge", e.target.value)} />
+        </div>
+        <div className="form-linha">
+          <label htmlFor="local_prestacao">
+            Codigo IBGE do local da prestacao (deixe em branco se for o mesmo municipio acima)
+          </label>
+          <input id="local_prestacao" value={dados.local_prestacao_ibge}
+            onChange={(e) => atualizar("local_prestacao_ibge", e.target.value)} />
         </div>
         <div className="form-linha">
           <label htmlFor="regime">Regime (opSimpNac)</label>

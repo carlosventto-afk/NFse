@@ -100,6 +100,29 @@ async def test_admin_edita_campos_simples_sem_trocar_certificado(db_session):
 
 
 @pytest.mark.asyncio
+async def test_admin_define_local_da_prestacao_diferente_do_municipio_emissor(db_session):
+    empresa, titular = await criar_empresa_titular(db_session)
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.put(
+                "/api/empresas/mim",
+                data=_form_edicao(local_prestacao_ibge="1501402"),
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 200
+        assert resposta.json()["local_prestacao_ibge"] == "1501402"
+    finally:
+        app.dependency_overrides.clear()
+
+    await db_session.refresh(empresa)
+    assert empresa.local_prestacao_ibge == "1501402"
+
+
+@pytest.mark.asyncio
 async def test_admin_limpa_inscricao_municipal(db_session):
     # Alguns municipios rejeitam a DPS se a IM vier preenchida (SEFIN
     # E0120) -- precisa ser possivel deixar em branco.

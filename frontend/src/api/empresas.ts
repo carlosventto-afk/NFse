@@ -5,6 +5,7 @@ export interface DadosEmpresaForm {
   cnpj: string;
   inscricao_municipal: string;
   municipio_ibge: string;
+  local_prestacao_ibge: string;
   op_simp_nac: string;
   codigo_tributacao: string;
   descricao_servico_padrao: string;

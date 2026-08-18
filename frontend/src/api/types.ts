@@ -79,6 +79,7 @@ export interface EmpresaDetalhe {
   cnpj: string;
   inscricao_municipal: string | null;
   municipio_ibge: string;
+  local_prestacao_ibge: string | null;
   op_simp_nac: number;
   codigo_tributacao: string;
   descricao_servico_padrao: string;

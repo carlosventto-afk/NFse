@@ -30,6 +30,8 @@ def test_montar_dps_data_mapeia_empresa_e_dados_corretamente():
     assert dps_data.prest_cnpj == "12345678000199"
     assert dps_data.prest_im == "123456"
     assert dps_data.c_loc_emi == "1501402"
+    # sem local_prestacao_ibge configurado, cai no municipio emissor (default do nfse_core)
+    assert dps_data.c_loc_prestacao == ""
     assert dps_data.op_simp_nac == 3
     assert dps_data.toma_cpf_cnpj == "98765432100"
     assert dps_data.toma_nome == "Cliente Teste"
@@ -65,6 +67,20 @@ def test_montar_dps_data_sem_inscricao_municipal_passa_none_adiante():
     dps_data = montar_dps_data(empresa, serie="1", numero=1, dados=dados)
 
     assert dps_data.prest_im is None
+
+
+def test_montar_dps_data_usa_local_prestacao_quando_diferente_do_emissor():
+    empresa = _empresa()
+    empresa.local_prestacao_ibge = "3304557"
+    dados = DadosEmissao(
+        tomador_cpf_cnpj="98765432100", tomador_nome="Cliente Teste", tomador_email=None,
+        descricao="Lavagem", valor=Decimal("10.00"), competencia=date(2026, 8, 1),
+    )
+
+    dps_data = montar_dps_data(empresa, serie="1", numero=1, dados=dados)
+
+    assert dps_data.c_loc_emi == "1501402"
+    assert dps_data.c_loc_prestacao == "3304557"
 
 
 def test_montar_dps_data_sem_documento_do_tomador_passa_none_adiante():

@@ -61,6 +61,10 @@ class Empresa(Base):
     # rejeitam a DPS se a IM vier preenchida (SEFIN E0120).
     inscricao_municipal: Mapped[str | None] = mapped_column(String(20), nullable=True)
     municipio_ibge: Mapped[str] = mapped_column(String(7), nullable=False)
+    # Codigo IBGE de onde o SERVICO e prestado (cLocPrestacao) -- so difere de
+    # municipio_ibge quando a empresa presta servico fora do proprio municipio.
+    # Nulo: nfse_core cai de volta pro municipio_ibge (comportamento padrao).
+    local_prestacao_ibge: Mapped[str | None] = mapped_column(String(7), nullable=True)
     op_simp_nac: Mapped[int] = mapped_column(nullable=False)
     codigo_tributacao: Mapped[str] = mapped_column(String(6), nullable=False)
     descricao_servico_padrao: Mapped[str] = mapped_column(String(2000), nullable=False)

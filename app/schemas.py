@@ -140,6 +140,7 @@ class EmpresaDetalheOut(BaseModel):
     cnpj: str
     inscricao_municipal: str | None
     municipio_ibge: str
+    local_prestacao_ibge: str | None
     op_simp_nac: int
     codigo_tributacao: str
     descricao_servico_padrao: str

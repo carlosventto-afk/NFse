@@ -27,6 +27,7 @@ def montar_dps_data(empresa: Empresa, serie: str, numero: int, dados: DadosEmiss
         prest_cnpj=empresa.cnpj,
         prest_im=empresa.inscricao_municipal,
         c_loc_emi=empresa.municipio_ibge,
+        c_loc_prestacao=empresa.local_prestacao_ibge or "",
         op_simp_nac=empresa.op_simp_nac,
         toma_cpf_cnpj=dados.tomador_cpf_cnpj,
         toma_nome=dados.tomador_nome,

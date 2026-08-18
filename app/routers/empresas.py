@@ -22,6 +22,7 @@ async def criar_empresa_via_api(
     cnpj: str = Form(...),
     inscricao_municipal: str | None = Form(None),
     municipio_ibge: str = Form(...),
+    local_prestacao_ibge: str | None = Form(None),
     op_simp_nac: int = Form(...),
     codigo_tributacao: str = Form(...),
     descricao_servico_padrao: str = Form(...),
@@ -39,6 +40,7 @@ async def criar_empresa_via_api(
     if len(cnpj) != 14:
         raise HTTPException(status_code=422, detail="CNPJ deve ter 14 digitos")
     inscricao_municipal = (inscricao_municipal or "").strip() or None
+    local_prestacao_ibge = (local_prestacao_ibge or "").strip() or None
 
     pfx_bytes = await pfx.read()
     pfx_base64 = base64.b64encode(pfx_bytes).decode()
@@ -49,6 +51,7 @@ async def criar_empresa_via_api(
             cnpj=cnpj,
             inscricao_municipal=inscricao_municipal,
             municipio_ibge=municipio_ibge,
+            local_prestacao_ibge=local_prestacao_ibge,
             op_simp_nac=op_simp_nac,
             codigo_tributacao=codigo_tributacao,
             descricao_servico_padrao=descricao_servico_padrao,
@@ -80,6 +83,7 @@ async def editar_minha_empresa(
     cnpj: str = Form(...),
     inscricao_municipal: str | None = Form(None),
     municipio_ibge: str = Form(...),
+    local_prestacao_ibge: str | None = Form(None),
     op_simp_nac: int = Form(...),
     codigo_tributacao: str = Form(...),
     descricao_servico_padrao: str = Form(...),
@@ -95,6 +99,7 @@ async def editar_minha_empresa(
     if ambiente not in ("homologacao", "producao"):
         raise HTTPException(status_code=422, detail="Ambiente deve ser homologacao ou producao")
     inscricao_municipal = (inscricao_municipal or "").strip() or None
+    local_prestacao_ibge = (local_prestacao_ibge or "").strip() or None
 
     empresa = await session.get(Empresa, contexto.empresa_id)
 
@@ -122,6 +127,7 @@ async def editar_minha_empresa(
     empresa.cnpj = cnpj
     empresa.inscricao_municipal = inscricao_municipal
     empresa.municipio_ibge = municipio_ibge
+    empresa.local_prestacao_ibge = local_prestacao_ibge
     empresa.op_simp_nac = op_simp_nac
     empresa.codigo_tributacao = codigo_tributacao
     empresa.descricao_servico_padrao = descricao_servico_padrao
