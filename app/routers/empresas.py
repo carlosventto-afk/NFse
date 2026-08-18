@@ -1,10 +1,13 @@
 import base64
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.security import ContextoAutenticado, get_contexto_autenticado
+from app.models import Emissao, Empresa
+from app.schemas import NumeracaoIn, NumeracaoOut
+from app.security import ContextoAutenticado, exigir_admin_empresa, get_contexto_autenticado
 from scripts.criar_empresa import criar_empresa
 
 router = APIRouter(prefix="/empresas", tags=["empresas"])
@@ -57,3 +60,42 @@ async def criar_empresa_via_api(
         "id": str(empresa.id), "cnpj": empresa.cnpj,
         "ambiente": empresa.ambiente if isinstance(empresa.ambiente, str) else empresa.ambiente.value,
     }
+
+
+@router.get("/numeracao", response_model=NumeracaoOut)
+async def obter_numeracao(
+    contexto: ContextoAutenticado = Depends(exigir_admin_empresa),
+    session: AsyncSession = Depends(get_db),
+) -> Empresa:
+    empresa = await session.get(Empresa, contexto.empresa_id)
+    return empresa
+
+
+@router.put("/numeracao", response_model=NumeracaoOut)
+async def definir_numeracao(
+    dados: NumeracaoIn,
+    contexto: ContextoAutenticado = Depends(exigir_admin_empresa),
+    session: AsyncSession = Depends(get_db),
+) -> Empresa:
+    maior_numero_usado = (
+        await session.execute(
+            select(func.max(Emissao.numero)).where(
+                Emissao.empresa_id == contexto.empresa_id, Emissao.serie == dados.serie,
+            )
+        )
+    ).scalar_one_or_none()
+    if maior_numero_usado is not None and dados.proximo_numero <= maior_numero_usado:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Ja existe emissao com numero {maior_numero_usado} na serie {dados.serie}; "
+                f"o proximo numero precisa ser maior que isso"
+            ),
+        )
+
+    empresa = await session.get(Empresa, contexto.empresa_id)
+    empresa.serie = dados.serie
+    empresa.proximo_numero = dados.proximo_numero
+    await session.commit()
+    await session.refresh(empresa)
+    return empresa

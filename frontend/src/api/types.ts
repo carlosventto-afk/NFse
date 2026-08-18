@@ -68,3 +68,8 @@ export interface EmpresaCriada {
   cnpj: string;
   ambiente: string;
 }
+
+export interface Numeracao {
+  serie: string;
+  proximo_numero: number;
+}

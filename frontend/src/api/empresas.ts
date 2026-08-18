@@ -1,5 +1,5 @@
-import { apiFetch } from "./client";
-import type { EmpresaCriada } from "./types";
+import { apiFetch, apiFetchJson } from "./client";
+import type { EmpresaCriada, Numeracao } from "./types";
 
 export interface DadosEmpresaForm {
   cnpj: string;
@@ -19,4 +19,12 @@ export function criarEmpresa(dados: DadosEmpresaForm, pfx: File): Promise<Empres
   Object.entries(dadosLimpos).forEach(([chave, valor]) => formulario.append(chave, valor));
   formulario.append("pfx", pfx);
   return apiFetch<EmpresaCriada>("/api/empresas", { method: "POST", body: formulario });
+}
+
+export function obterNumeracao(): Promise<Numeracao> {
+  return apiFetch<Numeracao>("/api/empresas/numeracao");
+}
+
+export function definirNumeracao(dados: Numeracao): Promise<Numeracao> {
+  return apiFetchJson<Numeracao>("/api/empresas/numeracao", "PUT", dados);
 }

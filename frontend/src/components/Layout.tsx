@@ -20,6 +20,7 @@ export default function Layout() {
           <Link to="/clientes">Clientes</Link>
           <Link to="/importar-csv">Importar CSV</Link>
           <Link to="/cadastro-empresa">Cadastrar empresa</Link>
+          <Link to="/numeracao">Numeracao</Link>
         </div>
         <div>
           {empresaAtiva && (

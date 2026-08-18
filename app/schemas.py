@@ -128,6 +128,18 @@ class TrocarEmpresaIn(BaseModel):
     empresa_id: uuid.UUID
 
 
+class NumeracaoOut(BaseModel):
+    serie: str
+    proximo_numero: int
+
+    model_config = {"from_attributes": True}
+
+
+class NumeracaoIn(BaseModel):
+    serie: str = Field(min_length=1, max_length=5)
+    proximo_numero: int = Field(ge=1)
+
+
 class CancelarEmissaoIn(BaseModel):
     motivo: str = Field(max_length=2000)
     codigo_motivo: str = "9"
