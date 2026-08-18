@@ -20,6 +20,7 @@ def test_todas_as_rotas_esperadas_estao_registradas():
         "/api/clientes",
         "/api/clientes/{cliente_id}",
         "/api/empresas",
+        "/api/empresas/mim",
         "/api/empresas/numeracao",
         "/api/webhooks/stone/{empresa_id}",
         "/api/emissoes/manual",

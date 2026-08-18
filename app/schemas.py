@@ -135,6 +135,20 @@ class NumeracaoOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class EmpresaDetalheOut(BaseModel):
+    id: uuid.UUID
+    cnpj: str
+    inscricao_municipal: str
+    municipio_ibge: str
+    op_simp_nac: int
+    codigo_tributacao: str
+    descricao_servico_padrao: str
+    ambiente: str
+    certificado_valido_ate: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class NumeracaoIn(BaseModel):
     serie: str = Field(min_length=1, max_length=5)
     proximo_numero: int = Field(ge=1)

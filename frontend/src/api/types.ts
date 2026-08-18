@@ -73,3 +73,15 @@ export interface Numeracao {
   serie: string;
   proximo_numero: number;
 }
+
+export interface EmpresaDetalhe {
+  id: string;
+  cnpj: string;
+  inscricao_municipal: string;
+  municipio_ibge: string;
+  op_simp_nac: number;
+  codigo_tributacao: string;
+  descricao_servico_padrao: string;
+  ambiente: string;
+  certificado_valido_ate: string;
+}
