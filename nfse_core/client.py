@@ -38,6 +38,21 @@ DANFSE_BASE_URLS = {
     "producao": "https://adn.nfse.gov.br/danfse",
 }
 
+# Alguns municipios rodam o proprio endpoint ADN-compativel (mesmo contrato
+# JSON dpsXmlGZipB64/chaveAcesso/nfseXmlGZipB64 da SEFIN Nacional) em vez de
+# aceitar emissao pelo Emissor Publico Nacional (SEFIN E0037/E0039 — municipio
+# nao parametrizado pro emissor publico). Mapeado por codigo IBGE do
+# municipio emissor -> URL completa do endpoint POST de emissao de DPS.
+# So cobre emitir_dps: cancelamento/consulta nao sao documentados nesses
+# endpoints proprios, entao continuam indo pro host nacional (BASE_URLS).
+MUNICIPIO_DPS_URLS: dict[str, dict[str, str]] = {
+    "1501402": {  # Belem/PA — "Manual de Contribuintes - Guia API's.pdf",
+        # nfse-nacional-kit/Belem/. URL de producao nao publicada no manual;
+        # exige solicitacao formal a SEFIN municipal.
+        "homologacao": "https://homol-nfse2.belem.pa.gov.br/notafiscal-adn-ws/api/adn/dps",
+    },
+}
+
 
 class SefinError(RuntimeError):
     def __init__(self, message: str, status_code: int | None = None, body: str | None = None):
@@ -50,10 +65,14 @@ class SefinClient:
     """Uma instância por chamada — escreve o par cert/key em arquivos temporários
     (exigência do httpx/ssl) e os remove no close()."""
 
-    def __init__(self, environment: str, pfx_base64: str, cert_password: str | None):
+    def __init__(
+        self, environment: str, pfx_base64: str, cert_password: str | None,
+        municipio_ibge: str | None = None,
+    ):
         if environment not in BASE_URLS:
             raise ValueError(f"Ambiente NFS-e inválido: {environment}")
         self.base_url = BASE_URLS[environment]
+        self._municipio_dps_url = (MUNICIPIO_DPS_URLS.get(municipio_ibge) or {}).get(environment)
         key_pem, cert_pem, chain_pem = load_pfx_pem(pfx_base64, cert_password)
         self._cert_file = tempfile.NamedTemporaryFile(suffix=".pem", delete=False)
         self._cert_file.write(cert_pem + b"".join(chain_pem))
@@ -91,7 +110,8 @@ class SefinClient:
         traz a lista de erros de validação. Nomes de campos variam entre
         versões do manual — o service usa parsing tolerante.
         """
-        resp = await self._request("POST", "/nfse", json={"dpsXmlGZipB64": self._pack(dps_xml_assinado)})
+        url = self._municipio_dps_url or "/nfse"
+        resp = await self._request("POST", url, json={"dpsXmlGZipB64": self._pack(dps_xml_assinado)})
         return self._handle(resp)
 
     async def consultar_nfse(self, chave_acesso: str) -> dict:

@@ -110,7 +110,10 @@ async def processar_uma_pendente(session: AsyncSession, settings: Settings | Non
         # SQLAlchemy devolve apos um session.get() (coluna e String, nao um
         # Enum do SQLAlchemy — .value direto em cima do valor recem-carregado
         # do banco quebra com AttributeError; ver Task 5).
-        cliente = SefinClient(AmbienteEnum(empresa.ambiente).value, pfx_base64, senha)
+        cliente = SefinClient(
+            AmbienteEnum(empresa.ambiente).value, pfx_base64, senha,
+            municipio_ibge=empresa.municipio_ibge,
+        )
         try:
             bruta = None
             if ja_submetida:
@@ -218,7 +221,10 @@ async def processar_um_cancelamento_pendente(session: AsyncSession, settings: Se
         xml_evento = build_evento_cancelamento_xml(evento_data)
         assinado = sign_evento(xml_evento, pfx_base64, senha)
 
-        cliente = SefinClient(AmbienteEnum(empresa.ambiente).value, pfx_base64, senha)
+        cliente = SefinClient(
+            AmbienteEnum(empresa.ambiente).value, pfx_base64, senha,
+            municipio_ibge=empresa.municipio_ibge,
+        )
         try:
             bruta = await cliente.registrar_evento(emissao.chave_acesso, assinado)
         finally:
