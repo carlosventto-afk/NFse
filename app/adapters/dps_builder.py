@@ -29,6 +29,7 @@ def montar_dps_data(empresa: Empresa, serie: str, numero: int, dados: DadosEmiss
         c_loc_emi=empresa.municipio_ibge,
         c_loc_prestacao=empresa.local_prestacao_ibge or "",
         op_simp_nac=empresa.op_simp_nac,
+        reg_ap_trib_sn=empresa.regime_apuracao_sn if empresa.op_simp_nac == 3 else None,
         toma_cpf_cnpj=dados.tomador_cpf_cnpj,
         toma_nome=dados.tomador_nome,
         toma_email=dados.tomador_email,

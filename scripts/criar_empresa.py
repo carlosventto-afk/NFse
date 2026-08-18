@@ -35,6 +35,7 @@ async def criar_empresa(
     municipio_ibge: str,
     local_prestacao_ibge: str | None = None,
     op_simp_nac: int,
+    regime_apuracao_sn: int | None = None,
     codigo_tributacao: str,
     codigo_tributacao_municipal: str | None = None,
     descricao_servico_padrao: str,
@@ -83,6 +84,7 @@ async def criar_empresa(
         municipio_ibge=municipio_ibge,
         local_prestacao_ibge=local_prestacao_ibge,
         op_simp_nac=op_simp_nac,
+        regime_apuracao_sn=regime_apuracao_sn,
         codigo_tributacao=codigo_tributacao,
         codigo_tributacao_municipal=codigo_tributacao_municipal,
         descricao_servico_padrao=descricao_servico_padrao,
@@ -117,6 +119,9 @@ async def _main() -> None:
         "--local-prestacao", required=False, default=None, dest="local_prestacao_ibge",
     )
     parser.add_argument("--regime", required=True, type=int, dest="op_simp_nac")
+    parser.add_argument(
+        "--regime-apuracao-sn", required=False, default=None, type=int, dest="regime_apuracao_sn",
+    )
     parser.add_argument("--cod-tributacao", required=True, dest="codigo_tributacao")
     parser.add_argument(
         "--cod-tributacao-municipal", required=False, default=None, dest="codigo_tributacao_municipal",
@@ -140,6 +145,7 @@ async def _main() -> None:
             municipio_ibge=args.municipio_ibge,
             local_prestacao_ibge=args.local_prestacao_ibge,
             op_simp_nac=args.op_simp_nac,
+            regime_apuracao_sn=args.regime_apuracao_sn,
             codigo_tributacao=args.codigo_tributacao,
             codigo_tributacao_municipal=args.codigo_tributacao_municipal,
             descricao_servico_padrao=args.descricao_servico_padrao,

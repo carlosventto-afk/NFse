@@ -66,6 +66,12 @@ class Empresa(Base):
     # Nulo: nfse_core cai de volta pro municipio_ibge (comportamento padrao).
     local_prestacao_ibge: Mapped[str | None] = mapped_column(String(7), nullable=True)
     op_simp_nac: Mapped[int] = mapped_column(nullable=False)
+    # Regime de apuracao do Simples Nacional (regApTribSN) -- so relevante
+    # quando op_simp_nac=3 (ME/EPP). Opcional no XSD, mas confirmado ao vivo
+    # (E0160) que a SEFIN/Belem rejeita op_simp_nac=3 sem esse campo.
+    # 1=tributos federais e municipal apurados pelo SN (caso comum);
+    # 2=federais pelo SN, ISSQN por fora; 3=federais e municipal por fora do SN.
+    regime_apuracao_sn: Mapped[int | None] = mapped_column(nullable=True)
     codigo_tributacao: Mapped[str] = mapped_column(String(6), nullable=False)
     # Codigo de tributacao MUNICIPAL (3 digitos, cTribMun) -- tabela propria
     # de cada prefeitura, distinta do codigo nacional acima. So obrigatorio

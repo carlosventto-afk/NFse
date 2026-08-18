@@ -24,6 +24,7 @@ async def criar_empresa_via_api(
     municipio_ibge: str = Form(...),
     local_prestacao_ibge: str | None = Form(None),
     op_simp_nac: int = Form(...),
+    regime_apuracao_sn: str | None = Form(None),
     codigo_tributacao: str = Form(...),
     codigo_tributacao_municipal: str | None = Form(None),
     descricao_servico_padrao: str = Form(...),
@@ -43,6 +44,7 @@ async def criar_empresa_via_api(
     inscricao_municipal = (inscricao_municipal or "").strip() or None
     local_prestacao_ibge = (local_prestacao_ibge or "").strip() or None
     codigo_tributacao_municipal = (codigo_tributacao_municipal or "").strip() or None
+    regime_apuracao_sn_int = int(regime_apuracao_sn) if (regime_apuracao_sn or "").strip() else None
 
     pfx_bytes = await pfx.read()
     pfx_base64 = base64.b64encode(pfx_bytes).decode()
@@ -55,6 +57,7 @@ async def criar_empresa_via_api(
             municipio_ibge=municipio_ibge,
             local_prestacao_ibge=local_prestacao_ibge,
             op_simp_nac=op_simp_nac,
+            regime_apuracao_sn=regime_apuracao_sn_int,
             codigo_tributacao=codigo_tributacao,
             codigo_tributacao_municipal=codigo_tributacao_municipal,
             descricao_servico_padrao=descricao_servico_padrao,
@@ -88,6 +91,7 @@ async def editar_minha_empresa(
     municipio_ibge: str = Form(...),
     local_prestacao_ibge: str | None = Form(None),
     op_simp_nac: int = Form(...),
+    regime_apuracao_sn: str | None = Form(None),
     codigo_tributacao: str = Form(...),
     codigo_tributacao_municipal: str | None = Form(None),
     descricao_servico_padrao: str = Form(...),
@@ -105,6 +109,7 @@ async def editar_minha_empresa(
     inscricao_municipal = (inscricao_municipal or "").strip() or None
     local_prestacao_ibge = (local_prestacao_ibge or "").strip() or None
     codigo_tributacao_municipal = (codigo_tributacao_municipal or "").strip() or None
+    regime_apuracao_sn_int = int(regime_apuracao_sn) if (regime_apuracao_sn or "").strip() else None
 
     empresa = await session.get(Empresa, contexto.empresa_id)
 
@@ -134,6 +139,7 @@ async def editar_minha_empresa(
     empresa.municipio_ibge = municipio_ibge
     empresa.local_prestacao_ibge = local_prestacao_ibge
     empresa.op_simp_nac = op_simp_nac
+    empresa.regime_apuracao_sn = regime_apuracao_sn_int
     empresa.codigo_tributacao = codigo_tributacao
     empresa.codigo_tributacao_municipal = codigo_tributacao_municipal
     empresa.descricao_servico_padrao = descricao_servico_padrao

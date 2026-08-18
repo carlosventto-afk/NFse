@@ -7,6 +7,7 @@ export interface DadosEmpresaForm {
   municipio_ibge: string;
   local_prestacao_ibge: string;
   op_simp_nac: string;
+  regime_apuracao_sn: string;
   codigo_tributacao: string;
   codigo_tributacao_municipal: string;
   descricao_servico_padrao: string;

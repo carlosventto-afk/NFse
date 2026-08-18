@@ -142,6 +142,7 @@ class EmpresaDetalheOut(BaseModel):
     municipio_ibge: str
     local_prestacao_ibge: str | None
     op_simp_nac: int
+    regime_apuracao_sn: int | None
     codigo_tributacao: str
     codigo_tributacao_municipal: str | None
     descricao_servico_padrao: str

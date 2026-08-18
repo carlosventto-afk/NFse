@@ -33,6 +33,8 @@ def test_montar_dps_data_mapeia_empresa_e_dados_corretamente():
     # sem local_prestacao_ibge configurado, cai no municipio emissor (default do nfse_core)
     assert dps_data.c_loc_prestacao == ""
     assert dps_data.op_simp_nac == 3
+    # sem regime_apuracao_sn configurado, reg_ap_trib_sn fica ausente
+    assert dps_data.reg_ap_trib_sn is None
     assert dps_data.toma_cpf_cnpj == "98765432100"
     assert dps_data.toma_nome == "Cliente Teste"
     assert dps_data.c_trib_nac == "141001"
@@ -96,6 +98,38 @@ def test_montar_dps_data_repassa_codigo_tributacao_municipal_quando_cadastrado()
     dps_data = montar_dps_data(empresa, serie="1", numero=1, dados=dados)
 
     assert dps_data.c_trib_mun == "7"
+
+
+def test_montar_dps_data_repassa_regime_apuracao_sn_quando_op_simp_nac_3():
+    # SEFIN/Belem confirmado ao vivo (E0160): op_simp_nac=3 sem regApTribSN
+    # e rejeitado mesmo com o cadastro Simples Nacional correto.
+    empresa = _empresa()
+    empresa.regime_apuracao_sn = 1
+    dados = DadosEmissao(
+        tomador_cpf_cnpj="98765432100", tomador_nome="Cliente Teste", tomador_email=None,
+        descricao="Lavagem", valor=Decimal("10.00"), competencia=date(2026, 8, 1),
+    )
+
+    dps_data = montar_dps_data(empresa, serie="1", numero=1, dados=dados)
+
+    assert dps_data.reg_ap_trib_sn == 1
+
+
+def test_montar_dps_data_omite_regime_apuracao_sn_quando_nao_optante():
+    # Campo so faz sentido para op_simp_nac=3 (ME/EPP) -- mesmo que a
+    # empresa tenha algum valor cadastrado de uma troca de regime anterior,
+    # nao deve vazar pra uma DPS de empresa nao-optante ou MEI.
+    empresa = _empresa()
+    empresa.op_simp_nac = 1
+    empresa.regime_apuracao_sn = 1
+    dados = DadosEmissao(
+        tomador_cpf_cnpj="98765432100", tomador_nome="Cliente Teste", tomador_email=None,
+        descricao="Lavagem", valor=Decimal("10.00"), competencia=date(2026, 8, 1),
+    )
+
+    dps_data = montar_dps_data(empresa, serie="1", numero=1, dados=dados)
+
+    assert dps_data.reg_ap_trib_sn is None
 
 
 def test_montar_dps_data_sem_documento_do_tomador_passa_none_adiante():

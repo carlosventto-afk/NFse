@@ -81,6 +81,7 @@ export interface EmpresaDetalhe {
   municipio_ibge: string;
   local_prestacao_ibge: string | null;
   op_simp_nac: number;
+  regime_apuracao_sn: number | null;
   codigo_tributacao: string;
   codigo_tributacao_municipal: string | null;
   descricao_servico_padrao: string;

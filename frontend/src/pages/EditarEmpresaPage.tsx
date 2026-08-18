@@ -3,7 +3,7 @@ import { editarEmpresa, obterMinhaEmpresa, type DadosEdicaoEmpresa } from "../ap
 
 const VAZIO: DadosEdicaoEmpresa = {
   cnpj: "", inscricao_municipal: "", municipio_ibge: "", local_prestacao_ibge: "",
-  op_simp_nac: "3", codigo_tributacao: "", codigo_tributacao_municipal: "",
+  op_simp_nac: "3", regime_apuracao_sn: "", codigo_tributacao: "", codigo_tributacao_municipal: "",
   descricao_servico_padrao: "", ambiente: "homologacao",
   senha_certificado: "",
 };
@@ -26,6 +26,7 @@ export default function EditarEmpresaPage() {
           municipio_ibge: empresa.municipio_ibge,
           local_prestacao_ibge: empresa.local_prestacao_ibge ?? "",
           op_simp_nac: String(empresa.op_simp_nac),
+          regime_apuracao_sn: empresa.regime_apuracao_sn != null ? String(empresa.regime_apuracao_sn) : "",
           codigo_tributacao: empresa.codigo_tributacao,
           codigo_tributacao_municipal: empresa.codigo_tributacao_municipal ?? "",
           descricao_servico_padrao: empresa.descricao_servico_padrao,
@@ -96,6 +97,18 @@ export default function EditarEmpresaPage() {
             <option value="3">3 - Optante ME/EPP</option>
           </select>
         </div>
+        {dados.op_simp_nac === "3" && (
+          <div className="form-linha">
+            <label htmlFor="regime_apuracao">Regime de apuracao do Simples Nacional</label>
+            <select id="regime_apuracao" value={dados.regime_apuracao_sn}
+              onChange={(e) => atualizar("regime_apuracao_sn", e.target.value)}>
+              <option value="">Nao informar (padrao — municipio pode exigir)</option>
+              <option value="1">1 - Tributos federais e municipal apurados pelo SN</option>
+              <option value="2">2 - Federais pelo SN, ISSQN por fora do SN</option>
+              <option value="3">3 - Federais e municipal por fora do SN</option>
+            </select>
+          </div>
+        )}
         <div className="form-linha">
           <label htmlFor="cod_trib">Codigo de tributacao nacional</label>
           <input id="cod_trib" required value={dados.codigo_tributacao}
