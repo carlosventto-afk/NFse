@@ -140,9 +140,10 @@ async def test_excluir_emissao_libera_stone_charge_id_para_nova_importacao(db_se
                     "arquivo": (
                         "relatorio.csv",
                         (
-                            "﻿CATEGORIA;DATA DA VENDA;STONE ID;QTD DE PARCELAS;Nº DA PARCELA;"
-                            "VALOR BRUTO;ÚLTIMO STATUS;DATA DO ÚLTIMO STATUS\n"
-                            "Venda;30/07/2026 14:30:04;stone-123;1;1;49,90;Pago;30/07/2026 14:30:04\n"
+                            "﻿CATEGORIA;DATA DA VENDA;DATA DE VENCIMENTO;STONE ID;QTD DE PARCELAS;"
+                            "Nº DA PARCELA;VALOR BRUTO;ÚLTIMO STATUS;DATA DO ÚLTIMO STATUS\n"
+                            "Venda;30/07/2026 14:30:04;31/07/2026;stone-123;1;1;49,90;Pago;"
+                            "30/07/2026 14:30:04\n"
                         ).encode("utf-8"),
                         "text/csv",
                     )

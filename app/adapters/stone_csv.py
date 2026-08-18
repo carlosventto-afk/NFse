@@ -1,12 +1,13 @@
 import csv
 import io
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 COLUNAS_OBRIGATORIAS = (
     "CATEGORIA",
     "DATA DA VENDA",
+    "DATA DE VENCIMENTO",
     "STONE ID",
     "QTD DE PARCELAS",
     "Nº DA PARCELA",
@@ -24,6 +25,7 @@ class CabecalhoInvalidoError(ValueError):
 class NotaCandidata:
     stone_charge_id: str
     data_da_venda: datetime
+    data_vencimento: date
     data_ultimo_status: datetime
     valor: Decimal
 
@@ -60,7 +62,7 @@ def parsear_relatorio_stone(conteudo: bytes) -> ResultadoParse:
         )
 
     resultado = ResultadoParse(notas=[])
-    grupos: dict[tuple, list[tuple[int, str, Decimal, datetime, datetime]]] = {}
+    grupos: dict[tuple, list[tuple[int, str, Decimal, datetime, date, datetime]]] = {}
     ordem_grupos: list[tuple] = []
 
     for linha in leitor:
@@ -76,6 +78,9 @@ def parsear_relatorio_stone(conteudo: bytes) -> ResultadoParse:
             data_da_venda = datetime.strptime(
                 linha["DATA DA VENDA"].strip(), "%d/%m/%Y %H:%M:%S"
             )
+            data_vencimento = datetime.strptime(
+                linha["DATA DE VENCIMENTO"].strip(), "%d/%m/%Y"
+            ).date()
             data_ultimo_status = datetime.strptime(
                 linha["DATA DO ÚLTIMO STATUS"].strip(), "%d/%m/%Y %H:%M:%S"
             )
@@ -97,16 +102,19 @@ def parsear_relatorio_stone(conteudo: bytes) -> ResultadoParse:
         if chave not in grupos:
             grupos[chave] = []
             ordem_grupos.append(chave)
-        grupos[chave].append((numero_parcela, stone_id, valor, data_da_venda, data_ultimo_status))
+        grupos[chave].append(
+            (numero_parcela, stone_id, valor, data_da_venda, data_vencimento, data_ultimo_status)
+        )
 
     for chave in ordem_grupos:
         itens = sorted(grupos[chave], key=lambda item: item[0])
-        _numero_parcela, stone_charge_id, _valor, data_da_venda, data_ultimo_status = itens[0]
+        _numero_parcela, stone_charge_id, _valor, data_da_venda, data_vencimento, data_ultimo_status = itens[0]
         valor_total = sum((item[2] for item in itens), Decimal("0"))
         resultado.notas.append(
             NotaCandidata(
                 stone_charge_id=stone_charge_id,
                 data_da_venda=data_da_venda,
+                data_vencimento=data_vencimento,
                 data_ultimo_status=data_ultimo_status,
                 valor=valor_total,
             )

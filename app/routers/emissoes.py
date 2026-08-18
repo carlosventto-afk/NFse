@@ -195,9 +195,12 @@ async def _processar_csv(
                 serie=serie,
                 numero=numero,
                 cliente_id=cliente_padrao.id,
-                descricao=empresa.descricao_servico_padrao,
+                descricao=(
+                    f"{empresa.descricao_servico_padrao} - "
+                    f"Vencimento: {nota.data_vencimento:%d/%m/%Y}"
+                ),
                 valor=nota.valor,
-                competencia=nota.data_da_venda.date().replace(day=1),
+                competencia=nota.data_vencimento.replace(day=1),
                 dh_emi_original=nota.data_ultimo_status.replace(tzinfo=FUSO_BRT),
                 criada_por_usuario_id=contexto.usuario.id,
             )
