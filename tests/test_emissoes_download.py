@@ -108,6 +108,52 @@ async def test_baixar_xml_devolve_dps_de_emissao_rejeitada(db_session):
 
 
 @pytest.mark.asyncio
+async def test_baixar_resposta_bruta_devolve_json_da_sefin(db_session):
+    empresa, usuario = await criar_empresa_titular(db_session)
+    emissao = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.manual, status=StatusEmissao.rejeitada,
+        serie="1", numero=2, erros="E0008",
+        resposta_bruta='{"_http_status": 422, "erros": [{"codigo": "E0008", "mensagem": "Erro"}]}',
+        descricao="Lavagem", valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    db_session.add(emissao)
+    await db_session.commit()
+    await db_session.refresh(emissao)
+    token = criar_token(usuario, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.get(
+                f"/api/emissoes/{emissao.id}/resposta-bruta", headers={"Authorization": f"Bearer {token}"}
+            )
+        assert resposta.status_code == 200
+        assert resposta.json() == {"_http_status": 422, "erros": [{"codigo": "E0008", "mensagem": "Erro"}]}
+        assert resposta.headers["content-type"].startswith("application/json")
+        assert "RESPOSTA_1_2.json" in resposta.headers["content-disposition"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_baixar_resposta_bruta_devolve_404_quando_nao_disponivel(db_session):
+    empresa, usuario, emissao = await _empresa_usuario_emissao_autorizada(db_session)
+    token = criar_token(usuario, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.get(
+                f"/api/emissoes/{emissao.id}/resposta-bruta", headers={"Authorization": f"Bearer {token}"}
+            )
+        assert resposta.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
 async def test_baixar_xml_de_emissao_pendente_devolve_404(db_session):
     empresa, usuario = await criar_empresa_titular(db_session)
     emissao = Emissao(

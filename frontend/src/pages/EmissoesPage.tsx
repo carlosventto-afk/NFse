@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { cancelarEmissao, excluirEmissao, listarEmissoes, urlPdf, urlXml } from "../api/emissoes";
+import { cancelarEmissao, excluirEmissao, listarEmissoes, urlPdf, urlRespostaBruta, urlXml } from "../api/emissoes";
 import { obterToken } from "../api/client";
 import type { Emissao } from "../api/types";
 
@@ -112,12 +112,20 @@ export default function EmissoesPage() {
                     </>
                   )}
                   {emissao.status === "rejeitada" && (
-                    <button
-                      className="secundario"
-                      onClick={() => baixar(urlXml(emissao.id), `DPS_${emissao.serie}_${emissao.numero}.xml`)}
-                    >
-                      XML
-                    </button>
+                    <>
+                      <button
+                        className="secundario"
+                        onClick={() => baixar(urlXml(emissao.id), `DPS_${emissao.serie}_${emissao.numero}.xml`)}
+                      >
+                        XML
+                      </button>
+                      <button
+                        className="secundario"
+                        onClick={() => baixar(urlRespostaBruta(emissao.id), `RESPOSTA_${emissao.serie}_${emissao.numero}.json`)}
+                      >
+                        Resposta SEFIN
+                      </button>
+                    </>
                   )}
                   {(emissao.status === "pendente" || emissao.status === "rejeitada") && (
                     <button className="perigo" onClick={() => excluir(emissao.id)}>Excluir</button>

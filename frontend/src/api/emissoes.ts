@@ -41,3 +41,7 @@ export function urlXml(id: string): string {
 export function urlPdf(id: string): string {
   return `/api/emissoes/${id}/pdf`;
 }
+
+export function urlRespostaBruta(id: string): string {
+  return `/api/emissoes/${id}/resposta-bruta`;
+}

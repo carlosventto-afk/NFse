@@ -26,6 +26,7 @@ def test_todas_as_rotas_esperadas_estao_registradas():
         "/api/emissoes/manual",
         "/api/emissoes",
         "/api/emissoes/{emissao_id}/xml",
+        "/api/emissoes/{emissao_id}/resposta-bruta",
         "/api/emissoes/{emissao_id}/pdf",
         "/api/emissoes/{emissao_id}/cancelar",
         "/api/emissoes/{emissao_id}",

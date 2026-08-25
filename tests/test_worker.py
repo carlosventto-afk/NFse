@@ -137,6 +137,37 @@ async def test_processar_uma_pendente_marca_rejeitada_com_erros(db_session, monk
 
 
 @pytest.mark.asyncio
+async def test_processar_uma_pendente_grava_resposta_bruta_ao_rejeitar(db_session, monkeypatch):
+    """A resposta crua da SEFIN precisa ficar gravada (nao so no log efemero
+    do worker) para o suporte poder exportar o JSON completo de um erro como
+    evidencia junto a prefeitura — ver ARMADILHAS/caso Belem E0160."""
+    emissao = await _empresa_e_emissao_pendente(db_session)
+
+    monkeypatch.setattr(worker, "sign_dps", lambda xml, pfx, senha: b"<DPS assinada/>")
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def emitir_dps(self, xml_assinado: bytes) -> dict:
+            return {"_http_status": 422, "erros": [{"codigo": "E0714", "mensagem": "Erro na assinatura"}]}
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(worker, "SefinClient", ClienteFalso)
+
+    processou = await worker.processar_uma_pendente(db_session)
+
+    assert processou is True
+    await db_session.refresh(emissao)
+    assert emissao.resposta_bruta is not None
+    assert json.loads(emissao.resposta_bruta) == {
+        "_http_status": 422, "erros": [{"codigo": "E0714", "mensagem": "Erro na assinatura"}],
+    }
+
+
+@pytest.mark.asyncio
 async def test_processar_uma_pendente_marca_rejeitada_em_falha_de_transporte(db_session, monkeypatch):
     """SEFIN fora do ar / timeout / DNS: SefinError precisa ser tratada por
     linha, sem propagar para fora de processar_uma_pendente (o que derrubaria

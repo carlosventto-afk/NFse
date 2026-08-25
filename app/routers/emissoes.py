@@ -101,6 +101,24 @@ async def baixar_xml(
     )
 
 
+@router.get("/{emissao_id}/resposta-bruta")
+async def baixar_resposta_bruta(
+    emissao_id: uuid.UUID,
+    contexto: ContextoAutenticado = Depends(get_empresa_ativa),
+    session: AsyncSession = Depends(get_db),
+) -> Response:
+    emissao = await session.get(Emissao, emissao_id)
+    if emissao is None or emissao.empresa_id != contexto.empresa_id or not emissao.resposta_bruta:
+        raise HTTPException(status_code=404, detail="Resposta bruta nao disponivel para esta emissao")
+
+    return Response(
+        content=emissao.resposta_bruta, media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="RESPOSTA_{emissao.serie}_{emissao.numero}.json"'
+        },
+    )
+
+
 @router.get("/{emissao_id}/pdf")
 async def baixar_pdf(
     emissao_id: uuid.UUID,
