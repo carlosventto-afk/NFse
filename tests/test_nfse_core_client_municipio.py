@@ -62,7 +62,7 @@ async def test_emitir_dps_usa_endpoint_proprio_de_belem_em_homologacao():
         "homologacao", _pfx_teste_base64(), "senha123", municipio_ibge="1501402",
     )
     url = await _emitir_e_capturar_url(cliente)
-    assert url == "https://homol-nfse2.belem.pa.gov.br/notafiscal-adn-ws/api/adn/dps"
+    assert url == "https://nfse2-bel.dsfweb.com.br/notafiscal-adn-ws/api/adn/dps"
 
 
 @pytest.mark.asyncio

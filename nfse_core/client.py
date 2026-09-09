@@ -46,10 +46,17 @@ DANFSE_BASE_URLS = {
 # So cobre emitir_dps: cancelamento/consulta nao sao documentados nesses
 # endpoints proprios, entao continuam indo pro host nacional (BASE_URLS).
 MUNICIPIO_DPS_URLS: dict[str, dict[str, str]] = {
-    "1501402": {  # Belem/PA — "Manual de Contribuintes - Guia API's.pdf",
-        # nfse-nacional-kit/Belem/. URL de producao nao publicada no manual;
-        # exige solicitacao formal a SEFIN municipal.
-        "homologacao": "https://homol-nfse2.belem.pa.gov.br/notafiscal-adn-ws/api/adn/dps",
+    "1501402": {  # Belem/PA. URL antiga (homol-nfse2.belem.pa.gov.br) era do
+        # ambiente de testes da migracao pra RTC/CBS-IBS, com prazo de
+        # 10/07/2026 a 31/07/2026 (INFORME NOTA FISCAL CBS - IBS.pdf) —
+        # confirmada fora do ar (HTTP 404) apos essa janela. Substituida por
+        # esta, extraida do "Manual de Contribuintes - Guia API's Modelo
+        # Nacional com RTC" (link Google Drive do mesmo informe), mesmo
+        # fornecedor (DSF) e mesmo padrao de dominio usado por outros
+        # municipios (ex.: Joao Pessoa em nfse2-jpa.dsfweb.com.br). O manual
+        # rotula esse link so como "homologacao" sem dar URL de producao
+        # separada — nao esta confirmado se producao usa o mesmo host.
+        "homologacao": "https://nfse2-bel.dsfweb.com.br/notafiscal-adn-ws/api/adn/dps",
     },
 }
 
