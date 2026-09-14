@@ -53,10 +53,26 @@ MUNICIPIO_DPS_URLS: dict[str, dict[str, str]] = {
         # esta, extraida do "Manual de Contribuintes - Guia API's Modelo
         # Nacional com RTC" (link Google Drive do mesmo informe), mesmo
         # fornecedor (DSF) e mesmo padrao de dominio usado por outros
-        # municipios (ex.: Joao Pessoa em nfse2-jpa.dsfweb.com.br). O manual
-        # rotula esse link so como "homologacao" sem dar URL de producao
-        # separada — nao esta confirmado se producao usa o mesmo host.
+        # municipios (ex.: Joao Pessoa em nfse2-jpa.dsfweb.com.br).
+        # Confirmada ao vivo com DPS real assinada (rejeitada por E0160 de
+        # cadastro, nao de rota).
         "homologacao": "https://nfse2-bel.dsfweb.com.br/notafiscal-adn-ws/api/adn/dps",
+        # Host e path extraidos da propria area "Documentacao API" do portal
+        # oficial (notafiscal.belem.pa.gov.br/notafiscal/paginas/portal/#/api
+        # -> POST /notafiscal-ws/nfse na "URL Base" de producao). Sondagem
+        # feita com POST de corpo vazio (sem DPS real — evita emissao
+        # acidental em producao) confirma que o host/rota estao de fato
+        # ligados ao servico de recepcao de DPS: o erro devolvido cita
+        # literalmente RecepcaoDpsRequest.getDpsXmlGZipB64() (o mesmo campo
+        # que este client envia) e vem no mesmo formato JSON
+        # (tipoAmbiente/dataHoraProcessamento/erros) da SEFIN Nacional, com
+        # tipoAmbiente="1" (producao). Sem essa entrada, uma empresa de
+        # Belem em ambiente=producao caia no host nacional generico e era
+        # rejeitada com E0039 (mesmo bug ja visto em homologacao). NUNCA
+        # confirmado com uma DPS real assinada (exigiria emitir de verdade)
+        # — se a SEFIN/fornecedor DSF contradisser isso, prevalece o
+        # contato direto.
+        "producao": "https://nfseapi.belem.pa.gov.br/notafiscal-ws/nfse",
     },
 }
 

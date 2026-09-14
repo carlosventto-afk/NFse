@@ -73,14 +73,12 @@ async def test_emitir_dps_sem_municipio_usa_endpoint_nacional():
 
 
 @pytest.mark.asyncio
-async def test_emitir_dps_municipio_sem_url_de_producao_cai_no_nacional():
-    # Belem so tem homologacao mapeada -- producao (nao publicada no manual)
-    # precisa cair de volta pro endpoint nacional, nao quebrar.
+async def test_emitir_dps_usa_endpoint_proprio_de_belem_em_producao():
     cliente = SefinClient(
         "producao", _pfx_teste_base64(), "senha123", municipio_ibge="1501402",
     )
     url = await _emitir_e_capturar_url(cliente)
-    assert url == "/nfse"
+    assert url == "https://nfseapi.belem.pa.gov.br/notafiscal-ws/nfse"
 
 
 @pytest.mark.asyncio
