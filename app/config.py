@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     app_base_url: str = "https://nfse.gestaotecnologia.com"
+    spedy_api_key_master_homologacao: str = ""
+    spedy_api_key_master_producao: str = ""
 
 
 @lru_cache

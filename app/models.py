@@ -23,6 +23,11 @@ class AmbienteEnum(str, enum.Enum):
     producao = "producao"
 
 
+class ProvedorEmissao(str, enum.Enum):
+    direto = "direto"
+    spedy = "spedy"
+
+
 class StatusEmissao(str, enum.Enum):
     pendente = "pendente"
     autorizada = "autorizada"
@@ -30,6 +35,8 @@ class StatusEmissao(str, enum.Enum):
     cancelada = "cancelada"
     cancelamento_pendente = "cancelamento_pendente"
     erro_cancelamento = "erro_cancelamento"
+    aguardando_confirmacao = "aguardando_confirmacao"
+    cancelamento_aguardando_confirmacao = "cancelamento_aguardando_confirmacao"
 
 
 class OrigemEmissao(str, enum.Enum):
@@ -87,6 +94,20 @@ class Empresa(Base):
     certificado_senha_cifrada: Mapped[str | None] = mapped_column(Text, nullable=True)
     certificado_valido_ate: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     webhook_token_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    razao_social: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    logradouro: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    numero: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    complemento: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    bairro: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    cep: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    # Provedor usado para TODAS as operacoes fiscais desta empresa (emissao,
+    # cancelamento, consulta, PDF) -- "spedy" exige spedy_empresa_id e
+    # spedy_api_key_cifrada preenchidos (provisionamento em PUT /empresas/mim).
+    provedor_emissao: Mapped[ProvedorEmissao] = mapped_column(
+        String(20), default=ProvedorEmissao.direto, nullable=False
+    )
+    spedy_empresa_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    spedy_api_key_cifrada: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Responsavel pela licenca desta empresa — conta contra plano.limite_empresas
     # do titular. Nullable no banco por decisao do plano de implementacao
     # (docs/superpowers/plans/2026-08-12-multiempresa-licenciamento-plan.md) —
@@ -198,11 +219,12 @@ class Emissao(Base):
     cliente_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("clientes.id"), nullable=True)
     origem: Mapped[OrigemEmissao] = mapped_column(String(20), nullable=False)
     stone_charge_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    status: Mapped[StatusEmissao] = mapped_column(String(30), nullable=False)
+    status: Mapped[StatusEmissao] = mapped_column(String(40), nullable=False)
     serie: Mapped[str | None] = mapped_column(String(5), nullable=True)
     numero: Mapped[int | None] = mapped_column(nullable=True)
     dps_id: Mapped[str | None] = mapped_column(String(45), nullable=True)
     chave_acesso: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    spedy_nota_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     xml_dps: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     xml_nfse: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     erros: Mapped[str | None] = mapped_column(Text, nullable=True)
