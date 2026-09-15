@@ -148,6 +148,14 @@ class EmpresaDetalheOut(BaseModel):
     descricao_servico_padrao: str
     ambiente: str
     certificado_valido_ate: datetime
+    razao_social: str | None
+    logradouro: str | None
+    numero: str | None
+    complemento: str | None
+    bairro: str | None
+    cep: str | None
+    provedor_emissao: str
+    spedy_empresa_id: str | None
 
     model_config = {"from_attributes": True}
 

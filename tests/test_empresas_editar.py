@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.x509.oid import NameOID
 from httpx import ASGITransport, AsyncClient
 
-from app.crypto import decifrar
+from app.crypto import cifrar, decifrar
 from app.config import get_settings
 from app.db import get_db
 from app.main import app
@@ -278,6 +278,119 @@ async def test_trocar_certificado_sem_senha_devolve_422(db_session):
                 "/api/empresas/mim",
                 data=_form_edicao(cnpj="99988877000155"),
                 files={"pfx": ("novo.pfx", base64.b64decode(pfx_b64), "application/x-pkcs12")},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_admin_liga_spedy_e_provisiona_a_empresa(db_session, monkeypatch):
+    # certificado_pfx_cifrado/certificado_senha_cifrada precisam ser tokens
+    # Fernet validos aqui: o endpoint decifra os dois antes de chamar
+    # provisionar_empresa (mesmo com provisionar_empresa mockado abaixo) --
+    # o placeholder "x" default de criar_empresa_titular nao decifra.
+    fernet_key = get_settings().fernet_key
+    empresa, titular = await criar_empresa_titular(
+        db_session, cnpj="99988877000155",
+        certificado_pfx_cifrado=cifrar("pfx-fake-base64", fernet_key),
+        certificado_senha_cifrada=cifrar("senha123", fernet_key),
+    )
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    import app.routers.empresas as empresas_router
+
+    async def _provisionar_falso(empresa_, pfx_base64, senha, settings):
+        return "spedy-empresa-1", "spedy-chave-1"
+
+    monkeypatch.setattr(empresas_router, "provisionar_empresa", _provisionar_falso)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.put(
+                "/api/empresas/mim",
+                data={
+                    **_form_edicao(cnpj="99988877000155"),
+                    "provedor_emissao": "spedy", "razao_social": "EMPRESA TESTE LTDA",
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 200
+        corpo = resposta.json()
+        assert corpo["provedor_emissao"] == "spedy"
+        assert corpo["spedy_empresa_id"] == "spedy-empresa-1"
+    finally:
+        app.dependency_overrides.clear()
+
+    await db_session.refresh(empresa)
+    settings = get_settings()
+    assert decifrar(empresa.spedy_api_key_cifrada, settings.fernet_key) == "spedy-chave-1"
+
+
+@pytest.mark.asyncio
+async def test_ligar_spedy_com_erro_da_spedy_nao_salva_nada(db_session, monkeypatch):
+    from app.adapters.spedy_client import SpedyError
+
+    # Mesmo motivo do teste acima: certificado precisa decifrar antes de
+    # chegar em provisionar_empresa (aqui mockado para explodir).
+    fernet_key = get_settings().fernet_key
+    empresa, titular = await criar_empresa_titular(
+        db_session, cnpj="99988877000155",
+        certificado_pfx_cifrado=cifrar("pfx-fake-base64", fernet_key),
+        certificado_senha_cifrada=cifrar("senha123", fernet_key),
+    )
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    import app.routers.empresas as empresas_router
+
+    async def _provisionar_explodindo(empresa_, pfx_base64, senha, settings):
+        raise SpedyError("federalTaxNumber invalido")
+
+    monkeypatch.setattr(empresas_router, "provisionar_empresa", _provisionar_explodindo)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.put(
+                "/api/empresas/mim",
+                data={
+                    **_form_edicao(cnpj="99988877000155"),
+                    "provedor_emissao": "spedy", "razao_social": "EMPRESA TESTE LTDA",
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 502
+        assert "federalTaxNumber invalido" in resposta.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
+
+    # A rota real usa `async with SessionLocal() as session` (app/db.py): ao
+    # sair por excecao sem commit, a conexao volta pro pool e o Postgres
+    # desfaz a transacao sozinho. O `_yield_session` de teste reusa a MESMA
+    # sessao sem esse ciclo de vida, entao o rollback precisa ser explicito
+    # aqui pra reproduzir o mesmo efeito antes de conferir o banco.
+    await db_session.rollback()
+    await db_session.refresh(empresa)
+    assert empresa.provedor_emissao == "direto"
+    assert empresa.spedy_empresa_id is None
+
+
+@pytest.mark.asyncio
+async def test_provedor_emissao_invalido_devolve_422(db_session):
+    empresa, titular = await criar_empresa_titular(db_session)
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.put(
+                "/api/empresas/mim",
+                data={**_form_edicao(), "provedor_emissao": "outro"},
                 headers={"Authorization": f"Bearer {token}"},
             )
         assert resposta.status_code == 422

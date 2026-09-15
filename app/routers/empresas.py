@@ -6,7 +6,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.crypto import cifrar
+from app.crypto import cifrar, decifrar
+from app.adapters.spedy_provisionamento import provisionar_empresa
+from app.adapters.spedy_client import SpedyError
 from app.db import get_db
 from app.models import Emissao, Empresa
 from app.schemas import EmpresaDetalheOut, NumeracaoIn, NumeracaoOut
@@ -98,6 +100,13 @@ async def editar_minha_empresa(
     ambiente: str = Form(...),
     senha_certificado: str | None = Form(None),
     pfx: UploadFile | None = File(None),
+    razao_social: str | None = Form(None),
+    logradouro: str | None = Form(None),
+    numero: str | None = Form(None),
+    complemento: str | None = Form(None),
+    bairro: str | None = Form(None),
+    cep: str | None = Form(None),
+    provedor_emissao: str = Form("direto"),
     contexto: ContextoAutenticado = Depends(exigir_admin_empresa),
     session: AsyncSession = Depends(get_db),
 ) -> Empresa:
@@ -106,6 +115,8 @@ async def editar_minha_empresa(
         raise HTTPException(status_code=422, detail="CNPJ deve ter 14 digitos")
     if ambiente not in ("homologacao", "producao"):
         raise HTTPException(status_code=422, detail="Ambiente deve ser homologacao ou producao")
+    if provedor_emissao not in ("direto", "spedy"):
+        raise HTTPException(status_code=422, detail="provedor_emissao deve ser direto ou spedy")
     inscricao_municipal = (inscricao_municipal or "").strip() or None
     local_prestacao_ibge = (local_prestacao_ibge or "").strip() or None
     codigo_tributacao_municipal = (codigo_tributacao_municipal or "").strip() or None
@@ -144,6 +155,32 @@ async def editar_minha_empresa(
     empresa.codigo_tributacao_municipal = codigo_tributacao_municipal
     empresa.descricao_servico_padrao = descricao_servico_padrao
     empresa.ambiente = ambiente
+
+    empresa.razao_social = (razao_social or "").strip() or None
+    empresa.logradouro = (logradouro or "").strip() or None
+    empresa.numero = (numero or "").strip() or None
+    empresa.complemento = (complemento or "").strip() or None
+    empresa.bairro = (bairro or "").strip() or None
+    empresa.cep = (cep or "").strip() or None
+
+    precisa_provisionar = provedor_emissao == "spedy" and empresa.spedy_empresa_id is None
+    empresa.provedor_emissao = provedor_emissao
+
+    if precisa_provisionar:
+        fernet_key = get_settings().fernet_key
+        pfx_base64 = decifrar(empresa.certificado_pfx_cifrado, fernet_key)
+        senha_cert = (
+            decifrar(empresa.certificado_senha_cifrada, fernet_key)
+            if empresa.certificado_senha_cifrada else None
+        )
+        try:
+            spedy_empresa_id, spedy_api_key = await provisionar_empresa(
+                empresa, pfx_base64, senha_cert, get_settings(),
+            )
+        except SpedyError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+        empresa.spedy_empresa_id = spedy_empresa_id
+        empresa.spedy_api_key_cifrada = cifrar(spedy_api_key, fernet_key)
 
     try:
         await session.commit()
