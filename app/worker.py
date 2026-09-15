@@ -8,9 +8,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.adapters.dps_builder import DadosEmissao, montar_dps_data
+from app.adapters.spedy_client import SpedyClient, SpedyError
+from app.adapters.spedy_payload import montar_payload_spedy
 from app.config import Settings, get_settings
 from app.crypto import decifrar
-from app.models import AmbienteEnum, Emissao, Empresa, StatusEmissao
+from app.models import AmbienteEnum, Emissao, Empresa, ProvedorEmissao, StatusEmissao
 from nfse_core import (
     CertificateError,
     EventoCancelamentoData,
@@ -37,6 +39,48 @@ async def _marcar_rejeitada(session: AsyncSession, emissao: Emissao, codigo: str
     await session.commit()
 
 
+async def _processar_pendente_spedy(
+    session: AsyncSession, emissao: Emissao, empresa: Empresa, settings: Settings,
+) -> bool:
+    if not empresa.spedy_empresa_id or not empresa.spedy_api_key_cifrada:
+        await _marcar_rejeitada(
+            session, emissao, "SPEDY_NAO_PROVISIONADA",
+            "empresa nao esta provisionada na Spedy (edite a empresa para reconfigurar o provedor)",
+        )
+        return True
+
+    try:
+        api_key = decifrar(empresa.spedy_api_key_cifrada, settings.fernet_key)
+    except InvalidToken:
+        await _marcar_rejeitada(
+            session, emissao, "SPEDY_NAO_PROVISIONADA",
+            "chave da Spedy cifrada com outra FERNET_KEY (reconfigure o provedor)",
+        )
+        return True
+
+    payload = montar_payload_spedy(empresa, emissao)
+    cliente = SpedyClient(AmbienteEnum(empresa.ambiente).value, api_key)
+    try:
+        bruta = await cliente.emitir_nfse(payload)
+    except SpedyError as exc:
+        await cliente.close()
+        await _marcar_rejeitada(session, emissao, "TRANSPORTE", str(exc))
+        return True
+    await cliente.close()
+
+    http_status = int(bruta.get("_http_status") or 0)
+    if http_status >= 400:
+        detalhe = (bruta.get("processingDetail") or {}).get("message") or "Spedy recusou a emissao"
+        emissao.status = StatusEmissao.rejeitada
+        emissao.erros = json.dumps([{"codigo": "SPEDY", "titulo": detalhe}], ensure_ascii=False)
+        emissao.resposta_bruta = json.dumps(bruta, ensure_ascii=False)
+    else:
+        emissao.spedy_nota_id = bruta.get("id")
+        emissao.status = StatusEmissao.aguardando_confirmacao
+    await session.commit()
+    return True
+
+
 async def processar_uma_pendente(session: AsyncSession, settings: Settings | None = None) -> bool:
     """Processa uma emissao 'pendente' (se houver). Retorna True se processou.
 
@@ -57,6 +101,9 @@ async def processar_uma_pendente(session: AsyncSession, settings: Settings | Non
         return False
 
     empresa = await session.get(Empresa, emissao.empresa_id)
+
+    if ProvedorEmissao(empresa.provedor_emissao) == ProvedorEmissao.spedy:
+        return await _processar_pendente_spedy(session, emissao, empresa, settings)
 
     # Linha pendente que JA tem dps_id = uma tentativa anterior chegou a
     # submeter a DPS e o processo morreu antes de gravar o resultado. Nesse
