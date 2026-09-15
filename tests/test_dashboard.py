@@ -18,18 +18,27 @@ async def _yield_session(session):
 @pytest.mark.asyncio
 async def test_dashboard_soma_valores_por_status(db_session):
     empresa, token = await criar_empresa_e_token(db_session)
+    # criada_em precisa ser fixado dentro de agosto/2026 explicitamente -- o
+    # default (_agora(), UTC no momento em que o teste roda) so cai nesse
+    # range por coincidencia de calendario, e o filtro do dashboard usa
+    # criada_em (nao competencia). Mesmo cuidado ja aplicado no teste de BRT
+    # logo abaixo.
+    agosto_meio = datetime(2026, 8, 15, 12, 0, tzinfo=timezone.utc)
     db_session.add_all([
         Emissao(
             empresa_id=empresa.id, origem=OrigemEmissao.manual, status=StatusEmissao.autorizada,
             serie="1", numero=1, descricao="Lavagem", valor=Decimal("50.00"), competencia=date(2026, 8, 1),
+            criada_em=agosto_meio,
         ),
         Emissao(
             empresa_id=empresa.id, origem=OrigemEmissao.manual, status=StatusEmissao.autorizada,
             serie="1", numero=2, descricao="Lavagem", valor=Decimal("30.00"), competencia=date(2026, 8, 1),
+            criada_em=agosto_meio,
         ),
         Emissao(
             empresa_id=empresa.id, origem=OrigemEmissao.manual, status=StatusEmissao.rejeitada,
             serie="1", numero=3, descricao="Lavagem", valor=Decimal("20.00"), competencia=date(2026, 8, 1),
+            criada_em=agosto_meio,
         ),
     ])
     await db_session.commit()
