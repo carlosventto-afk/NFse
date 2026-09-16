@@ -296,6 +296,32 @@ async def _marcar_erro_cancelamento(session: AsyncSession, emissao: Emissao, cod
     await session.commit()
 
 
+async def _processar_cancelamento_pendente_spedy(
+    session: AsyncSession, emissao: Emissao, empresa: Empresa, settings: Settings,
+) -> bool:
+    try:
+        api_key = decifrar(empresa.spedy_api_key_cifrada, settings.fernet_key)
+    except InvalidToken:
+        await _marcar_erro_cancelamento(
+            session, emissao, "SPEDY_NAO_PROVISIONADA",
+            "chave da Spedy cifrada com outra FERNET_KEY (reconfigure o provedor)",
+        )
+        return True
+
+    cliente = SpedyClient(AmbienteEnum(empresa.ambiente).value, api_key)
+    try:
+        await cliente.cancelar_nfse(emissao.spedy_nota_id, emissao.motivo_cancelamento or "")
+    except SpedyError as exc:
+        await cliente.close()
+        await _marcar_erro_cancelamento(session, emissao, "TRANSPORTE", str(exc))
+        return True
+    await cliente.close()
+
+    emissao.status = StatusEmissao.cancelamento_aguardando_confirmacao
+    await session.commit()
+    return True
+
+
 async def processar_um_cancelamento_pendente(session: AsyncSession, settings: Settings | None = None) -> bool:
     """Processa uma emissao 'cancelamento_pendente' (se houver). Retorna True se processou.
 
@@ -316,6 +342,9 @@ async def processar_um_cancelamento_pendente(session: AsyncSession, settings: Se
         return False
 
     empresa = await session.get(Empresa, emissao.empresa_id)
+
+    if ProvedorEmissao(empresa.provedor_emissao) == ProvedorEmissao.spedy:
+        return await _processar_cancelamento_pendente_spedy(session, emissao, empresa, settings)
 
     try:
         pfx_base64 = decifrar(empresa.certificado_pfx_cifrado, settings.fernet_key)
@@ -366,6 +395,52 @@ async def processar_um_cancelamento_pendente(session: AsyncSession, settings: Se
     return True
 
 
+async def processar_um_cancelamento_aguardando_confirmacao_spedy(
+    session: AsyncSession, settings: Settings | None = None,
+) -> bool:
+    """Espelha processar_uma_aguardando_confirmacao_spedy: o cancelamento na
+    Spedy tambem e assincrono (confirmado na doc oficial -- DELETE
+    /service-invoices/{id} processa ate o status "canceled")."""
+    settings = settings or get_settings()
+
+    stmt = (
+        select(Emissao)
+        .where(Emissao.status == StatusEmissao.cancelamento_aguardando_confirmacao)
+        .order_by(Emissao.criada_em)
+        .limit(1)
+        .with_for_update(skip_locked=True)
+    )
+    emissao = (await session.execute(stmt)).scalar_one_or_none()
+    if emissao is None:
+        return False
+
+    empresa = await session.get(Empresa, emissao.empresa_id)
+    try:
+        api_key = decifrar(empresa.spedy_api_key_cifrada, settings.fernet_key)
+    except InvalidToken:
+        await _marcar_erro_cancelamento(
+            session, emissao, "SPEDY_NAO_PROVISIONADA",
+            "chave da Spedy cifrada com outra FERNET_KEY (reconfigure o provedor)",
+        )
+        return True
+
+    cliente = SpedyClient(AmbienteEnum(empresa.ambiente).value, api_key)
+    try:
+        bruta = await cliente.consultar_nfse(emissao.spedy_nota_id)
+    except SpedyError as exc:
+        await cliente.close()
+        logger.warning("falha ao consultar cancelamento %s na Spedy: %s", emissao.id, exc)
+        return False
+    await cliente.close()
+
+    if bruta.get("status") == "canceled":
+        emissao.status = StatusEmissao.cancelada
+        emissao.cancelada_em = datetime.now(timezone.utc)
+        await session.commit()
+        return True
+    return False
+
+
 async def loop_worker(session_factory: async_sessionmaker, intervalo_segundos: float = 5.0) -> None:
     while True:
         try:
@@ -375,6 +450,8 @@ async def loop_worker(session_factory: async_sessionmaker, intervalo_segundos: f
                 processou_cancelamento = await processar_um_cancelamento_pendente(session)
             async with session_factory() as session:
                 processou_confirmacao_spedy = await processar_uma_aguardando_confirmacao_spedy(session)
+            async with session_factory() as session:
+                processou_confirmacao_cancel_spedy = await processar_um_cancelamento_aguardando_confirmacao_spedy(session)
         except Exception:
             # Supervisao do loop, de proposito abrangente: o tratamento fino
             # (por tipo de erro, por linha) mora dentro de
@@ -386,5 +463,9 @@ async def loop_worker(session_factory: async_sessionmaker, intervalo_segundos: f
             processou_emissao = False
             processou_cancelamento = False
             processou_confirmacao_spedy = False
-        if not processou_emissao and not processou_cancelamento and not processou_confirmacao_spedy:
+            processou_confirmacao_cancel_spedy = False
+        if not any([
+            processou_emissao, processou_cancelamento,
+            processou_confirmacao_spedy, processou_confirmacao_cancel_spedy,
+        ]):
             await asyncio.sleep(intervalo_segundos)

@@ -223,3 +223,112 @@ async def test_confirmacao_spedy_ainda_processando_nao_conta_como_trabalho(db_se
 async def test_processar_uma_aguardando_confirmacao_spedy_devolve_falso_quando_fila_vazia(db_session):
     processou = await worker.processar_uma_aguardando_confirmacao_spedy(db_session)
     assert processou is False
+
+
+async def _emissao_cancelamento_pendente_spedy(db_session) -> Emissao:
+    emissao = await _empresa_spedy_e_emissao_pendente(db_session)
+    emissao.status = StatusEmissao.cancelamento_pendente
+    emissao.chave_acesso = "chave-final-1"
+    emissao.spedy_nota_id = "nota-spedy-1"
+    emissao.motivo_cancelamento = "Servico nao prestado"
+    await db_session.commit()
+    return emissao
+
+
+@pytest.mark.asyncio
+async def test_cancelamento_pendente_via_spedy_fica_aguardando_confirmacao(db_session, monkeypatch):
+    emissao = await _emissao_cancelamento_pendente_spedy(db_session)
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def cancelar_nfse(self, spedy_nota_id, motivo):
+            assert spedy_nota_id == "nota-spedy-1"
+            assert motivo == "Servico nao prestado"
+            return {"_http_status": 200, "status": "canceling"}
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(worker, "SpedyClient", ClienteFalso)
+
+    processou = await worker.processar_um_cancelamento_pendente(db_session)
+
+    assert processou is True
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.cancelamento_aguardando_confirmacao
+
+
+@pytest.mark.asyncio
+async def test_cancelamento_pendente_via_spedy_falha_de_transporte(db_session, monkeypatch):
+    emissao = await _emissao_cancelamento_pendente_spedy(db_session)
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def cancelar_nfse(self, spedy_nota_id, motivo):
+            raise SpedyError("falha de rede")
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(worker, "SpedyClient", ClienteFalso)
+
+    processou = await worker.processar_um_cancelamento_pendente(db_session)
+
+    assert processou is True
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.erro_cancelamento
+
+
+@pytest.mark.asyncio
+async def test_confirmacao_cancelamento_spedy_marca_cancelada(db_session, monkeypatch):
+    emissao = await _emissao_cancelamento_pendente_spedy(db_session)
+    emissao.status = StatusEmissao.cancelamento_aguardando_confirmacao
+    await db_session.commit()
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def consultar_nfse(self, spedy_nota_id):
+            return {"_http_status": 200, "status": "canceled"}
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(worker, "SpedyClient", ClienteFalso)
+
+    processou = await worker.processar_um_cancelamento_aguardando_confirmacao_spedy(db_session)
+
+    assert processou is True
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.cancelada
+    assert emissao.cancelada_em is not None
+
+
+@pytest.mark.asyncio
+async def test_confirmacao_cancelamento_spedy_ainda_processando_nao_conta_como_trabalho(db_session, monkeypatch):
+    emissao = await _emissao_cancelamento_pendente_spedy(db_session)
+    emissao.status = StatusEmissao.cancelamento_aguardando_confirmacao
+    await db_session.commit()
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def consultar_nfse(self, spedy_nota_id):
+            return {"_http_status": 200, "status": "canceling"}
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(worker, "SpedyClient", ClienteFalso)
+
+    processou = await worker.processar_um_cancelamento_aguardando_confirmacao_spedy(db_session)
+
+    assert processou is False
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.cancelamento_aguardando_confirmacao
