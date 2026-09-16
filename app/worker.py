@@ -310,12 +310,27 @@ async def _processar_cancelamento_pendente_spedy(
 
     cliente = SpedyClient(AmbienteEnum(empresa.ambiente).value, api_key)
     try:
-        await cliente.cancelar_nfse(emissao.spedy_nota_id, emissao.motivo_cancelamento or "")
+        bruta = await cliente.cancelar_nfse(emissao.spedy_nota_id, emissao.motivo_cancelamento or "")
     except SpedyError as exc:
         await cliente.close()
         await _marcar_erro_cancelamento(session, emissao, "TRANSPORTE", str(exc))
         return True
     await cliente.close()
+
+    # cancelar_nfse usa o _handle tolerante da SpedyClient (Task 2) -- NAO
+    # levanta SpedyError em 4xx, devolve um dict com _http_status embutido,
+    # igual a emitir_nfse. Confirmado ao vivo contra o sandbox: uma nota que
+    # nunca foi autorizada devolve 400 sincrono com
+    # {"errors": [{"message": "A nota fiscal nao pode ser cancelada."}]} (um
+    # `errors` no topo, formato diferente do `processingDetail` da emissao).
+    # Sem este check a linha ficava presa para sempre em
+    # cancelamento_aguardando_confirmacao, porque consultar_nfse nunca via o
+    # status virar "canceled".
+    http_status = int(bruta.get("_http_status") or 0)
+    if http_status >= 400:
+        detalhe = (bruta.get("errors") or [{}])[0].get("message") or "Spedy recusou o cancelamento"
+        await _marcar_erro_cancelamento(session, emissao, "SPEDY", detalhe)
+        return True
 
     emissao.status = StatusEmissao.cancelamento_aguardando_confirmacao
     await session.commit()

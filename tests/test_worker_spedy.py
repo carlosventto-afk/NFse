@@ -261,6 +261,34 @@ async def test_cancelamento_pendente_via_spedy_fica_aguardando_confirmacao(db_se
 
 
 @pytest.mark.asyncio
+async def test_cancelamento_pendente_via_spedy_rejeicao_sincrona(db_session, monkeypatch):
+    emissao = await _emissao_cancelamento_pendente_spedy(db_session)
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def cancelar_nfse(self, spedy_nota_id, motivo):
+            return {
+                "_http_status": 400,
+                "errors": [{"message": "A nota fiscal não pode ser cancelada."}],
+            }
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(worker, "SpedyClient", ClienteFalso)
+
+    processou = await worker.processar_um_cancelamento_pendente(db_session)
+
+    assert processou is True
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.erro_cancelamento
+    erros = json.loads(emissao.erros)
+    assert "não pode ser cancelada" in erros[0]["titulo"]
+
+
+@pytest.mark.asyncio
 async def test_cancelamento_pendente_via_spedy_falha_de_transporte(db_session, monkeypatch):
     emissao = await _emissao_cancelamento_pendente_spedy(db_session)
 
