@@ -1,4 +1,5 @@
 import base64
+import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import func, select
@@ -17,6 +18,7 @@ from nfse_core import CertificateError, conferir_titularidade, inspecionar
 from scripts.criar_empresa import criar_empresa
 
 router = APIRouter(prefix="/empresas", tags=["empresas"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("", status_code=201)
@@ -204,6 +206,11 @@ async def editar_minha_empresa(
                 empresa, pfx_base64, senha_cert, get_settings(),
             )
         except SpedyError as exc:
+            # Logado explicitamente: o proxy de producao (Easypanel) troca o
+            # corpo de respostas 5xx por uma pagina generica, entao o detail
+            # do HTTPException abaixo nunca chega ao navegador -- sem isto,
+            # a causa real do erro (mensagem exata da Spedy) fica invisivel.
+            logger.warning("falha ao provisionar empresa %s na Spedy: %s", empresa.id, exc, exc_info=True)
             raise HTTPException(status_code=502, detail=str(exc))
         empresa.spedy_empresa_id = spedy_empresa_id
         empresa.spedy_api_key_cifrada = cifrar(spedy_api_key, fernet_key)
