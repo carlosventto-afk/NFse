@@ -111,6 +111,22 @@ async def test_criar_empresa_levanta_em_erro_de_validacao():
 
 
 @pytest.mark.asyncio
+async def test_criar_empresa_extrai_mensagem_do_formato_errors():
+    """Confirmado ao vivo em producao (16/09): o erro de validacao real do
+    POST /companies vem como {"errors": [{"message": ...}]}, nao
+    {"message": ...} como a doc publica descreve -- mesmo formato ja visto
+    nos erros de emissao/cancelamento."""
+    cliente = SpedyClient("homologacao", "chave-mestre")
+
+    async def _request_falso(method, path, **kwargs):
+        return _RespostaFalsa(400, {"errors": [{"message": "endereco invalido", "path": "address"}]})
+
+    cliente._request = _request_falso
+    with pytest.raises(SpedyError, match="endereco invalido"):
+        await cliente.criar_empresa({})
+
+
+@pytest.mark.asyncio
 async def test_adicionar_certificado_envia_multipart_com_os_campos_certos():
     cliente = SpedyClient("homologacao", "chave-empresa")
     chamadas = []

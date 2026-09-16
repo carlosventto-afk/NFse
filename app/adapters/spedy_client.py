@@ -114,7 +114,20 @@ class SpedyClient:
         except ValueError:
             payload = None
         if resp.status_code >= 400 or payload is None:
-            detalhe = (payload or {}).get("message") if isinstance(payload, dict) else None
+            detalhe = None
+            if isinstance(payload, dict):
+                detalhe = payload.get("message")
+                if not detalhe:
+                    # Confirmado ao vivo em producao (16/09): erro de
+                    # validacao do POST /companies vem como {"errors": [...]}
+                    # (mesmo formato ja visto nos erros de emissao/
+                    # cancelamento), nao {"message": ...} como a doc publica
+                    # descreve. Sem isto, o motivo real da rejeicao (ex.:
+                    # campo invalido) ficava escondido atras de um "HTTP 400"
+                    # generico.
+                    erros = payload.get("errors")
+                    if erros:
+                        detalhe = erros[0].get("message")
             raise SpedyError(
                 detalhe or f"Spedy recusou a requisicao (HTTP {resp.status_code})",
                 resp.status_code, str(resp.text)[:2000],

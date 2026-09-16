@@ -210,7 +210,14 @@ async def editar_minha_empresa(
             # corpo de respostas 5xx por uma pagina generica, entao o detail
             # do HTTPException abaixo nunca chega ao navegador -- sem isto,
             # a causa real do erro (mensagem exata da Spedy) fica invisivel.
-            logger.warning("falha ao provisionar empresa %s na Spedy: %s", empresa.id, exc, exc_info=True)
+            # Inclui o corpo bruto da resposta (exc.body) alem da mensagem ja
+            # interpretada -- a doc publica da Spedy ja divergiu do formato
+            # real da API mais de uma vez, entao ter o corpo cru no log evita
+            # ficar as cegas se isso acontecer de novo.
+            logger.warning(
+                "falha ao provisionar empresa %s na Spedy: %s | corpo bruto: %s",
+                empresa.id, exc, exc.body, exc_info=True,
+            )
             raise HTTPException(status_code=502, detail=str(exc))
         empresa.spedy_empresa_id = spedy_empresa_id
         empresa.spedy_api_key_cifrada = cifrar(spedy_api_key, fernet_key)
