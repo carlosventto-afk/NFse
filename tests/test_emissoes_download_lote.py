@@ -61,8 +61,8 @@ async def test_baixar_xmls_em_lote_gera_zip_com_arquivos_disponiveis(db_session)
         assert resposta.headers["content-type"].startswith("application/zip")
         with zipfile.ZipFile(io.BytesIO(resposta.content)) as zip_arquivo:
             nomes = set(zip_arquivo.namelist())
-            assert nomes == {"chave-1.xml", "DPS_1_2.xml"}
-            assert zip_arquivo.read("chave-1.xml") == b"<NFSe>ok</NFSe>"
+            assert nomes == {"NFSe_1_1.xml", "DPS_1_2.xml"}
+            assert zip_arquivo.read("NFSe_1_1.xml") == b"<NFSe>ok</NFSe>"
             assert zip_arquivo.read("DPS_1_2.xml") == b"<DPS>rejeitada</DPS>"
     finally:
         app.dependency_overrides.clear()
@@ -97,7 +97,7 @@ async def test_baixar_xmls_em_lote_pula_itens_sem_xml_disponivel(db_session):
             )
         assert resposta.status_code == 200
         with zipfile.ZipFile(io.BytesIO(resposta.content)) as zip_arquivo:
-            assert zip_arquivo.namelist() == ["chave-1.xml"]
+            assert zip_arquivo.namelist() == ["NFSe_1_1.xml"]
     finally:
         app.dependency_overrides.clear()
 
@@ -133,7 +133,7 @@ async def test_baixar_xmls_em_lote_ignora_emissao_de_outra_empresa(db_session):
             )
         assert resposta.status_code == 200
         with zipfile.ZipFile(io.BytesIO(resposta.content)) as zip_arquivo:
-            assert zip_arquivo.namelist() == ["chave-a.xml"]
+            assert zip_arquivo.namelist() == ["NFSe_1_1.xml"]
     finally:
         app.dependency_overrides.clear()
 
@@ -205,9 +205,9 @@ async def test_baixar_pdfs_em_lote_gera_zip_com_pdfs(db_session, monkeypatch):
         assert resposta.headers["content-type"].startswith("application/zip")
         with zipfile.ZipFile(io.BytesIO(resposta.content)) as zip_arquivo:
             nomes = set(zip_arquivo.namelist())
-            assert nomes == {"chave-1.pdf", "chave-2.pdf"}
-            assert zip_arquivo.read("chave-1.pdf") == b"%PDF-chave-1"
-            assert zip_arquivo.read("chave-2.pdf") == b"%PDF-chave-2"
+            assert nomes == {"NFSe_1_1.pdf", "NFSe_1_2.pdf"}
+            assert zip_arquivo.read("NFSe_1_1.pdf") == b"%PDF-chave-1"
+            assert zip_arquivo.read("NFSe_1_2.pdf") == b"%PDF-chave-2"
     finally:
         app.dependency_overrides.clear()
 
@@ -251,7 +251,7 @@ async def test_baixar_pdfs_em_lote_pula_emissoes_nao_autorizadas(db_session, mon
             )
         assert resposta.status_code == 200
         with zipfile.ZipFile(io.BytesIO(resposta.content)) as zip_arquivo:
-            assert zip_arquivo.namelist() == ["chave-1.pdf"]
+            assert zip_arquivo.namelist() == ["NFSe_1_1.pdf"]
     finally:
         app.dependency_overrides.clear()
 

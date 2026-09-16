@@ -81,7 +81,7 @@ def _conteudo_xml(emissao: Emissao) -> tuple[bytes, str] | None:
     # Rejeitada: nao existe NFS-e — devolve o XML da DPS que foi assinado e
     # submetido, util pra conferir o que exatamente foi enviado/recusado.
     if emissao.status == StatusEmissao.autorizada and emissao.xml_nfse:
-        return emissao.xml_nfse, f"{emissao.chave_acesso}.xml"
+        return emissao.xml_nfse, f"NFSe_{emissao.serie}_{emissao.numero}.xml"
     if emissao.status == StatusEmissao.rejeitada and emissao.xml_dps:
         return emissao.xml_dps, f"DPS_{emissao.serie}_{emissao.numero}.xml"
     return None
@@ -235,7 +235,7 @@ async def baixar_pdfs_em_lote(
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zip_arquivo:
             for emissao in emissoes:
                 pdf = await _gerar_pdf_bytes(emissao, empresa, settings)
-                zip_arquivo.writestr(f"{emissao.chave_acesso}.pdf", pdf)
+                zip_arquivo.writestr(f"NFSe_{emissao.serie}_{emissao.numero}.pdf", pdf)
                 adicionados += 1
 
     if adicionados == 0:

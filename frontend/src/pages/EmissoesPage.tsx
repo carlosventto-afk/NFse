@@ -180,8 +180,8 @@ export default function EmissoesPage() {
                 <td>
                   {emissao.status === "autorizada" && (
                     <>
-                      <button className="secundario" onClick={() => baixar(urlXml(emissao.id), `${emissao.chave_acesso}.xml`)}>XML</button>
-                      <button className="secundario" onClick={() => baixar(urlPdf(emissao.id), `${emissao.chave_acesso}.pdf`)}>PDF</button>
+                      <button className="secundario" onClick={() => baixar(urlXml(emissao.id), `NFSe_${emissao.serie}_${emissao.numero}.xml`)}>XML</button>
+                      <button className="secundario" onClick={() => baixar(urlPdf(emissao.id), `NFSe_${emissao.serie}_${emissao.numero}.pdf`)}>PDF</button>
                       <button className="perigo" onClick={() => setCancelandoId(emissao.id)}>Cancelar</button>
                     </>
                   )}
