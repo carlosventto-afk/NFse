@@ -29,36 +29,49 @@ async def provisionar_empresa(
 
     ambiente = AmbienteEnum(empresa.ambiente).value
     chave_mestre = _chave_mestre(ambiente, settings)
+    dados_empresa = {
+        "name": empresa.razao_social,
+        "legalName": empresa.razao_social,
+        "federalTaxNumber": empresa.cnpj,
+        "cityTaxNumber": empresa.inscricao_municipal,
+        "address": {
+            "street": empresa.logradouro or "",
+            "district": empresa.bairro or "",
+            "postalCode": empresa.cep or "",
+            "number": empresa.numero or "S/N",
+            "city": {"code": empresa.municipio_ibge},
+        },
+    }
 
     cliente_mestre = SpedyClient(ambiente, chave_mestre)
     try:
-        criada = await cliente_mestre.criar_empresa({
-            "name": empresa.razao_social,
-            "legalName": empresa.razao_social,
-            "federalTaxNumber": empresa.cnpj,
-            "cityTaxNumber": empresa.inscricao_municipal,
-            "address": {
-                "street": empresa.logradouro or "",
-                "district": empresa.bairro or "",
-                "postalCode": empresa.cep or "",
-                "number": empresa.numero or "S/N",
-                "city": {"code": empresa.municipio_ibge},
-            },
-        })
-    finally:
-        await cliente_mestre.close()
+        try:
+            criada = await cliente_mestre.criar_empresa(dados_empresa)
+        except SpedyError as exc:
+            if "já possui uma conta" not in str(exc):
+                raise
+            # Orfa de uma tentativa anterior que criou a empresa na Spedy mas
+            # falhou antes de terminar o resto do provisionamento (ex.:
+            # certificado invalido). A chave daquela tentativa nunca foi
+            # capturada -- a Spedy so devolve a chave da empresa uma vez, na
+            # criacao, sem endpoint pra recupera-la depois -- a unica saida e
+            # apagar a orfa e recriar do zero. Confirmado ao vivo (16/09):
+            # aconteceu de verdade em producao, mais de uma vez na mesma
+            # sessao de testes.
+            orfas = await cliente_mestre.listar_empresas_por_cnpj(empresa.cnpj)
+            for orfa in orfas:
+                await cliente_mestre.excluir_empresa(orfa["id"])
+            criada = await cliente_mestre.criar_empresa(dados_empresa)
 
-    spedy_empresa_id = criada["id"]
-    api_key = criada["apiCredentials"]["apiKey"]
+        spedy_empresa_id = criada["id"]
+        api_key = criada["apiCredentials"]["apiKey"]
 
-    # Confirmado ao vivo em producao (16/09): ao contrario do que a doc
-    # publica sugere (usar a X-Api-Key da empresa recem-criada), tanto
-    # adicionar_certificado quanto configurar_nfse devolvem 403 "Acesso nao
-    # autorizado" com a chave da empresa -- so funcionam com a chave MESTRE.
-    # A chave da empresa (api_key acima) so e usada depois, nas operacoes de
-    # emissao/consulta/cancelamento (ver app/worker.py).
-    cliente_mestre = SpedyClient(ambiente, chave_mestre)
-    try:
+        # Confirmado ao vivo em producao (16/09): ao contrario do que a doc
+        # publica sugere (usar a X-Api-Key da empresa recem-criada), tanto
+        # adicionar_certificado quanto configurar_nfse devolvem 403 "Acesso
+        # nao autorizado" com a chave da empresa -- so funcionam com a chave
+        # MESTRE. A chave da empresa (api_key acima) so e usada depois, nas
+        # operacoes de emissao/consulta/cancelamento (ver app/worker.py).
         await cliente_mestre.adicionar_certificado(
             spedy_empresa_id, base64.b64decode(pfx_base64), senha or "",
         )

@@ -50,6 +50,19 @@ class SpedyClient:
         # Tolerante aos dois formatos, igual ao resto do modulo.
         return corpo.get("result", corpo)
 
+    async def listar_empresas_por_cnpj(self, cnpj: str) -> list[dict]:
+        """GET /companies. O filtro `federalTaxNumber` da query string nao
+        filtrou de fato numa chamada real (devolveu todas as empresas da
+        conta) -- filtra do lado de ca pra nao depender disso."""
+        resp = await self._request("GET", "/companies", params={"federalTaxNumber": cnpj})
+        corpo = self._handle_estrito(resp)
+        itens = corpo.get("items") or []
+        return [item for item in itens if item.get("federalTaxNumber") == cnpj]
+
+    async def excluir_empresa(self, spedy_empresa_id: str) -> None:
+        resp = await self._request("DELETE", f"/companies/{spedy_empresa_id}")
+        self._handle_estrito(resp)
+
     async def adicionar_certificado(self, spedy_empresa_id: str, pfx_bytes: bytes, senha: str) -> dict:
         resp = await self._request(
             "POST", f"/companies/{spedy_empresa_id}/certificates",
