@@ -265,6 +265,8 @@ async def test_confirmacao_spedy_chave_nao_decifra_nao_marca_erro(db_session):
     )
     emissao.status = StatusEmissao.aguardando_confirmacao
     emissao.spedy_nota_id = "nota-spedy-1"
+    atualizada_em_antes = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    emissao.atualizada_em = atualizada_em_antes
     await db_session.commit()
 
     processou = await worker.processar_uma_aguardando_confirmacao_spedy(db_session)
@@ -272,6 +274,10 @@ async def test_confirmacao_spedy_chave_nao_decifra_nao_marca_erro(db_session):
     assert processou is False
     await db_session.refresh(emissao)
     assert emissao.status == StatusEmissao.aguardando_confirmacao
+    # Fix I2 (rotacao): mesmo sem resolver, atualizada_em precisa avancar --
+    # senao essa linha fica presa como a mais antiga da fila pra sempre,
+    # nunca deixando outra linha (de outra empresa) ser tentada.
+    assert emissao.atualizada_em > atualizada_em_antes
 
 
 @pytest.mark.asyncio
@@ -511,6 +517,8 @@ async def test_confirmacao_cancelamento_spedy_chave_nao_decifra_nao_marca_erro(d
     emissao.chave_acesso = "chave-final-1"
     emissao.spedy_nota_id = "nota-spedy-1"
     emissao.motivo_cancelamento = "Servico nao prestado"
+    atualizada_em_antes = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    emissao.atualizada_em = atualizada_em_antes
     await db_session.commit()
 
     processou = await worker.processar_um_cancelamento_aguardando_confirmacao_spedy(db_session)
@@ -518,3 +526,5 @@ async def test_confirmacao_cancelamento_spedy_chave_nao_decifra_nao_marca_erro(d
     assert processou is False
     await db_session.refresh(emissao)
     assert emissao.status == StatusEmissao.cancelamento_aguardando_confirmacao
+    # Fix I2 (rotacao): ver comentario equivalente no teste de emissao acima.
+    assert emissao.atualizada_em > atualizada_em_antes

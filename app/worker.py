@@ -274,6 +274,13 @@ async def processar_uma_aguardando_confirmacao_spedy(
             "nao foi possivel obter a chave Spedy da empresa %s pra confirmar a emissao %s: %s",
             empresa.id, emissao.id, motivo,
         )
+        # Bump em atualizada_em mesmo sem resolver: sem isso, uma chave
+        # permanentemente nao-decifravel (ex.: FERNET_KEY rotacionada no meio
+        # de uma confirmacao pendente) deixa esta linha sempre a mais antiga
+        # em atualizada_em, sendo repescada pra sempre e reabrindo a fome de
+        # fila que o ORDER BY atualizada_em existe pra evitar.
+        emissao.atualizada_em = datetime.now(timezone.utc)
+        await session.commit()
         return False
 
     cliente = SpedyClient(AmbienteEnum(empresa.ambiente).value, api_key)
@@ -465,6 +472,11 @@ async def processar_um_cancelamento_aguardando_confirmacao_spedy(
             "nao foi possivel obter a chave Spedy da empresa %s pra confirmar o cancelamento %s: %s",
             empresa.id, emissao.id, motivo,
         )
+        # Mesmo motivo do bump em processar_uma_aguardando_confirmacao_spedy:
+        # sem isso, uma chave permanentemente nao-decifravel reabre a fome de
+        # fila que o ORDER BY atualizada_em existe pra evitar.
+        emissao.atualizada_em = datetime.now(timezone.utc)
+        await session.commit()
         return False
 
     cliente = SpedyClient(AmbienteEnum(empresa.ambiente).value, api_key)
