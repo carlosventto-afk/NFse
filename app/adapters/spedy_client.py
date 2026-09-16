@@ -110,6 +110,14 @@ class SpedyClient:
             )
         return resp.content
 
+    async def baixar_xml(self, spedy_nota_id: str) -> bytes:
+        resp = await self._request("GET", f"/service-invoices/{spedy_nota_id}/xml")
+        if resp.status_code >= 400:
+            raise SpedyError(
+                f"Spedy recusou o XML (HTTP {resp.status_code})", resp.status_code, str(resp.text)[:2000],
+            )
+        return resp.content
+
     @staticmethod
     def _handle(resp: httpx.Response) -> dict:
         """Tolerante: so levanta em 5xx/resposta nao-JSON. Rejeicao de negocio

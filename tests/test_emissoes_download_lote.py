@@ -11,7 +11,7 @@ from app.config import get_settings
 from app.crypto import cifrar
 from app.db import get_db
 from app.main import app
-from app.models import Emissao, OrigemEmissao, PapelUsuario, StatusEmissao
+from app.models import Emissao, OrigemEmissao, PapelUsuario, ProvedorEmissao, StatusEmissao
 from app.security import criar_token
 from tests.apoio import criar_empresa_titular
 
@@ -160,6 +160,55 @@ async def test_baixar_xmls_em_lote_devolve_404_quando_nenhum_arquivo_disponivel(
                 headers={"Authorization": f"Bearer {token}"},
             )
         assert resposta.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_baixar_xmls_em_lote_busca_da_spedy_quando_esse_e_o_provedor(db_session, monkeypatch):
+    fernet_key = get_settings().fernet_key
+    empresa, usuario = await criar_empresa_titular(
+        db_session, provedor_emissao=ProvedorEmissao.spedy,
+        spedy_api_key_cifrada=cifrar("spedy-chave-1", fernet_key),
+    )
+    autorizada = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.manual, status=StatusEmissao.autorizada,
+        serie="1", numero=1, chave_acesso="chave-final-1", spedy_nota_id="nota-spedy-1",
+        descricao="Lavagem", valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    db_session.add(autorizada)
+    await db_session.commit()
+    await db_session.refresh(autorizada)
+    token = criar_token(usuario, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    import app.routers.emissoes as emissoes_router
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def baixar_xml(self, spedy_nota_id):
+            assert spedy_nota_id == "nota-spedy-1"
+            return b"<NFSe>da-spedy</NFSe>"
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(emissoes_router, "SpedyClient", ClienteFalso)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                "/api/emissoes/download-xmls",
+                json={"ids": [str(autorizada.id)]},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 200
+        with zipfile.ZipFile(io.BytesIO(resposta.content)) as zip_arquivo:
+            assert zip_arquivo.namelist() == ["NFSe_1_1.xml"]
+            assert zip_arquivo.read("NFSe_1_1.xml") == b"<NFSe>da-spedy</NFSe>"
     finally:
         app.dependency_overrides.clear()
 

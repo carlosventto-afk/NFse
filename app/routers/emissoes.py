@@ -76,12 +76,32 @@ async def listar_emissoes(
     return list((await session.execute(stmt)).scalars().all())
 
 
-def _conteudo_xml(emissao: Emissao) -> tuple[bytes, str] | None:
-    # Autorizada: devolve o XML oficial da NFS-e (retornado pela SEFIN).
+async def _obter_xml(emissao: Emissao, empresa: Empresa, settings: Settings) -> tuple[bytes, str] | None:
+    # Autorizada: devolve o XML oficial da NFS-e. No provedor Spedy esse XML
+    # nunca fica guardado no nosso banco — a Spedy assina do lado dela —
+    # entao busca sob demanda em /service-invicoes/{id}/xml (mesmo padrao do
+    # PDF). No provedor direto o worker ja grava o XML da SEFIN na emissao.
+    if emissao.status == StatusEmissao.autorizada:
+        nome_arquivo = f"NFSe_{emissao.serie}_{emissao.numero}.xml"
+        if ProvedorEmissao(empresa.provedor_emissao) == ProvedorEmissao.spedy:
+            api_key = decifrar(empresa.spedy_api_key_cifrada, settings.fernet_key)
+            cliente_spedy = SpedyClient(AmbienteEnum(empresa.ambiente).value, api_key)
+            try:
+                xml = await cliente_spedy.baixar_xml(emissao.spedy_nota_id)
+            except Exception:
+                logger.warning(
+                    "falha ao buscar o XML da NFS-e na Spedy para a emissao %s", emissao.id, exc_info=True,
+                )
+                return None
+            finally:
+                await cliente_spedy.close()
+            return xml, nome_arquivo
+        if emissao.xml_nfse:
+            return emissao.xml_nfse, nome_arquivo
+        return None
     # Rejeitada: nao existe NFS-e — devolve o XML da DPS que foi assinado e
-    # submetido, util pra conferir o que exatamente foi enviado/recusado.
-    if emissao.status == StatusEmissao.autorizada and emissao.xml_nfse:
-        return emissao.xml_nfse, f"NFSe_{emissao.serie}_{emissao.numero}.xml"
+    # submetido, util pra conferir o que exatamente foi enviado/recusado. So
+    # existe no provedor direto (a Spedy nunca expoe a DPS pro cliente).
     if emissao.status == StatusEmissao.rejeitada and emissao.xml_dps:
         return emissao.xml_dps, f"DPS_{emissao.serie}_{emissao.numero}.xml"
     return None
@@ -92,12 +112,14 @@ async def baixar_xml(
     emissao_id: uuid.UUID,
     contexto: ContextoAutenticado = Depends(get_empresa_ativa),
     session: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> Response:
     emissao = await session.get(Emissao, emissao_id)
     if emissao is None or emissao.empresa_id != contexto.empresa_id:
         raise HTTPException(status_code=404)
 
-    resultado = _conteudo_xml(emissao)
+    empresa = await session.get(Empresa, emissao.empresa_id)
+    resultado = await _obter_xml(emissao, empresa, settings)
     if resultado is None:
         raise HTTPException(status_code=404, detail="XML nao disponivel para esta emissao")
     conteudo, nome_arquivo = resultado
@@ -113,20 +135,23 @@ async def baixar_xmls_em_lote(
     dados: EmissoesIdsIn,
     contexto: ContextoAutenticado = Depends(get_empresa_ativa),
     session: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> Response:
     stmt = select(Emissao).where(Emissao.id.in_(dados.ids), Emissao.empresa_id == contexto.empresa_id)
     emissoes = list((await session.execute(stmt)).scalars().all())
 
     buffer = io.BytesIO()
     adicionados = 0
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zip_arquivo:
-        for emissao in emissoes:
-            resultado = _conteudo_xml(emissao)
-            if resultado is None:
-                continue
-            conteudo, nome_arquivo = resultado
-            zip_arquivo.writestr(nome_arquivo, conteudo)
-            adicionados += 1
+    if emissoes:
+        empresa = await session.get(Empresa, contexto.empresa_id)
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zip_arquivo:
+            for emissao in emissoes:
+                resultado = await _obter_xml(emissao, empresa, settings)
+                if resultado is None:
+                    continue
+                conteudo, nome_arquivo = resultado
+                zip_arquivo.writestr(nome_arquivo, conteudo)
+                adicionados += 1
 
     if adicionados == 0:
         raise HTTPException(status_code=404, detail="Nenhum XML disponivel para os itens selecionados")
