@@ -39,6 +39,17 @@ def test_monta_campos_basicos():
     assert "cityServiceCode" not in payload
 
 
+def test_effective_date_usa_fuso_de_brasilia_nao_utc():
+    # Fix I7: meia-noite UTC do dia de competencia e 21h BRT do dia ANTERIOR.
+    # Se a Spedy localizar o effectiveDate, uma competencia no dia 1 do mes
+    # cairia no ultimo dia do mes anterior. O offset gravado precisa ser
+    # -03:00 (BRT, sem horario de verao desde 2019), nunca +00:00/Z.
+    payload = montar_payload_spedy(_empresa(), _emissao())
+
+    assert payload["effectiveDate"].endswith("-03:00")
+    assert payload["effectiveDate"].startswith("2026-09-01T00:00:00")
+
+
 def test_integration_id_e_o_id_da_emissao():
     emissao = _emissao()
     payload = montar_payload_spedy(_empresa(), emissao)

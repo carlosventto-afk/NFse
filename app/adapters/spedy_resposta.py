@@ -18,7 +18,7 @@ def interpretar_status_emissao(bruta: dict) -> str:
 
 
 def chave_acesso_de(bruta: dict) -> str | None:
-    for chave in ("accessKey", "chaveAcesso", "nfseAccessKey", "number"):
+    for chave in ("accessKey", "chaveAcesso", "nfseAccessKey"):
         valor = bruta.get(chave)
         if valor:
             return str(valor)

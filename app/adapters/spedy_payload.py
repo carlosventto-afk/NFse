@@ -3,9 +3,10 @@ Ao contrario do caminho direto (nfse_core/dps.py monta XML), aqui os dados
 vao inline no JSON -- a Spedy nao exige cliente/produto pre-cadastrados."""
 from __future__ import annotations
 
-from datetime import datetime, time, timezone
+from datetime import datetime, time
 
 from app.models import Emissao, Empresa
+from app.periodo import FUSO_BRT
 
 
 def montar_payload_spedy(empresa: Empresa, emissao: Emissao) -> dict:
@@ -13,7 +14,7 @@ def montar_payload_spedy(empresa: Empresa, emissao: Emissao) -> dict:
     payload: dict = {
         "integrationId": str(emissao.id),
         "description": emissao.descricao,
-        "effectiveDate": datetime.combine(emissao.competencia, time.min, tzinfo=timezone.utc).isoformat(),
+        "effectiveDate": datetime.combine(emissao.competencia, time.min, tzinfo=FUSO_BRT).isoformat(),
         "total": {"invoiceAmount": float(emissao.valor)},
         "city": {"code": cidade},
         "location": {"code": cidade},
