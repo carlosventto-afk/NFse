@@ -7,12 +7,13 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, Up
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.spedy_client import SpedyClient
 from app.adapters.stone_csv import CabecalhoInvalidoError, NotaCandidata, parsear_relatorio_stone
 from app.config import Settings, get_settings
 from app.crypto import decifrar
 from app.danfe import gerar_danfse_fallback
 from app.db import get_db
-from app.models import AmbienteEnum, Cliente, Emissao, Empresa, OrigemEmissao, StatusEmissao
+from app.models import AmbienteEnum, Cliente, Emissao, Empresa, OrigemEmissao, ProvedorEmissao, StatusEmissao
 from app.numeracao import reservar_proximo_numero
 from app.periodo import FUSO_BRT, fim_do_dia_brt, inicio_do_dia_brt
 from app.schemas import CancelarEmissaoIn, EmissaoManualIn, EmissaoOut
@@ -146,15 +147,23 @@ async def baixar_pdf(
     # fallback e o usuario sempre receber um PDF, nunca um 500
     # (ARMADILHAS.md item 10).
     try:
-        pfx_base64 = decifrar(empresa.certificado_pfx_cifrado, settings.fernet_key)
-        senha = (
-            decifrar(empresa.certificado_senha_cifrada, settings.fernet_key)
-            if empresa.certificado_senha_cifrada
-            else None
-        )
-        pdf = await SefinClient.fetch_danfse_pdf(
-            AmbienteEnum(empresa.ambiente).value, pfx_base64, senha, emissao.chave_acesso
-        )
+        if ProvedorEmissao(empresa.provedor_emissao) == ProvedorEmissao.spedy:
+            api_key = decifrar(empresa.spedy_api_key_cifrada, settings.fernet_key)
+            cliente_spedy = SpedyClient(AmbienteEnum(empresa.ambiente).value, api_key)
+            try:
+                pdf = await cliente_spedy.baixar_pdf(emissao.spedy_nota_id)
+            finally:
+                await cliente_spedy.close()
+        else:
+            pfx_base64 = decifrar(empresa.certificado_pfx_cifrado, settings.fernet_key)
+            senha = (
+                decifrar(empresa.certificado_senha_cifrada, settings.fernet_key)
+                if empresa.certificado_senha_cifrada
+                else None
+            )
+            pdf = await SefinClient.fetch_danfse_pdf(
+                AmbienteEnum(empresa.ambiente).value, pfx_base64, senha, emissao.chave_acesso
+            )
     except Exception:
         logger.warning(
             "falha ao buscar o DANFSe oficial da emissao %s; usando o fallback local",

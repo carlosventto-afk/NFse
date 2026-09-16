@@ -270,3 +270,98 @@ async def test_baixar_pdf_usa_fallback_quando_adn_nao_responde(db_session, monke
         assert resposta.content.startswith(b"%PDF")
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_baixar_pdf_usa_spedy_quando_esse_e_o_provedor(db_session, monkeypatch):
+    from app.models import ProvedorEmissao
+
+    fernet_key = get_settings().fernet_key
+    empresa, usuario = await criar_empresa_titular(
+        db_session,
+        provedor_emissao=ProvedorEmissao.spedy,
+        spedy_api_key_cifrada=cifrar("spedy-chave-1", fernet_key),
+    )
+    emissao = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.manual, status=StatusEmissao.autorizada,
+        serie="1", numero=1, chave_acesso="chave-final-1", spedy_nota_id="nota-spedy-1",
+        descricao="Lavagem", valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    db_session.add(emissao)
+    await db_session.commit()
+    await db_session.refresh(emissao)
+    token = criar_token(usuario, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    import app.routers.emissoes as emissoes_router
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def baixar_pdf(self, spedy_nota_id):
+            assert spedy_nota_id == "nota-spedy-1"
+            return b"%PDF-da-spedy"
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(emissoes_router, "SpedyClient", ClienteFalso)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.get(
+                f"/api/emissoes/{emissao.id}/pdf", headers={"Authorization": f"Bearer {token}"}
+            )
+        assert resposta.status_code == 200
+        assert resposta.content == b"%PDF-da-spedy"
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_baixar_pdf_via_spedy_cai_no_fallback_quando_spedy_falha(db_session, monkeypatch):
+    from app.models import ProvedorEmissao
+
+    fernet_key = get_settings().fernet_key
+    empresa, usuario = await criar_empresa_titular(
+        db_session,
+        provedor_emissao=ProvedorEmissao.spedy,
+        spedy_api_key_cifrada=cifrar("spedy-chave-1", fernet_key),
+    )
+    emissao = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.manual, status=StatusEmissao.autorizada,
+        serie="1", numero=1, chave_acesso="chave-final-1", spedy_nota_id="nota-spedy-1",
+        descricao="Lavagem", valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    db_session.add(emissao)
+    await db_session.commit()
+    await db_session.refresh(emissao)
+    token = criar_token(usuario, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    import app.routers.emissoes as emissoes_router
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def baixar_pdf(self, spedy_nota_id):
+            raise RuntimeError("Spedy indisponivel")
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(emissoes_router, "SpedyClient", ClienteFalso)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.get(
+                f"/api/emissoes/{emissao.id}/pdf", headers={"Authorization": f"Bearer {token}"}
+            )
+        assert resposta.status_code == 200
+        assert resposta.content.startswith(b"%PDF")
+    finally:
+        app.dependency_overrides.clear()
