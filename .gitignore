@@ -1,6 +1,7 @@
 .worktrees/
 nfse-nacional-kit.zip
 .venv/
+tests/.pgserver-data/
 __pycache__/
 *.pyc
 .env

@@ -33,7 +33,10 @@ completo em `docs/superpowers/specs/2026-08-11-nfse-stone-webhook-design.md`.
 pytest -v
 ```
 
-Exige o Postgres do `docker compose` no ar (banco `nfse_test`).
+Exige um Postgres em `DATABASE_URL_TEST`. Se o Postgres do `docker compose`
+não estiver acessível (ex: sem Docker instalado), o `tests/conftest.py` sobe
+sozinho um Postgres 16 embarcado via [pgserver](https://pypi.org/project/pgserver/)
+(pip, sem admin, dados em `tests/.pgserver-data/`, ignorado no git).
 
 ## Checklist antes da primeira nota real (fora do automatizável por teste)
 
