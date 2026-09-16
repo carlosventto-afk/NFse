@@ -40,27 +40,39 @@ async def _marcar_rejeitada(session: AsyncSession, emissao: Emissao, codigo: str
     await session.commit()
 
 
+async def _obter_api_key_spedy(empresa: Empresa, settings: Settings) -> tuple[str | None, str | None]:
+    """Decifra a API key da Spedy da empresa.
+
+    Devolve (chave, None) em sucesso, ou (None, motivo) quando a empresa nao
+    esta provisionada ou a chave nao decifra. O chamador decide o que fazer
+    com a falha: nas funcoes de SUBMISSAO (nada foi enviado ainda pra Spedy),
+    marcar erro na hora e seguro. Nas funcoes de CONFIRMACAO (a nota ou o
+    cancelamento ja foi submetido antes), marcar erro seria arriscado -- a
+    nota pode ja estar autorizada/cancelada do lado da Spedy; o certo e so
+    logar e tentar de novo depois."""
+    if not empresa.spedy_empresa_id or not empresa.spedy_api_key_cifrada:
+        return None, "empresa nao esta provisionada na Spedy (edite a empresa para reconfigurar o provedor)"
+    try:
+        return decifrar(empresa.spedy_api_key_cifrada, settings.fernet_key), None
+    except InvalidToken:
+        return None, "chave da Spedy cifrada com outra FERNET_KEY (reconfigure o provedor)"
+
+
 async def _processar_pendente_spedy(
     session: AsyncSession, emissao: Emissao, empresa: Empresa, settings: Settings,
 ) -> bool:
-    if not empresa.spedy_empresa_id or not empresa.spedy_api_key_cifrada:
-        await _marcar_rejeitada(
-            session, emissao, "SPEDY_NAO_PROVISIONADA",
-            "empresa nao esta provisionada na Spedy (edite a empresa para reconfigurar o provedor)",
-        )
+    api_key, motivo = await _obter_api_key_spedy(empresa, settings)
+    if api_key is None:
+        await _marcar_rejeitada(session, emissao, "SPEDY_NAO_PROVISIONADA", motivo)
         return True
 
     try:
-        api_key = decifrar(empresa.spedy_api_key_cifrada, settings.fernet_key)
-    except InvalidToken:
-        await _marcar_rejeitada(
-            session, emissao, "SPEDY_NAO_PROVISIONADA",
-            "chave da Spedy cifrada com outra FERNET_KEY (reconfigure o provedor)",
-        )
+        payload = montar_payload_spedy(empresa, emissao)
+        cliente = SpedyClient(AmbienteEnum(empresa.ambiente).value, api_key)
+    except (ValueError, KeyError, TypeError) as exc:
+        await _marcar_rejeitada(session, emissao, "DADOS_INVALIDOS", str(exc))
         return True
 
-    payload = montar_payload_spedy(empresa, emissao)
-    cliente = SpedyClient(AmbienteEnum(empresa.ambiente).value, api_key)
     try:
         bruta = await cliente.emitir_nfse(payload)
     except SpedyError as exc:
@@ -238,13 +250,16 @@ async def processar_uma_aguardando_confirmacao_spedy(
     """Consulta o resultado final de uma emissao Spedy ainda pendente de
     confirmacao. So conta como "trabalho feito" (True) quando o status vira
     terminal -- assim o loop respeita o intervalo normal entre tentativas em
-    vez de martelar a Spedy sem pausa enquanto a nota ainda processa."""
+    vez de martelar a Spedy sem pausa enquanto a nota ainda processa.
+    Ordenado por atualizada_em (nao criada_em): uma linha que nunca resolve
+    nao pode monopolizar a fila pra sempre -- cada tentativa de poll atualiza
+    atualizada_em mesmo sem resolver, fazendo a fila rotacionar."""
     settings = settings or get_settings()
 
     stmt = (
         select(Emissao)
         .where(Emissao.status == StatusEmissao.aguardando_confirmacao)
-        .order_by(Emissao.criada_em)
+        .order_by(Emissao.atualizada_em)
         .limit(1)
         .with_for_update(skip_locked=True)
     )
@@ -253,14 +268,13 @@ async def processar_uma_aguardando_confirmacao_spedy(
         return False
 
     empresa = await session.get(Empresa, emissao.empresa_id)
-    try:
-        api_key = decifrar(empresa.spedy_api_key_cifrada, settings.fernet_key)
-    except InvalidToken:
-        await _marcar_rejeitada(
-            session, emissao, "SPEDY_NAO_PROVISIONADA",
-            "chave da Spedy cifrada com outra FERNET_KEY (reconfigure o provedor)",
+    api_key, motivo = await _obter_api_key_spedy(empresa, settings)
+    if api_key is None:
+        logger.warning(
+            "nao foi possivel obter a chave Spedy da empresa %s pra confirmar a emissao %s: %s",
+            empresa.id, emissao.id, motivo,
         )
-        return True
+        return False
 
     cliente = SpedyClient(AmbienteEnum(empresa.ambiente).value, api_key)
     try:
@@ -270,6 +284,16 @@ async def processar_uma_aguardando_confirmacao_spedy(
         logger.warning("falha ao consultar emissao %s na Spedy: %s", emissao.id, exc)
         return False
     await cliente.close()
+
+    http_status = int(bruta.get("_http_status") or 0)
+    if http_status >= 400:
+        logger.warning(
+            "Spedy devolveu HTTP %s ao consultar a emissao %s (nota %s); tentando de novo depois",
+            http_status, emissao.id, emissao.spedy_nota_id,
+        )
+        emissao.atualizada_em = datetime.now(timezone.utc)
+        await session.commit()
+        return False
 
     status = interpretar_status_emissao(bruta)
     if status == "authorized":
@@ -287,6 +311,9 @@ async def processar_uma_aguardando_confirmacao_spedy(
         emissao.resposta_bruta = json.dumps(bruta, ensure_ascii=False)
         await session.commit()
         return True
+
+    emissao.atualizada_em = datetime.now(timezone.utc)
+    await session.commit()
     return False
 
 
@@ -299,16 +326,17 @@ async def _marcar_erro_cancelamento(session: AsyncSession, emissao: Emissao, cod
 async def _processar_cancelamento_pendente_spedy(
     session: AsyncSession, emissao: Emissao, empresa: Empresa, settings: Settings,
 ) -> bool:
-    try:
-        api_key = decifrar(empresa.spedy_api_key_cifrada, settings.fernet_key)
-    except InvalidToken:
-        await _marcar_erro_cancelamento(
-            session, emissao, "SPEDY_NAO_PROVISIONADA",
-            "chave da Spedy cifrada com outra FERNET_KEY (reconfigure o provedor)",
-        )
+    api_key, motivo = await _obter_api_key_spedy(empresa, settings)
+    if api_key is None:
+        await _marcar_erro_cancelamento(session, emissao, "SPEDY_NAO_PROVISIONADA", motivo)
         return True
 
-    cliente = SpedyClient(AmbienteEnum(empresa.ambiente).value, api_key)
+    try:
+        cliente = SpedyClient(AmbienteEnum(empresa.ambiente).value, api_key)
+    except ValueError as exc:
+        await _marcar_erro_cancelamento(session, emissao, "DADOS_INVALIDOS", str(exc))
+        return True
+
     try:
         bruta = await cliente.cancelar_nfse(emissao.spedy_nota_id, emissao.motivo_cancelamento or "")
     except SpedyError as exc:
@@ -415,13 +443,14 @@ async def processar_um_cancelamento_aguardando_confirmacao_spedy(
 ) -> bool:
     """Espelha processar_uma_aguardando_confirmacao_spedy: o cancelamento na
     Spedy tambem e assincrono (confirmado na doc oficial -- DELETE
-    /service-invoices/{id} processa ate o status "canceled")."""
+    /service-invoices/{id} processa ate o status "canceled"). Mesma logica de
+    rotacao por atualizada_em."""
     settings = settings or get_settings()
 
     stmt = (
         select(Emissao)
         .where(Emissao.status == StatusEmissao.cancelamento_aguardando_confirmacao)
-        .order_by(Emissao.criada_em)
+        .order_by(Emissao.atualizada_em)
         .limit(1)
         .with_for_update(skip_locked=True)
     )
@@ -430,14 +459,13 @@ async def processar_um_cancelamento_aguardando_confirmacao_spedy(
         return False
 
     empresa = await session.get(Empresa, emissao.empresa_id)
-    try:
-        api_key = decifrar(empresa.spedy_api_key_cifrada, settings.fernet_key)
-    except InvalidToken:
-        await _marcar_erro_cancelamento(
-            session, emissao, "SPEDY_NAO_PROVISIONADA",
-            "chave da Spedy cifrada com outra FERNET_KEY (reconfigure o provedor)",
+    api_key, motivo = await _obter_api_key_spedy(empresa, settings)
+    if api_key is None:
+        logger.warning(
+            "nao foi possivel obter a chave Spedy da empresa %s pra confirmar o cancelamento %s: %s",
+            empresa.id, emissao.id, motivo,
         )
-        return True
+        return False
 
     cliente = SpedyClient(AmbienteEnum(empresa.ambiente).value, api_key)
     try:
@@ -448,11 +476,24 @@ async def processar_um_cancelamento_aguardando_confirmacao_spedy(
         return False
     await cliente.close()
 
+    http_status = int(bruta.get("_http_status") or 0)
+    if http_status >= 400:
+        logger.warning(
+            "Spedy devolveu HTTP %s ao consultar o cancelamento %s (nota %s); tentando de novo depois",
+            http_status, emissao.id, emissao.spedy_nota_id,
+        )
+        emissao.atualizada_em = datetime.now(timezone.utc)
+        await session.commit()
+        return False
+
     if bruta.get("status") == "canceled":
         emissao.status = StatusEmissao.cancelada
         emissao.cancelada_em = datetime.now(timezone.utc)
         await session.commit()
         return True
+
+    emissao.atualizada_em = datetime.now(timezone.utc)
+    await session.commit()
     return False
 
 

@@ -4,6 +4,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
+from cryptography.fernet import Fernet
 
 from app.config import get_settings
 from app.crypto import cifrar, hash_senha
@@ -220,6 +221,111 @@ async def test_confirmacao_spedy_ainda_processando_nao_conta_como_trabalho(db_se
 
 
 @pytest.mark.asyncio
+async def test_confirmacao_spedy_http_erro_nao_resolve_e_nao_derruba(db_session, monkeypatch):
+    # Fix I1: consultar_nfse usa o _handle tolerante -- uma chave revogada,
+    # 403 ou 404 nunca levanta SpedyError, so devolve um dict sem "status"
+    # reconhecivel. Sem tratar _http_status >= 400 explicitamente a linha
+    # ficaria presa "pending" pra sempre sem nenhum log explicando o motivo.
+    emissao = await _emissao_aguardando_confirmacao(db_session)
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def consultar_nfse(self, spedy_nota_id):
+            return {"_http_status": 401}
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(worker, "SpedyClient", ClienteFalso)
+    atualizada_em_antes = emissao.atualizada_em
+
+    processou = await worker.processar_uma_aguardando_confirmacao_spedy(db_session)
+
+    assert processou is False
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.aguardando_confirmacao
+    assert emissao.chave_acesso is None
+    # a linha precisa rotacionar (atualizada_em avanca) mesmo em erro HTTP --
+    # senao uma chave revogada prende a linha no topo da fila pra sempre.
+    assert emissao.atualizada_em > atualizada_em_antes
+
+
+@pytest.mark.asyncio
+async def test_confirmacao_spedy_chave_nao_decifra_nao_marca_erro(db_session):
+    # Fix I6: por aqui a nota JA foi submetida a Spedy antes. Se a chave nao
+    # decifra agora (FERNET_KEY rotacionada no meio do caminho), isso nao diz
+    # nada sobre o estado real da nota na Spedy -- marcar como rejeitada
+    # arrisca um humano reemitir uma nota fiscal que ja existe, duplicando-a.
+    # O comportamento seguro e so logar e tentar de novo depois.
+    outra_chave = Fernet.generate_key().decode()
+    emissao = await _empresa_spedy_e_emissao_pendente(
+        db_session, spedy_api_key_cifrada=cifrar("spedy-chave-1", outra_chave),
+    )
+    emissao.status = StatusEmissao.aguardando_confirmacao
+    emissao.spedy_nota_id = "nota-spedy-1"
+    await db_session.commit()
+
+    processou = await worker.processar_uma_aguardando_confirmacao_spedy(db_session)
+
+    assert processou is False
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.aguardando_confirmacao
+
+
+@pytest.mark.asyncio
+async def test_confirmacao_spedy_rotaciona_fila_por_atualizada_em(db_session, monkeypatch):
+    # Fix I2: order_by(criada_em) faria a linha mais antiga que nunca resolve
+    # monopolizar a fila pra sempre, starvando as demais linhas da mesma
+    # empresa. order_by(atualizada_em) rotaciona: cada tentativa que nao
+    # resolve empurra a linha pro fim da fila.
+    emissao_a = await _emissao_aguardando_confirmacao(db_session)
+    emissao_a.atualizada_em = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    await db_session.commit()
+
+    emissao_b = Emissao(
+        empresa_id=emissao_a.empresa_id, origem=OrigemEmissao.manual,
+        status=StatusEmissao.aguardando_confirmacao, serie="1", numero=2,
+        tomador_cpf_cnpj="98765432100", tomador_nome="Cliente",
+        descricao="Lavagem de roupa 2", valor=Decimal("49.90"), competencia=date(2026, 9, 1),
+        spedy_nota_id="nota-spedy-2",
+    )
+    db_session.add(emissao_b)
+    await db_session.commit()
+    emissao_b.atualizada_em = datetime(2026, 1, 2, tzinfo=timezone.utc)
+    await db_session.commit()
+    await db_session.refresh(emissao_a)
+    await db_session.refresh(emissao_b)
+
+    vistas = []
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def consultar_nfse(self, spedy_nota_id):
+            vistas.append(spedy_nota_id)
+            return {"_http_status": 200, "status": "enqueued"}
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(worker, "SpedyClient", ClienteFalso)
+
+    processou = await worker.processar_uma_aguardando_confirmacao_spedy(db_session)
+    assert processou is False
+    assert vistas == ["nota-spedy-1"]
+    await db_session.refresh(emissao_a)
+    await db_session.refresh(emissao_b)
+    assert emissao_a.atualizada_em > emissao_b.atualizada_em
+
+    processou = await worker.processar_uma_aguardando_confirmacao_spedy(db_session)
+    assert processou is False
+    assert vistas == ["nota-spedy-1", "nota-spedy-2"]
+
+
+@pytest.mark.asyncio
 async def test_processar_uma_aguardando_confirmacao_spedy_devolve_falso_quando_fila_vazia(db_session):
     processou = await worker.processar_uma_aguardando_confirmacao_spedy(db_session)
     assert processou is False
@@ -354,6 +460,58 @@ async def test_confirmacao_cancelamento_spedy_ainda_processando_nao_conta_como_t
             pass
 
     monkeypatch.setattr(worker, "SpedyClient", ClienteFalso)
+
+    processou = await worker.processar_um_cancelamento_aguardando_confirmacao_spedy(db_session)
+
+    assert processou is False
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.cancelamento_aguardando_confirmacao
+
+
+@pytest.mark.asyncio
+async def test_confirmacao_cancelamento_spedy_http_erro_nao_resolve_e_nao_derruba(db_session, monkeypatch):
+    # Mirror do teste equivalente pra emissao (Fix I1): 401/403/404 no
+    # consultar_nfse nao pode ser confundido com "ainda processando" silencioso.
+    emissao = await _emissao_cancelamento_pendente_spedy(db_session)
+    emissao.status = StatusEmissao.cancelamento_aguardando_confirmacao
+    await db_session.commit()
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def consultar_nfse(self, spedy_nota_id):
+            return {"_http_status": 401}
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(worker, "SpedyClient", ClienteFalso)
+    atualizada_em_antes = emissao.atualizada_em
+
+    processou = await worker.processar_um_cancelamento_aguardando_confirmacao_spedy(db_session)
+
+    assert processou is False
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.cancelamento_aguardando_confirmacao
+    assert emissao.atualizada_em > atualizada_em_antes
+
+
+@pytest.mark.asyncio
+async def test_confirmacao_cancelamento_spedy_chave_nao_decifra_nao_marca_erro(db_session):
+    # Mirror do teste equivalente pra emissao (Fix I6): o cancelamento ja foi
+    # submetido a Spedy antes -- se a chave nao decifra agora, marcar
+    # erro_cancelamento arrisca esconder um cancelamento que ja aconteceu do
+    # lado da Spedy. O seguro e so logar e tentar de novo depois.
+    outra_chave = Fernet.generate_key().decode()
+    emissao = await _empresa_spedy_e_emissao_pendente(
+        db_session, spedy_api_key_cifrada=cifrar("spedy-chave-1", outra_chave),
+    )
+    emissao.status = StatusEmissao.cancelamento_aguardando_confirmacao
+    emissao.chave_acesso = "chave-final-1"
+    emissao.spedy_nota_id = "nota-spedy-1"
+    emissao.motivo_cancelamento = "Servico nao prestado"
+    await db_session.commit()
 
     processou = await worker.processar_um_cancelamento_aguardando_confirmacao_spedy(db_session)
 
