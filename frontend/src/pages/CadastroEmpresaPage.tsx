@@ -7,6 +7,7 @@ const VAZIO: DadosEmpresaForm = {
   op_simp_nac: "3", regime_apuracao_sn: "", codigo_tributacao: "", codigo_tributacao_municipal: "",
   descricao_servico_padrao: "", ambiente: "homologacao",
   senha_certificado: "", titular_email: "",
+  provedor_emissao: "direto", razao_social: "", logradouro: "", numero: "", complemento: "", bairro: "", cep: "",
 };
 
 export default function CadastroEmpresaPage() {

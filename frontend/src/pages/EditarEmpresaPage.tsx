@@ -6,12 +6,14 @@ const VAZIO: DadosEdicaoEmpresa = {
   op_simp_nac: "3", regime_apuracao_sn: "", codigo_tributacao: "", codigo_tributacao_municipal: "",
   descricao_servico_padrao: "", ambiente: "homologacao",
   senha_certificado: "",
+  provedor_emissao: "direto", razao_social: "", logradouro: "", numero: "", complemento: "", bairro: "", cep: "",
 };
 
 export default function EditarEmpresaPage() {
   const [dados, setDados] = useState<DadosEdicaoEmpresa>(VAZIO);
   const [pfx, setPfx] = useState<File | null>(null);
   const [certificadoValidoAte, setCertificadoValidoAte] = useState<string | null>(null);
+  const [spedyEmpresaId, setSpedyEmpresaId] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -32,8 +34,16 @@ export default function EditarEmpresaPage() {
           descricao_servico_padrao: empresa.descricao_servico_padrao,
           ambiente: empresa.ambiente,
           senha_certificado: "",
+          provedor_emissao: empresa.provedor_emissao,
+          razao_social: empresa.razao_social ?? "",
+          logradouro: empresa.logradouro ?? "",
+          numero: empresa.numero ?? "",
+          complemento: empresa.complemento ?? "",
+          bairro: empresa.bairro ?? "",
+          cep: empresa.cep ?? "",
         });
         setCertificadoValidoAte(empresa.certificado_valido_ate);
+        setSpedyEmpresaId(empresa.spedy_empresa_id);
       })
       .catch((e) => setErro(e instanceof Error ? e.message : "Nao foi possivel carregar a empresa"))
       .finally(() => setCarregando(false));
@@ -51,6 +61,7 @@ export default function EditarEmpresaPage() {
     try {
       const empresa = await editarEmpresa(dados, pfx);
       setCertificadoValidoAte(empresa.certificado_valido_ate);
+      setSpedyEmpresaId(empresa.spedy_empresa_id);
       setPfx(null);
       setSucesso("Dados da empresa atualizados.");
     } catch (e) {
@@ -135,6 +146,54 @@ export default function EditarEmpresaPage() {
         </div>
 
         <hr />
+        <div className="form-linha">
+          <label htmlFor="provedor_emissao">Provedor de emissao</label>
+          <select id="provedor_emissao" value={dados.provedor_emissao}
+            onChange={(e) => atualizar("provedor_emissao", e.target.value)}>
+            <option value="direto">Direto (SEFIN Nacional / municipio proprio)</option>
+            <option value="spedy">Spedy</option>
+          </select>
+        </div>
+        {dados.provedor_emissao === "spedy" && (
+          <>
+            <p>
+              {spedyEmpresaId
+                ? `Ja provisionada na Spedy (ID: ${spedyEmpresaId}).`
+                : "Ainda nao provisionada — sera provisionada na Spedy ao salvar."}
+              {" "}Trocar certificado ou ambiente depois de provisionada exige reconfigurar o provedor manualmente.
+            </p>
+            <div className="form-linha">
+              <label htmlFor="razao_social">Razao social</label>
+              <input id="razao_social" required value={dados.razao_social}
+                onChange={(e) => atualizar("razao_social", e.target.value)} />
+            </div>
+            <div className="form-linha">
+              <label htmlFor="logradouro">Logradouro</label>
+              <input id="logradouro" value={dados.logradouro}
+                onChange={(e) => atualizar("logradouro", e.target.value)} />
+            </div>
+            <div className="form-linha">
+              <label htmlFor="numero">Numero</label>
+              <input id="numero" value={dados.numero}
+                onChange={(e) => atualizar("numero", e.target.value)} />
+            </div>
+            <div className="form-linha">
+              <label htmlFor="complemento">Complemento</label>
+              <input id="complemento" value={dados.complemento}
+                onChange={(e) => atualizar("complemento", e.target.value)} />
+            </div>
+            <div className="form-linha">
+              <label htmlFor="bairro">Bairro</label>
+              <input id="bairro" value={dados.bairro}
+                onChange={(e) => atualizar("bairro", e.target.value)} />
+            </div>
+            <div className="form-linha">
+              <label htmlFor="cep">CEP</label>
+              <input id="cep" maxLength={8} value={dados.cep}
+                onChange={(e) => atualizar("cep", e.target.value)} />
+            </div>
+          </>
+        )}
         <p>
           Certificado atual valido ate:{" "}
           {certificadoValidoAte ? new Date(certificadoValidoAte).toLocaleDateString("pt-BR") : "-"}.

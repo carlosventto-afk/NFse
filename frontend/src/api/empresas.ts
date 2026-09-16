@@ -14,6 +14,13 @@ export interface DadosEmpresaForm {
   ambiente: string;
   senha_certificado: string;
   titular_email: string;
+  provedor_emissao: string;
+  razao_social: string;
+  logradouro: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
+  cep: string;
 }
 
 export type DadosEdicaoEmpresa = Omit<DadosEmpresaForm, "titular_email">;

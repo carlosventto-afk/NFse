@@ -87,4 +87,12 @@ export interface EmpresaDetalhe {
   descricao_servico_padrao: string;
   ambiente: string;
   certificado_valido_ate: string;
+  razao_social: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cep: string | null;
+  provedor_emissao: string;
+  spedy_empresa_id: string | null;
 }
