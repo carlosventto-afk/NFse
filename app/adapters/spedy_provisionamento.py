@@ -5,10 +5,13 @@ Chamado uma unica vez, de forma sincrona e explicita, quando o admin liga
 from __future__ import annotations
 
 import base64
+import logging
 
 from app.adapters.spedy_client import SpedyClient, SpedyError
 from app.config import Settings
 from app.models import AmbienteEnum, Empresa
+
+logger = logging.getLogger(__name__)
 
 
 def _chave_mestre(ambiente: str, settings: Settings) -> str:
@@ -72,8 +75,17 @@ async def provisionar_empresa(
         # nao autorizado" com a chave da empresa -- so funcionam com a chave
         # MESTRE. A chave da empresa (api_key acima) so e usada depois, nas
         # operacoes de emissao/consulta/cancelamento (ver app/worker.py).
+        pfx_bytes = base64.b64decode(pfx_base64)
+        # Diagnostico temporario (16/09): a Spedy respondeu "Password/
+        # CertificateFile field is required" mesmo com certificado novo
+        # selecionado -- logando so os tamanhos (nunca o conteudo/senha) pra
+        # confirmar se pfx_base64/senha chegam vazios ate aqui.
+        logger.warning(
+            "diagnostico provisionamento empresa %s: pfx_base64 len=%d, pfx_bytes len=%d, senha vazia=%s",
+            empresa.id, len(pfx_base64 or ""), len(pfx_bytes), not senha,
+        )
         await cliente_mestre.adicionar_certificado(
-            spedy_empresa_id, base64.b64decode(pfx_base64), senha or "",
+            spedy_empresa_id, pfx_bytes, senha or "",
         )
         await cliente_mestre.configurar_nfse(spedy_empresa_id, {
             "series": empresa.serie,
