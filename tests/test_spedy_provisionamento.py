@@ -65,9 +65,12 @@ async def test_provisionar_empresa_chama_os_tres_passos_na_ordem(monkeypatch):
     assert api_key == "chave-empresa"
     nomes_das_chamadas = [c[0] for c in chamadas if c[0] != "init"]
     assert nomes_das_chamadas == ["criar_empresa", "adicionar_certificado", "configurar_nfse"]
-    # 1o cliente usa a chave MESTRE, os dois seguintes usam a chave da empresa recem-criada
+    # Confirmado ao vivo em producao (16/09): adicionar_certificado e
+    # configurar_nfse devolvem 403 "Acesso nao autorizado" com a chave da
+    # empresa -- os TRES passos usam a chave MESTRE. A chave da empresa
+    # (api_key retornado) so serve pras operacoes de emissao depois.
     assert chamadas[0] == ("init", "homologacao", "chave-mestre")
-    assert chamadas[2] == ("init", "homologacao", "chave-empresa")
+    assert chamadas[2] == ("init", "homologacao", "chave-mestre")
     assert chamadas[3][2] == b"conteudo-pfx"  # pfx decodificado de base64
     assert chamadas[3][3] == "senha123"
 

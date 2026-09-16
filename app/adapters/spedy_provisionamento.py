@@ -51,17 +51,23 @@ async def provisionar_empresa(
     spedy_empresa_id = criada["id"]
     api_key = criada["apiCredentials"]["apiKey"]
 
-    cliente_empresa = SpedyClient(ambiente, api_key)
+    # Confirmado ao vivo em producao (16/09): ao contrario do que a doc
+    # publica sugere (usar a X-Api-Key da empresa recem-criada), tanto
+    # adicionar_certificado quanto configurar_nfse devolvem 403 "Acesso nao
+    # autorizado" com a chave da empresa -- so funcionam com a chave MESTRE.
+    # A chave da empresa (api_key acima) so e usada depois, nas operacoes de
+    # emissao/consulta/cancelamento (ver app/worker.py).
+    cliente_mestre = SpedyClient(ambiente, chave_mestre)
     try:
-        await cliente_empresa.adicionar_certificado(
+        await cliente_mestre.adicionar_certificado(
             spedy_empresa_id, base64.b64decode(pfx_base64), senha or "",
         )
-        await cliente_empresa.configurar_nfse(spedy_empresa_id, {
+        await cliente_mestre.configurar_nfse(spedy_empresa_id, {
             "series": empresa.serie,
             "environmentType": "production" if ambiente == "producao" else "simulation",
             "nextNumber": empresa.proximo_numero,
         })
     finally:
-        await cliente_empresa.close()
+        await cliente_mestre.close()
 
     return spedy_empresa_id, api_key
