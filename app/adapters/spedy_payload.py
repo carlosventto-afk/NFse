@@ -16,7 +16,7 @@ def montar_payload_spedy(empresa: Empresa, emissao: Emissao) -> dict:
         "effectiveDate": datetime.combine(emissao.competencia, time.min, tzinfo=timezone.utc).isoformat(),
         "total": {"invoiceAmount": float(emissao.valor)},
         "city": {"code": cidade},
-        "location": "serviceProvisionMunicipality" if empresa.local_prestacao_ibge else "companyMunicipality",
+        "location": {"code": cidade},
         "taxationType": "taxationInMunicipality",
         "federalServiceCode": empresa.codigo_tributacao,
         "issue": True,

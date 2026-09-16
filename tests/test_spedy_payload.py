@@ -32,7 +32,7 @@ def test_monta_campos_basicos():
     assert payload["description"] == "Lavagem de roupa"
     assert payload["total"]["invoiceAmount"] == 49.90
     assert payload["city"]["code"] == "1501402"
-    assert payload["location"] == "companyMunicipality"
+    assert payload["location"] == {"code": "1501402"}
     assert payload["federalServiceCode"] == "140106"
     assert payload["issue"] is True
     assert "receiver" not in payload
@@ -48,7 +48,7 @@ def test_integration_id_e_o_id_da_emissao():
 def test_usa_local_de_prestacao_quando_diferente_do_municipio_emissor():
     payload = montar_payload_spedy(_empresa(local_prestacao_ibge="3550308"), _emissao())
     assert payload["city"]["code"] == "3550308"
-    assert payload["location"] == "serviceProvisionMunicipality"
+    assert payload["location"] == {"code": "3550308"}
 
 
 def test_inclui_receiver_quando_ha_documento_do_tomador():
