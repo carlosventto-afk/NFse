@@ -19,9 +19,13 @@ export function confirmarCsv(arquivo: File): Promise<ResultadoImportacaoCsv> {
   });
 }
 
-export async function listarEmissoes(status?: string): Promise<Emissao[]> {
-  const parametros = status ? `?status=${encodeURIComponent(status)}` : "";
-  return apiFetch<Emissao[]>(`/api/emissoes${parametros}`);
+export async function listarEmissoes(status?: string, inicio?: string, fim?: string): Promise<Emissao[]> {
+  const parametros = new URLSearchParams();
+  if (status) parametros.set("status", status);
+  if (inicio) parametros.set("inicio", inicio);
+  if (fim) parametros.set("fim", fim);
+  const query = parametros.toString();
+  return apiFetch<Emissao[]>(`/api/emissoes${query ? `?${query}` : ""}`);
 }
 
 export function cancelarEmissao(id: string, motivo: string, codigoMotivo: string): Promise<Emissao> {
@@ -44,4 +48,12 @@ export function urlPdf(id: string): string {
 
 export function urlRespostaBruta(id: string): string {
   return `/api/emissoes/${id}/resposta-bruta`;
+}
+
+export function urlDownloadXmlsLote(): string {
+  return `/api/emissoes/download-xmls`;
+}
+
+export function urlDownloadPdfsLote(): string {
+  return `/api/emissoes/download-pdfs`;
 }

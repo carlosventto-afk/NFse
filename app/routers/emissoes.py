@@ -1,5 +1,7 @@
+import io
 import logging
 import uuid
+import zipfile
 from datetime import date
 from decimal import Decimal
 
@@ -16,7 +18,7 @@ from app.db import get_db
 from app.models import AmbienteEnum, Cliente, Emissao, Empresa, OrigemEmissao, ProvedorEmissao, StatusEmissao
 from app.numeracao import reservar_proximo_numero
 from app.periodo import FUSO_BRT, fim_do_dia_brt, inicio_do_dia_brt
-from app.schemas import CancelarEmissaoIn, EmissaoManualIn, EmissaoOut
+from app.schemas import CancelarEmissaoIn, EmissaoManualIn, EmissaoOut, EmissoesIdsIn
 from app.security import ContextoAutenticado, exigir_admin_empresa, get_empresa_ativa
 from nfse_core import SefinClient
 
@@ -74,6 +76,17 @@ async def listar_emissoes(
     return list((await session.execute(stmt)).scalars().all())
 
 
+def _conteudo_xml(emissao: Emissao) -> tuple[bytes, str] | None:
+    # Autorizada: devolve o XML oficial da NFS-e (retornado pela SEFIN).
+    # Rejeitada: nao existe NFS-e — devolve o XML da DPS que foi assinado e
+    # submetido, util pra conferir o que exatamente foi enviado/recusado.
+    if emissao.status == StatusEmissao.autorizada and emissao.xml_nfse:
+        return emissao.xml_nfse, f"{emissao.chave_acesso}.xml"
+    if emissao.status == StatusEmissao.rejeitada and emissao.xml_dps:
+        return emissao.xml_dps, f"DPS_{emissao.serie}_{emissao.numero}.xml"
+    return None
+
+
 @router.get("/{emissao_id}/xml")
 async def baixar_xml(
     emissao_id: uuid.UUID,
@@ -84,21 +97,43 @@ async def baixar_xml(
     if emissao is None or emissao.empresa_id != contexto.empresa_id:
         raise HTTPException(status_code=404)
 
-    # Autorizada: devolve o XML oficial da NFS-e (retornado pela SEFIN).
-    # Rejeitada: nao existe NFS-e — devolve o XML da DPS que foi assinado e
-    # submetido, util pra conferir o que exatamente foi enviado/recusado.
-    if emissao.status == StatusEmissao.autorizada and emissao.xml_nfse:
-        conteudo = emissao.xml_nfse
-        nome_arquivo = f"{emissao.chave_acesso}.xml"
-    elif emissao.status == StatusEmissao.rejeitada and emissao.xml_dps:
-        conteudo = emissao.xml_dps
-        nome_arquivo = f"DPS_{emissao.serie}_{emissao.numero}.xml"
-    else:
+    resultado = _conteudo_xml(emissao)
+    if resultado is None:
         raise HTTPException(status_code=404, detail="XML nao disponivel para esta emissao")
+    conteudo, nome_arquivo = resultado
 
     return Response(
         content=conteudo, media_type="application/xml",
         headers={"Content-Disposition": f'attachment; filename="{nome_arquivo}"'},
+    )
+
+
+@router.post("/download-xmls")
+async def baixar_xmls_em_lote(
+    dados: EmissoesIdsIn,
+    contexto: ContextoAutenticado = Depends(get_empresa_ativa),
+    session: AsyncSession = Depends(get_db),
+) -> Response:
+    stmt = select(Emissao).where(Emissao.id.in_(dados.ids), Emissao.empresa_id == contexto.empresa_id)
+    emissoes = list((await session.execute(stmt)).scalars().all())
+
+    buffer = io.BytesIO()
+    adicionados = 0
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zip_arquivo:
+        for emissao in emissoes:
+            resultado = _conteudo_xml(emissao)
+            if resultado is None:
+                continue
+            conteudo, nome_arquivo = resultado
+            zip_arquivo.writestr(nome_arquivo, conteudo)
+            adicionados += 1
+
+    if adicionados == 0:
+        raise HTTPException(status_code=404, detail="Nenhum XML disponivel para os itens selecionados")
+
+    return Response(
+        content=buffer.getvalue(), media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="notas_xml.zip"'},
     )
 
 
@@ -120,21 +155,7 @@ async def baixar_resposta_bruta(
     )
 
 
-@router.get("/{emissao_id}/pdf")
-async def baixar_pdf(
-    emissao_id: uuid.UUID,
-    contexto: ContextoAutenticado = Depends(get_empresa_ativa),
-    session: AsyncSession = Depends(get_db),
-    settings: Settings = Depends(get_settings),
-) -> Response:
-    emissao = await session.get(Emissao, emissao_id)
-    if emissao is None or emissao.empresa_id != contexto.empresa_id:
-        raise HTTPException(status_code=404)
-    if emissao.status != StatusEmissao.autorizada:
-        raise HTTPException(status_code=404, detail="Nota nao autorizada")
-
-    empresa = await session.get(Empresa, emissao.empresa_id)
-
+async def _gerar_pdf_bytes(emissao: Emissao, empresa: Empresa, settings: Settings) -> bytes:
     # AmbienteEnum(...) normaliza o valor recem-carregado do banco — ver
     # comentario equivalente no worker.py (Task 10) e o bug original na Task 5.
     #
@@ -172,7 +193,58 @@ async def baixar_pdf(
         pdf = None
     if pdf is None:
         pdf = gerar_danfse_fallback(emissao, empresa)
+    return pdf
+
+
+@router.get("/{emissao_id}/pdf")
+async def baixar_pdf(
+    emissao_id: uuid.UUID,
+    contexto: ContextoAutenticado = Depends(get_empresa_ativa),
+    session: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    emissao = await session.get(Emissao, emissao_id)
+    if emissao is None or emissao.empresa_id != contexto.empresa_id:
+        raise HTTPException(status_code=404)
+    if emissao.status != StatusEmissao.autorizada:
+        raise HTTPException(status_code=404, detail="Nota nao autorizada")
+
+    empresa = await session.get(Empresa, emissao.empresa_id)
+    pdf = await _gerar_pdf_bytes(emissao, empresa, settings)
     return Response(content=pdf, media_type="application/pdf")
+
+
+@router.post("/download-pdfs")
+async def baixar_pdfs_em_lote(
+    dados: EmissoesIdsIn,
+    contexto: ContextoAutenticado = Depends(get_empresa_ativa),
+    session: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    stmt = select(Emissao).where(
+        Emissao.id.in_(dados.ids),
+        Emissao.empresa_id == contexto.empresa_id,
+        Emissao.status == StatusEmissao.autorizada,
+    )
+    emissoes = list((await session.execute(stmt)).scalars().all())
+
+    buffer = io.BytesIO()
+    adicionados = 0
+    if emissoes:
+        empresa = await session.get(Empresa, contexto.empresa_id)
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zip_arquivo:
+            for emissao in emissoes:
+                pdf = await _gerar_pdf_bytes(emissao, empresa, settings)
+                zip_arquivo.writestr(f"{emissao.chave_acesso}.pdf", pdf)
+                adicionados += 1
+
+    if adicionados == 0:
+        raise HTTPException(status_code=404, detail="Nenhum PDF disponivel para os itens selecionados")
+
+    return Response(
+        content=buffer.getvalue(), media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="notas_pdf.zip"'},
+    )
 
 
 async def _obter_ou_criar_cliente_padrao_csv(session: AsyncSession, empresa_id: uuid.UUID) -> Cliente:

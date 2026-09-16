@@ -1,13 +1,27 @@
 import { useEffect, useState } from "react";
-import { cancelarEmissao, excluirEmissao, listarEmissoes, urlPdf, urlRespostaBruta, urlXml } from "../api/emissoes";
+import {
+  cancelarEmissao, excluirEmissao, listarEmissoes,
+  urlDownloadPdfsLote, urlDownloadXmlsLote, urlPdf, urlRespostaBruta, urlXml,
+} from "../api/emissoes";
 import { obterToken } from "../api/client";
 import type { Emissao } from "../api/types";
 
 const STATUS = ["", "pendente", "autorizada", "rejeitada", "cancelada", "cancelamento_pendente", "erro_cancelamento"];
 
+function salvarBlobComoArquivo(blob: Blob, nomeArquivo: string) {
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = nomeArquivo;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 export default function EmissoesPage() {
   const [emissoes, setEmissoes] = useState<Emissao[]>([]);
   const [filtroStatus, setFiltroStatus] = useState("");
+  const [filtroInicio, setFiltroInicio] = useState("");
+  const [filtroFim, setFiltroFim] = useState("");
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [cancelandoId, setCancelandoId] = useState<string | null>(null);
@@ -17,8 +31,9 @@ export default function EmissoesPage() {
   async function carregar() {
     setCarregando(true);
     setErro(null);
+    setSelecionados(new Set());
     try {
-      setEmissoes(await listarEmissoes(filtroStatus || undefined));
+      setEmissoes(await listarEmissoes(filtroStatus || undefined, filtroInicio || undefined, filtroFim || undefined));
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Nao foi possivel carregar as emissoes");
     } finally {
@@ -29,7 +44,25 @@ export default function EmissoesPage() {
   useEffect(() => {
     carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtroStatus]);
+  }, [filtroStatus, filtroInicio, filtroFim]);
+
+  const todosSelecionados = emissoes.length > 0 && emissoes.every((e) => selecionados.has(e.id));
+
+  function alternarSelecao(id: string) {
+    setSelecionados((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(id)) {
+        novo.delete(id);
+      } else {
+        novo.add(id);
+      }
+      return novo;
+    });
+  }
+
+  function alternarSelecaoTodos() {
+    setSelecionados(todosSelecionados ? new Set() : new Set(emissoes.map((e) => e.id)));
+  }
 
   async function confirmarCancelamento(id: string) {
     setErro(null);
@@ -63,23 +96,56 @@ export default function EmissoesPage() {
       setErro("Nao foi possivel baixar o arquivo");
       return;
     }
-    const blob = await resposta.blob();
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = nomeArquivo;
-    link.click();
-    URL.revokeObjectURL(link.href);
+    salvarBlobComoArquivo(await resposta.blob(), nomeArquivo);
+  }
+
+  async function baixarSelecionados(url: string, nomeArquivo: string) {
+    const token = obterToken();
+    const resposta = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ ids: Array.from(selecionados) }),
+    });
+    if (!resposta.ok) {
+      setErro("Nao foi possivel baixar os arquivos selecionados");
+      return;
+    }
+    salvarBlobComoArquivo(await resposta.blob(), nomeArquivo);
   }
 
   return (
     <div>
       <h1>Emissoes</h1>
-      <div className="form-linha" style={{ maxWidth: 240 }}>
-        <label htmlFor="status">Filtrar por status</label>
-        <select id="status" value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
-          {STATUS.map((s) => <option key={s} value={s}>{s || "Todos"}</option>)}
-        </select>
+      <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
+        <div className="form-linha" style={{ maxWidth: 240 }}>
+          <label htmlFor="status">Filtrar por status</label>
+          <select id="status" value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
+            {STATUS.map((s) => <option key={s} value={s}>{s || "Todos"}</option>)}
+          </select>
+        </div>
+        <div className="form-linha">
+          <label htmlFor="data_inicio">De</label>
+          <input id="data_inicio" type="date" value={filtroInicio} onChange={(e) => setFiltroInicio(e.target.value)} />
+        </div>
+        <div className="form-linha">
+          <label htmlFor="data_fim">Ate</label>
+          <input id="data_fim" type="date" value={filtroFim} onChange={(e) => setFiltroFim(e.target.value)} />
+        </div>
       </div>
+
+      {selecionados.size > 0 && (
+        <div className="form-linha" style={{ flexDirection: "row", gap: "0.5rem" }}>
+          <button className="secundario" onClick={() => baixarSelecionados(urlDownloadXmlsLote(), "notas_xml.zip")}>
+            Baixar XMLs selecionados ({selecionados.size})
+          </button>
+          <button className="secundario" onClick={() => baixarSelecionados(urlDownloadPdfsLote(), "notas_pdf.zip")}>
+            Baixar PDFs selecionados ({selecionados.size})
+          </button>
+        </div>
+      )}
 
       {erro && <p className="erro">{erro}</p>}
 
@@ -89,12 +155,20 @@ export default function EmissoesPage() {
         <table>
           <thead>
             <tr>
+              <th><input type="checkbox" checked={todosSelecionados} onChange={alternarSelecaoTodos} /></th>
               <th>Numero</th><th>Origem</th><th>Status</th><th>Valor</th><th>Competencia</th><th>Erro</th><th></th>
             </tr>
           </thead>
           <tbody>
             {emissoes.map((emissao) => (
               <tr key={emissao.id}>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={selecionados.has(emissao.id)}
+                    onChange={() => alternarSelecao(emissao.id)}
+                  />
+                </td>
                 <td>{emissao.serie}/{emissao.numero}</td>
                 <td>{emissao.origem}</td>
                 <td>{emissao.status}</td>
