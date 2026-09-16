@@ -207,6 +207,11 @@ class EmissoesIdsIn(BaseModel):
     ids: list[uuid.UUID] = Field(min_length=1)
 
 
+class ExclusaoLoteOut(BaseModel):
+    excluidas: int
+    puladas: int
+
+
 class EmissaoOut(BaseModel):
     id: uuid.UUID
     origem: str

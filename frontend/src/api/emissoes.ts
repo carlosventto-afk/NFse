@@ -1,5 +1,5 @@
 import { apiFetch, apiFetchJson } from "./client";
-import type { Emissao, ResultadoImportacaoCsv } from "./types";
+import type { Emissao, ExclusaoLoteResultado, ResultadoImportacaoCsv } from "./types";
 
 function formularioComArquivo(arquivo: File): FormData {
   const formulario = new FormData();
@@ -36,6 +36,10 @@ export function cancelarEmissao(id: string, motivo: string, codigoMotivo: string
 
 export function excluirEmissao(id: string): Promise<void> {
   return apiFetch<void>(`/api/emissoes/${id}`, { method: "DELETE" });
+}
+
+export function excluirEmissoesLote(ids: string[]): Promise<ExclusaoLoteResultado> {
+  return apiFetchJson<ExclusaoLoteResultado>("/api/emissoes/excluir-lote", "POST", { ids });
 }
 
 export function urlXml(id: string): string {

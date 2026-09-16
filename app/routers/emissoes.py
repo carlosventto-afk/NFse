@@ -18,7 +18,7 @@ from app.db import get_db
 from app.models import AmbienteEnum, Cliente, Emissao, Empresa, OrigemEmissao, ProvedorEmissao, StatusEmissao
 from app.numeracao import reservar_proximo_numero
 from app.periodo import FUSO_BRT, fim_do_dia_brt, inicio_do_dia_brt
-from app.schemas import CancelarEmissaoIn, EmissaoManualIn, EmissaoOut, EmissoesIdsIn
+from app.schemas import CancelarEmissaoIn, EmissaoManualIn, EmissaoOut, EmissoesIdsIn, ExclusaoLoteOut
 from app.security import ContextoAutenticado, exigir_admin_empresa, get_empresa_ativa
 from nfse_core import SefinClient
 
@@ -366,6 +366,15 @@ async def cancelar_emissao(
     return emissao
 
 
+def _pode_excluir(emissao: Emissao, empresa: Empresa) -> bool:
+    # Autorizada so pode ser excluida em homologacao — la e so nota de teste,
+    # sem efeito fiscal real. Em producao a nota autorizada e um documento
+    # fiscal de verdade: so pode ser cancelada (/cancelar), nunca apagada.
+    if emissao.status == StatusEmissao.autorizada:
+        return AmbienteEnum(empresa.ambiente) == AmbienteEnum.homologacao
+    return emissao.status in (StatusEmissao.pendente, StatusEmissao.rejeitada)
+
+
 @router.delete("/{emissao_id}", status_code=204)
 async def excluir_emissao(
     emissao_id: uuid.UUID,
@@ -376,24 +385,36 @@ async def excluir_emissao(
     if emissao is None or emissao.empresa_id != contexto.empresa_id:
         raise HTTPException(status_code=404)
 
-    if emissao.status == StatusEmissao.autorizada:
-        # Autorizada so pode ser excluida em homologacao — la e so nota de
-        # teste, sem efeito fiscal real. Em producao a nota autorizada e um
-        # documento fiscal de verdade: so pode ser cancelada (/cancelar),
-        # nunca apagada.
-        empresa = await session.get(Empresa, emissao.empresa_id)
-        if AmbienteEnum(empresa.ambiente) != AmbienteEnum.homologacao:
-            raise HTTPException(
-                status_code=409,
-                detail="Nota autorizada em producao so pode ser cancelada, nao excluida",
-            )
-    elif emissao.status not in (StatusEmissao.pendente, StatusEmissao.rejeitada):
-        raise HTTPException(
-            status_code=409,
-            detail=(
+    empresa = await session.get(Empresa, emissao.empresa_id)
+    if not _pode_excluir(emissao, empresa):
+        detalhe = (
+            "Nota autorizada em producao so pode ser cancelada, nao excluida"
+            if emissao.status == StatusEmissao.autorizada
+            else (
                 "So e possivel excluir emissao pendente, rejeitada, ou autorizada em "
                 f"homologacao (status atual: {emissao.status})"
-            ),
+            )
         )
+        raise HTTPException(status_code=409, detail=detalhe)
     await session.delete(emissao)
     await session.commit()
+
+
+@router.post("/excluir-lote", response_model=ExclusaoLoteOut)
+async def excluir_emissoes_em_lote(
+    dados: EmissoesIdsIn,
+    contexto: ContextoAutenticado = Depends(exigir_admin_empresa),
+    session: AsyncSession = Depends(get_db),
+) -> ExclusaoLoteOut:
+    stmt = select(Emissao).where(Emissao.id.in_(dados.ids), Emissao.empresa_id == contexto.empresa_id)
+    emissoes = list((await session.execute(stmt)).scalars().all())
+    empresa = await session.get(Empresa, contexto.empresa_id)
+
+    excluidas = 0
+    for emissao in emissoes:
+        if not _pode_excluir(emissao, empresa):
+            continue
+        await session.delete(emissao)
+        excluidas += 1
+    await session.commit()
+    return ExclusaoLoteOut(excluidas=excluidas, puladas=len(dados.ids) - excluidas)

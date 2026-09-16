@@ -184,3 +184,184 @@ async def test_excluir_emissao_libera_stone_charge_id_para_nova_importacao(db_se
         assert corpo["ignoradas"]["ja_emitida_anteriormente"] == 0
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_excluir_emissoes_em_lote_exclui_as_elegiveis(db_session):
+    empresa, titular = await criar_empresa_titular(db_session)
+    pendente = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.csv, status=StatusEmissao.pendente,
+        serie="1", numero=1, descricao="Lavagem", valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    rejeitada = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.csv, status=StatusEmissao.rejeitada,
+        serie="1", numero=2, descricao="Lavagem", valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    autorizada = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.csv, status=StatusEmissao.autorizada,
+        serie="1", numero=3, chave_acesso="chave-1", descricao="Lavagem",
+        valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    db_session.add_all([pendente, rejeitada, autorizada])
+    await db_session.commit()
+    for emissao in (pendente, rejeitada, autorizada):
+        await db_session.refresh(emissao)
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                "/api/emissoes/excluir-lote",
+                json={"ids": [str(pendente.id), str(rejeitada.id), str(autorizada.id)]},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 200
+        assert resposta.json() == {"excluidas": 3, "puladas": 0}
+    finally:
+        app.dependency_overrides.clear()
+
+    restantes = (await db_session.execute(select(Emissao))).scalars().all()
+    assert restantes == []
+
+
+@pytest.mark.asyncio
+async def test_excluir_emissoes_em_lote_pula_nao_elegiveis(db_session):
+    empresa, titular = await criar_empresa_titular(db_session)
+    pendente = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.csv, status=StatusEmissao.pendente,
+        serie="1", numero=1, descricao="Lavagem", valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    cancelada = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.csv, status=StatusEmissao.cancelada,
+        serie="1", numero=2, descricao="Lavagem", valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    db_session.add_all([pendente, cancelada])
+    await db_session.commit()
+    await db_session.refresh(pendente)
+    await db_session.refresh(cancelada)
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                "/api/emissoes/excluir-lote",
+                json={"ids": [str(pendente.id), str(cancelada.id)]},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 200
+        assert resposta.json() == {"excluidas": 1, "puladas": 1}
+    finally:
+        app.dependency_overrides.clear()
+
+    restantes = (await db_session.execute(select(Emissao))).scalars().all()
+    assert [e.id for e in restantes] == [cancelada.id]
+
+
+@pytest.mark.asyncio
+async def test_excluir_emissoes_em_lote_pula_autorizada_em_producao(db_session):
+    empresa, titular = await criar_empresa_titular(db_session, ambiente=AmbienteEnum.producao)
+    pendente = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.csv, status=StatusEmissao.pendente,
+        serie="1", numero=1, descricao="Lavagem", valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    autorizada = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.csv, status=StatusEmissao.autorizada,
+        serie="1", numero=2, chave_acesso="chave-1", descricao="Lavagem",
+        valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    db_session.add_all([pendente, autorizada])
+    await db_session.commit()
+    await db_session.refresh(pendente)
+    await db_session.refresh(autorizada)
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                "/api/emissoes/excluir-lote",
+                json={"ids": [str(pendente.id), str(autorizada.id)]},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 200
+        assert resposta.json() == {"excluidas": 1, "puladas": 1}
+    finally:
+        app.dependency_overrides.clear()
+
+    restantes = (await db_session.execute(select(Emissao))).scalars().all()
+    assert [e.id for e in restantes] == [autorizada.id]
+
+
+@pytest.mark.asyncio
+async def test_excluir_emissoes_em_lote_ignora_emissao_de_outra_empresa(db_session):
+    empresa_a, titular_a = await criar_empresa_titular(
+        db_session, cnpj="11111111000191", email_titular="a-lote@teste.com",
+    )
+    empresa_b, _ = await criar_empresa_titular(
+        db_session, cnpj="22222222000192", email_titular="b-lote@teste.com",
+    )
+    pendente_a = Emissao(
+        empresa_id=empresa_a.id, origem=OrigemEmissao.csv, status=StatusEmissao.pendente,
+        serie="1", numero=1, descricao="Lavagem", valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    pendente_b = Emissao(
+        empresa_id=empresa_b.id, origem=OrigemEmissao.csv, status=StatusEmissao.pendente,
+        serie="1", numero=1, descricao="Lavagem", valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    db_session.add_all([pendente_a, pendente_b])
+    await db_session.commit()
+    await db_session.refresh(pendente_a)
+    await db_session.refresh(pendente_b)
+    token_a = criar_token(titular_a, empresa_id=empresa_a.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                "/api/emissoes/excluir-lote",
+                json={"ids": [str(pendente_a.id), str(pendente_b.id)]},
+                headers={"Authorization": f"Bearer {token_a}"},
+            )
+        assert resposta.status_code == 200
+        assert resposta.json() == {"excluidas": 1, "puladas": 1}
+    finally:
+        app.dependency_overrides.clear()
+
+    restante_b = (
+        await db_session.execute(select(Emissao).where(Emissao.id == pendente_b.id))
+    ).scalar_one_or_none()
+    assert restante_b is not None
+
+
+@pytest.mark.asyncio
+async def test_operador_nao_pode_excluir_em_lote(db_session):
+    empresa, operador = await criar_empresa_titular(
+        db_session, email_titular="operador-exclusao-lote@teste.com", papel_vinculo=PapelUsuario.operador,
+    )
+    emissao = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.csv, status=StatusEmissao.pendente,
+        serie="1", numero=1, descricao="Lavagem", valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    db_session.add(emissao)
+    await db_session.commit()
+    await db_session.refresh(emissao)
+    token = criar_token(operador, empresa_id=empresa.id, papel=PapelUsuario.operador)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                "/api/emissoes/excluir-lote",
+                json={"ids": [str(emissao.id)]},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 403
+    finally:
+        app.dependency_overrides.clear()

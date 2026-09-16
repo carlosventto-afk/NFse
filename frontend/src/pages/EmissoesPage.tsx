@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  cancelarEmissao, excluirEmissao, listarEmissoes,
+  cancelarEmissao, excluirEmissao, excluirEmissoesLote, listarEmissoes,
   urlDownloadPdfsLote, urlDownloadXmlsLote, urlPdf, urlRespostaBruta, urlXml,
 } from "../api/emissoes";
 import { obterToken } from "../api/client";
@@ -98,6 +98,25 @@ export default function EmissoesPage() {
     }
   }
 
+  async function excluirSelecionados() {
+    if (!window.confirm(`Excluir ${selecionados.size} emissoes selecionadas? Essa acao nao pode ser desfeita.`)) {
+      return;
+    }
+    setErro(null);
+    try {
+      const resultado = await excluirEmissoesLote(Array.from(selecionados));
+      if (resultado.puladas > 0) {
+        setErro(
+          `${resultado.excluidas} excluida(s); ${resultado.puladas} nao pode(m) ser excluida(s) `
+          + "(nota autorizada em producao ou status nao elegivel)",
+        );
+      }
+      await carregar();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Nao foi possivel excluir as emissoes selecionadas");
+    }
+  }
+
   async function baixar(url: string, nomeArquivo: string) {
     const token = obterToken();
     const resposta = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
@@ -153,6 +172,11 @@ export default function EmissoesPage() {
           <button className="secundario" onClick={() => baixarSelecionados(urlDownloadPdfsLote(), "notas_pdf.zip")}>
             Baixar PDFs selecionados ({selecionados.size})
           </button>
+          {selecionados.size > 1 && (
+            <button className="perigo" onClick={excluirSelecionados}>
+              Excluir selecionados ({selecionados.size})
+            </button>
+          )}
         </div>
       )}
 
