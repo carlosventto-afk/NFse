@@ -2,6 +2,7 @@
 nfse-nacional-kit.zip
 .venv/
 tests/.pgserver-data/
+.dev-pgserver-data/
 __pycache__/
 *.pyc
 .env
