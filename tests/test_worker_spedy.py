@@ -133,3 +133,93 @@ async def test_processar_uma_pendente_via_spedy_sem_provisionamento_marca_rejeit
     assert emissao.status == StatusEmissao.rejeitada
     erros = json.loads(emissao.erros)
     assert erros[0]["codigo"] == "SPEDY_NAO_PROVISIONADA"
+
+
+async def _emissao_aguardando_confirmacao(db_session) -> Emissao:
+    emissao = await _empresa_spedy_e_emissao_pendente(db_session)
+    emissao.status = StatusEmissao.aguardando_confirmacao
+    emissao.spedy_nota_id = "nota-spedy-1"
+    await db_session.commit()
+    return emissao
+
+
+@pytest.mark.asyncio
+async def test_confirmacao_spedy_marca_autorizada(db_session, monkeypatch):
+    emissao = await _emissao_aguardando_confirmacao(db_session)
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def consultar_nfse(self, spedy_nota_id):
+            assert spedy_nota_id == "nota-spedy-1"
+            return {"_http_status": 200, "status": "authorized", "accessKey": "chave-final-1"}
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(worker, "SpedyClient", ClienteFalso)
+
+    processou = await worker.processar_uma_aguardando_confirmacao_spedy(db_session)
+
+    assert processou is True
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.autorizada
+    assert emissao.chave_acesso == "chave-final-1"
+
+
+@pytest.mark.asyncio
+async def test_confirmacao_spedy_marca_rejeitada(db_session, monkeypatch):
+    emissao = await _emissao_aguardando_confirmacao(db_session)
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def consultar_nfse(self, spedy_nota_id):
+            return {
+                "_http_status": 200, "status": "rejected",
+                "processingDetail": {"code": "SPD123", "message": "servico invalido"},
+            }
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(worker, "SpedyClient", ClienteFalso)
+
+    processou = await worker.processar_uma_aguardando_confirmacao_spedy(db_session)
+
+    assert processou is True
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.rejeitada
+    erros = json.loads(emissao.erros)
+    assert erros[0]["codigo"] == "SPD123"
+
+
+@pytest.mark.asyncio
+async def test_confirmacao_spedy_ainda_processando_nao_conta_como_trabalho(db_session, monkeypatch):
+    emissao = await _emissao_aguardando_confirmacao(db_session)
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def consultar_nfse(self, spedy_nota_id):
+            return {"_http_status": 200, "status": "enqueued"}
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(worker, "SpedyClient", ClienteFalso)
+
+    processou = await worker.processar_uma_aguardando_confirmacao_spedy(db_session)
+
+    assert processou is False
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.aguardando_confirmacao
+
+
+@pytest.mark.asyncio
+async def test_processar_uma_aguardando_confirmacao_spedy_devolve_falso_quando_fila_vazia(db_session):
+    processou = await worker.processar_uma_aguardando_confirmacao_spedy(db_session)
+    assert processou is False

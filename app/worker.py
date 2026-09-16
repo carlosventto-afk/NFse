@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.adapters.dps_builder import DadosEmissao, montar_dps_data
 from app.adapters.spedy_client import SpedyClient, SpedyError
 from app.adapters.spedy_payload import montar_payload_spedy
+from app.adapters.spedy_resposta import chave_acesso_de, interpretar_status_emissao
 from app.config import Settings, get_settings
 from app.crypto import decifrar
 from app.models import AmbienteEnum, Emissao, Empresa, ProvedorEmissao, StatusEmissao
@@ -231,6 +232,64 @@ async def processar_uma_pendente(session: AsyncSession, settings: Settings | Non
     return True
 
 
+async def processar_uma_aguardando_confirmacao_spedy(
+    session: AsyncSession, settings: Settings | None = None,
+) -> bool:
+    """Consulta o resultado final de uma emissao Spedy ainda pendente de
+    confirmacao. So conta como "trabalho feito" (True) quando o status vira
+    terminal -- assim o loop respeita o intervalo normal entre tentativas em
+    vez de martelar a Spedy sem pausa enquanto a nota ainda processa."""
+    settings = settings or get_settings()
+
+    stmt = (
+        select(Emissao)
+        .where(Emissao.status == StatusEmissao.aguardando_confirmacao)
+        .order_by(Emissao.criada_em)
+        .limit(1)
+        .with_for_update(skip_locked=True)
+    )
+    emissao = (await session.execute(stmt)).scalar_one_or_none()
+    if emissao is None:
+        return False
+
+    empresa = await session.get(Empresa, emissao.empresa_id)
+    try:
+        api_key = decifrar(empresa.spedy_api_key_cifrada, settings.fernet_key)
+    except InvalidToken:
+        await _marcar_rejeitada(
+            session, emissao, "SPEDY_NAO_PROVISIONADA",
+            "chave da Spedy cifrada com outra FERNET_KEY (reconfigure o provedor)",
+        )
+        return True
+
+    cliente = SpedyClient(AmbienteEnum(empresa.ambiente).value, api_key)
+    try:
+        bruta = await cliente.consultar_nfse(emissao.spedy_nota_id)
+    except SpedyError as exc:
+        await cliente.close()
+        logger.warning("falha ao consultar emissao %s na Spedy: %s", emissao.id, exc)
+        return False
+    await cliente.close()
+
+    status = interpretar_status_emissao(bruta)
+    if status == "authorized":
+        emissao.status = StatusEmissao.autorizada
+        emissao.chave_acesso = chave_acesso_de(bruta)
+        await session.commit()
+        return True
+    if status == "rejected":
+        detalhe = bruta.get("processingDetail") or {}
+        emissao.status = StatusEmissao.rejeitada
+        emissao.erros = json.dumps(
+            [{"codigo": detalhe.get("code") or "SPEDY", "titulo": detalhe.get("message") or "Emissao rejeitada pela Spedy"}],
+            ensure_ascii=False,
+        )
+        emissao.resposta_bruta = json.dumps(bruta, ensure_ascii=False)
+        await session.commit()
+        return True
+    return False
+
+
 async def _marcar_erro_cancelamento(session: AsyncSession, emissao: Emissao, codigo: str, titulo: str) -> None:
     emissao.status = StatusEmissao.erro_cancelamento
     emissao.erros = json.dumps([{"codigo": codigo, "titulo": titulo}], ensure_ascii=False)
@@ -314,6 +373,8 @@ async def loop_worker(session_factory: async_sessionmaker, intervalo_segundos: f
                 processou_emissao = await processar_uma_pendente(session)
             async with session_factory() as session:
                 processou_cancelamento = await processar_um_cancelamento_pendente(session)
+            async with session_factory() as session:
+                processou_confirmacao_spedy = await processar_uma_aguardando_confirmacao_spedy(session)
         except Exception:
             # Supervisao do loop, de proposito abrangente: o tratamento fino
             # (por tipo de erro, por linha) mora dentro de
@@ -324,5 +385,6 @@ async def loop_worker(session_factory: async_sessionmaker, intervalo_segundos: f
             logger.exception("falha inesperada ao processar fila pendente; o loop continua")
             processou_emissao = False
             processou_cancelamento = False
-        if not processou_emissao and not processou_cancelamento:
+            processou_confirmacao_spedy = False
+        if not processou_emissao and not processou_cancelamento and not processou_confirmacao_spedy:
             await asyncio.sleep(intervalo_segundos)
