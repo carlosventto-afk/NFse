@@ -16,6 +16,15 @@ function salvarBlobComoArquivo(blob: Blob, nomeArquivo: string) {
   URL.revokeObjectURL(link.href);
 }
 
+async function extrairDetalheErro(resposta: Response, generico: string): Promise<string> {
+  try {
+    const corpo = await resposta.json();
+    return corpo.detail ?? generico;
+  } catch {
+    return generico;
+  }
+}
+
 export default function EmissoesPage() {
   const [emissoes, setEmissoes] = useState<Emissao[]>([]);
   const [filtroStatus, setFiltroStatus] = useState("");
@@ -93,7 +102,7 @@ export default function EmissoesPage() {
     const token = obterToken();
     const resposta = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
     if (!resposta.ok) {
-      setErro("Nao foi possivel baixar o arquivo");
+      setErro(await extrairDetalheErro(resposta, "Nao foi possivel baixar o arquivo"));
       return;
     }
     salvarBlobComoArquivo(await resposta.blob(), nomeArquivo);
@@ -110,7 +119,7 @@ export default function EmissoesPage() {
       body: JSON.stringify({ ids: Array.from(selecionados) }),
     });
     if (!resposta.ok) {
-      setErro("Nao foi possivel baixar os arquivos selecionados");
+      setErro(await extrairDetalheErro(resposta, "Nao foi possivel baixar os arquivos selecionados"));
       return;
     }
     salvarBlobComoArquivo(await resposta.blob(), nomeArquivo);
