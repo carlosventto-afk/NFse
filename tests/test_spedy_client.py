@@ -78,6 +78,25 @@ async def test_criar_empresa_desembrulha_o_campo_result():
 
 
 @pytest.mark.asyncio
+async def test_criar_empresa_aceita_resposta_sem_o_campo_result():
+    """Confirmado ao vivo em producao (16/09): a resposta real do POST
+    /companies nao vem embrulhada em {"result": ...} como a doc publica
+    descreve -- os campos vem direto na raiz do corpo."""
+    cliente = SpedyClient("homologacao", "chave-mestre")
+
+    async def _request_falso(method, path, **kwargs):
+        return _RespostaFalsa(
+            201,
+            {"id": "empresa-1", "apiCredentials": {"apiKey": "chave-nova"}},
+        )
+
+    cliente._request = _request_falso
+    resultado = await cliente.criar_empresa({"federalTaxNumber": "12345678000199"})
+
+    assert resultado == {"id": "empresa-1", "apiCredentials": {"apiKey": "chave-nova"}}
+
+
+@pytest.mark.asyncio
 async def test_criar_empresa_levanta_em_erro_de_validacao():
     """Provisionamento e uma acao explicita do admin -- QUALQUER erro (nao so
     5xx) deve virar excecao pro endpoint devolver na hora, sem estado parcial."""

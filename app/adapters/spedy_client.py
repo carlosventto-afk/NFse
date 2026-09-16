@@ -43,7 +43,12 @@ class SpedyClient:
 
     async def criar_empresa(self, dados: dict) -> dict:
         resp = await self._request("POST", "/companies", json=dados)
-        return self._handle_estrito(resp)["result"]
+        corpo = self._handle_estrito(resp)
+        # Confirmado ao vivo em producao (16/09): a resposta real do POST
+        # /companies NAO vem no formato {"result": {...}} que a doc publica
+        # descreve -- os campos (id, apiCredentials) vem direto na raiz.
+        # Tolerante aos dois formatos, igual ao resto do modulo.
+        return corpo.get("result", corpo)
 
     async def adicionar_certificado(self, spedy_empresa_id: str, pfx_bytes: bytes, senha: str) -> dict:
         resp = await self._request(
