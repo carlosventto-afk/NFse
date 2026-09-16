@@ -4,14 +4,19 @@ Chamado uma unica vez, de forma sincrona e explicita, quando o admin liga
 `provedor_emissao=spedy` em PUT /empresas/mim -- nunca de dentro do worker."""
 from __future__ import annotations
 
+import asyncio
 import base64
-import logging
 
 from app.adapters.spedy_client import SpedyClient, SpedyError
 from app.config import Settings
 from app.models import AmbienteEnum, Empresa
 
-logger = logging.getLogger(__name__)
+# Confirmado ao vivo (16/09): a Spedy aplica um limite de rajada por segundo
+# alem do limite geral por minuto (que a resposta expoe via cabecalhos
+# X-Rate-Limit-*) -- 3-5 chamadas seguidas sem pausa (criar empresa, apagar
+# orfa, subir certificado, configurar) podem estourar esse limite mesmo com
+# sobra no limite por minuto.
+_INTERVALO_ENTRE_CHAMADAS_SEGUNDOS = 1.0
 
 
 def _chave_mestre(ambiente: str, settings: Settings) -> str:
@@ -64,6 +69,7 @@ async def provisionar_empresa(
             orfas = await cliente_mestre.listar_empresas_por_cnpj(empresa.cnpj)
             for orfa in orfas:
                 await cliente_mestre.excluir_empresa(orfa["id"])
+                await asyncio.sleep(_INTERVALO_ENTRE_CHAMADAS_SEGUNDOS)
             criada = await cliente_mestre.criar_empresa(dados_empresa)
 
         spedy_empresa_id = criada["id"]
@@ -76,17 +82,19 @@ async def provisionar_empresa(
         # MESTRE. A chave da empresa (api_key acima) so e usada depois, nas
         # operacoes de emissao/consulta/cancelamento (ver app/worker.py).
         pfx_bytes = base64.b64decode(pfx_base64)
-        # Diagnostico temporario (16/09): a Spedy respondeu "Password/
-        # CertificateFile field is required" mesmo com certificado novo
-        # selecionado -- logando so os tamanhos (nunca o conteudo/senha) pra
-        # confirmar se pfx_base64/senha chegam vazios ate aqui.
-        logger.warning(
-            "diagnostico provisionamento empresa %s: pfx_base64 len=%d, pfx_bytes len=%d, senha vazia=%s",
-            empresa.id, len(pfx_base64 or ""), len(pfx_bytes), not senha,
-        )
+
+        # As 3 chamadas de provisionamento disparadas em sequencia rapida
+        # (sem pausa) bateram um limite de rajada por segundo da Spedy (HTTP
+        # 429) bem no ultimo passo -- confirmado ao vivo que a MESMA chamada,
+        # feita isolada/espacada, funciona normalmente. Um intervalo pequeno
+        # entre cada chamada evita a rajada sem tornar o provisionamento
+        # perceptivelmente mais lento (e uma acao unica do admin, nao algo
+        # que roda no worker).
+        await asyncio.sleep(_INTERVALO_ENTRE_CHAMADAS_SEGUNDOS)
         await cliente_mestre.adicionar_certificado(
             spedy_empresa_id, pfx_bytes, senha or "",
         )
+        await asyncio.sleep(_INTERVALO_ENTRE_CHAMADAS_SEGUNDOS)
         await cliente_mestre.configurar_nfse(spedy_empresa_id, {
             "series": empresa.serie,
             "environmentType": "production" if ambiente == "producao" else "simulation",

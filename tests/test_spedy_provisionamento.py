@@ -17,6 +17,16 @@ def _settings_teste(**overrides) -> Settings:
     return Settings(**dados)
 
 
+def _sem_pausas_reais(monkeypatch) -> None:
+    """provisionar_empresa espera _INTERVALO_ENTRE_CHAMADAS_SEGUNDOS entre
+    cada chamada de verdade pra Spedy (evita rajada) -- nos testes, com
+    cliente falso, essa espera so deixaria a suite lenta a toa."""
+    async def _sleep_falso(segundos):
+        return None
+
+    monkeypatch.setattr(provisionamento.asyncio, "sleep", _sleep_falso)
+
+
 def _empresa_para_provisionar(**overrides) -> Empresa:
     dados = dict(
         cnpj="12345678000199", municipio_ibge="1501402", op_simp_nac=3,
@@ -32,6 +42,7 @@ def _empresa_para_provisionar(**overrides) -> Empresa:
 
 @pytest.mark.asyncio
 async def test_provisionar_empresa_chama_os_tres_passos_na_ordem(monkeypatch):
+    _sem_pausas_reais(monkeypatch)
     settings = _settings_teste(spedy_api_key_master_homologacao="chave-mestre")
     empresa = _empresa_para_provisionar()
     chamadas = []
@@ -82,6 +93,7 @@ async def test_provisionar_empresa_apaga_orfa_e_recria_quando_cnpj_ja_existe(mon
     falhou entre criar a empresa na Spedy e terminar o provisionamento local
     deixa uma empresa orfa la -- a proxima tentativa precisa se recuperar
     sozinha (apagar a orfa e recriar), sem exigir intervencao manual."""
+    _sem_pausas_reais(monkeypatch)
     settings = _settings_teste(spedy_api_key_master_homologacao="chave-mestre")
     empresa = _empresa_para_provisionar()
     chamadas = []
