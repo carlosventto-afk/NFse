@@ -17,6 +17,28 @@ class _RespostaFalsa:
 
 
 @pytest.mark.asyncio
+async def test_cliente_nao_fixa_content_type_para_nao_quebrar_multipart():
+    """Confirmado ao vivo em producao (16/09): um Content-Type fixo
+    "application/json" no cliente sobrepunha o "multipart/form-data;
+    boundary=..." que o httpx gera sozinho pra requests com `files=` -- o
+    corpo saia multipart de verdade mas o header mentia "json", e a Spedy
+    devolvia "Password/CertificateFile field is required" mesmo com
+    conteudo real. O httpx precisa decidir o Content-Type por chamada."""
+    cliente = SpedyClient("homologacao", "chave-teste")
+    try:
+        req_multipart = cliente._client.build_request(
+            "POST", "/x", files={"certificateFile": ("a.pfx", b"conteudo", "application/x-pkcs12")},
+            data={"password": "y"},
+        )
+        assert req_multipart.headers["content-type"].startswith("multipart/form-data")
+
+        req_json = cliente._client.build_request("POST", "/x", json={"a": 1})
+        assert req_json.headers["content-type"] == "application/json"
+    finally:
+        await cliente.close()
+
+
+@pytest.mark.asyncio
 async def test_emitir_nfse_chama_o_path_e_metodo_corretos():
     cliente = SpedyClient("homologacao", "chave-teste")
     chamadas = []

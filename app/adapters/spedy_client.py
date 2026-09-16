@@ -24,9 +24,18 @@ class SpedyClient:
     def __init__(self, ambiente: str, api_key: str):
         if ambiente not in BASE_URLS:
             raise ValueError(f"Ambiente Spedy invalido: {ambiente}")
+        # Sem Content-Type fixo aqui de proposito: confirmado ao vivo em
+        # producao (16/09) que um header padrao "application/json" no
+        # cliente sobrepoe o "multipart/form-data; boundary=..." que o httpx
+        # gera automaticamente para adicionar_certificado (files=/data=) --
+        # o corpo ia multipart de verdade, mas o header mentia "json", e a
+        # Spedy nao achava os campos ("Password"/"CertificateFile field is
+        # required" mesmo com conteudo real). Deixando o httpx decidir por
+        # chamada (json= vira application/json, files= vira multipart)
+        # resolve os dois casos sem precisar de header manual em lugar nenhum.
         self._client = httpx.AsyncClient(
             base_url=BASE_URLS[ambiente],
-            headers={"X-Api-Key": api_key, "Content-Type": "application/json"},
+            headers={"X-Api-Key": api_key},
             timeout=30.0,
         )
 
