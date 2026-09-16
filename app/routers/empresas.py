@@ -106,7 +106,7 @@ async def editar_minha_empresa(
     complemento: str | None = Form(None),
     bairro: str | None = Form(None),
     cep: str | None = Form(None),
-    provedor_emissao: str = Form("direto"),
+    provedor_emissao: str | None = Form(None),
     contexto: ContextoAutenticado = Depends(exigir_admin_empresa),
     session: AsyncSession = Depends(get_db),
 ) -> Empresa:
@@ -115,7 +115,7 @@ async def editar_minha_empresa(
         raise HTTPException(status_code=422, detail="CNPJ deve ter 14 digitos")
     if ambiente not in ("homologacao", "producao"):
         raise HTTPException(status_code=422, detail="Ambiente deve ser homologacao ou producao")
-    if provedor_emissao not in ("direto", "spedy"):
+    if provedor_emissao is not None and provedor_emissao not in ("direto", "spedy"):
         raise HTTPException(status_code=422, detail="provedor_emissao deve ser direto ou spedy")
     inscricao_municipal = (inscricao_municipal or "").strip() or None
     local_prestacao_ibge = (local_prestacao_ibge or "").strip() or None
@@ -123,6 +123,23 @@ async def editar_minha_empresa(
     regime_apuracao_sn_int = int(regime_apuracao_sn) if (regime_apuracao_sn or "").strip() else None
 
     empresa = await session.get(Empresa, contexto.empresa_id)
+
+    # Calculado ANTES do bloco de troca de certificado de proposito: precisa
+    # comparar `ambiente` (form) contra o `empresa.ambiente` ainda intacto
+    # (valor do banco), e bloquear a troca de certificado/ambiente antes que
+    # qualquer mutacao seja aplicada -- senao o certificado seria trocado
+    # localmente mesmo com a resposta 422, deixando local/Spedy inconsistentes.
+    provedor_emissao_final = provedor_emissao if provedor_emissao is not None else empresa.provedor_emissao
+    ja_provisionada_spedy = provedor_emissao_final == "spedy" and empresa.spedy_empresa_id is not None
+    if ja_provisionada_spedy and (pfx is not None or ambiente != empresa.ambiente):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "esta empresa ja esta provisionada na Spedy -- trocar o certificado ou o "
+                "ambiente exige reconfigurar o provedor manualmente (ainda nao suportado "
+                "automaticamente); contate o suporte"
+            ),
+        )
 
     if pfx is not None:
         if not senha_certificado:
@@ -156,15 +173,24 @@ async def editar_minha_empresa(
     empresa.descricao_servico_padrao = descricao_servico_padrao
     empresa.ambiente = ambiente
 
-    empresa.razao_social = (razao_social or "").strip() or None
-    empresa.logradouro = (logradouro or "").strip() or None
-    empresa.numero = (numero or "").strip() or None
-    empresa.complemento = (complemento or "").strip() or None
-    empresa.bairro = (bairro or "").strip() or None
-    empresa.cep = (cep or "").strip() or None
+    # None = campo nao enviado nesse request (cliente antigo que nao conhece
+    # esses campos) -- mantem o valor atual. String vazia enviada de proposito
+    # ainda limpa o campo (mesmo comportamento de antes pra quem manda "").
+    if razao_social is not None:
+        empresa.razao_social = razao_social.strip() or None
+    if logradouro is not None:
+        empresa.logradouro = logradouro.strip() or None
+    if numero is not None:
+        empresa.numero = numero.strip() or None
+    if complemento is not None:
+        empresa.complemento = complemento.strip() or None
+    if bairro is not None:
+        empresa.bairro = bairro.strip() or None
+    if cep is not None:
+        empresa.cep = cep.strip() or None
 
-    precisa_provisionar = provedor_emissao == "spedy" and empresa.spedy_empresa_id is None
-    empresa.provedor_emissao = provedor_emissao
+    precisa_provisionar = provedor_emissao_final == "spedy" and empresa.spedy_empresa_id is None
+    empresa.provedor_emissao = provedor_emissao_final
 
     if precisa_provisionar:
         fernet_key = get_settings().fernet_key

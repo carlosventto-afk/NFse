@@ -380,6 +380,212 @@ async def test_ligar_spedy_com_erro_da_spedy_nao_salva_nada(db_session, monkeypa
 
 
 @pytest.mark.asyncio
+async def test_segunda_edicao_sem_provedor_emissao_mantem_spedy(db_session, monkeypatch):
+    # Fix 1: o frontend atual (EditarEmpresaPage.tsx) nao conhece o campo
+    # provedor_emissao e nunca o envia. `_form_edicao()` reproduz exatamente
+    # isso -- nao inclui provedor_emissao nem os campos de endereco. Uma
+    # segunda edicao "normal" (so mexendo em outro campo) nao pode reverter
+    # o provedor pra "direto" nem provisionar de novo.
+    fernet_key = get_settings().fernet_key
+    empresa, titular = await criar_empresa_titular(
+        db_session, cnpj="99988877000155",
+        certificado_pfx_cifrado=cifrar("pfx-fake-base64", fernet_key),
+        certificado_senha_cifrada=cifrar("senha123", fernet_key),
+    )
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    import app.routers.empresas as empresas_router
+
+    chamadas = []
+
+    async def _provisionar_falso(empresa_, pfx_base64, senha, settings):
+        chamadas.append(1)
+        return "spedy-empresa-1", "spedy-chave-1"
+
+    monkeypatch.setattr(empresas_router, "provisionar_empresa", _provisionar_falso)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            primeira = await client.put(
+                "/api/empresas/mim",
+                data={
+                    **_form_edicao(cnpj="99988877000155"),
+                    "provedor_emissao": "spedy", "razao_social": "EMPRESA TESTE LTDA",
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert primeira.status_code == 200
+            assert len(chamadas) == 1
+
+            # Segunda edicao "normal": _form_edicao() NAO manda
+            # provedor_emissao nem razao_social/logradouro/etc.
+            segunda = await client.put(
+                "/api/empresas/mim",
+                data=_form_edicao(
+                    cnpj="99988877000155", descricao_servico_padrao="Lavagem e passagem de roupa",
+                ),
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert segunda.status_code == 200
+        corpo = segunda.json()
+        assert corpo["provedor_emissao"] == "spedy"
+        assert corpo["spedy_empresa_id"] == "spedy-empresa-1"
+        # nao provisionou de novo
+        assert len(chamadas) == 1
+    finally:
+        app.dependency_overrides.clear()
+
+    await db_session.refresh(empresa)
+    assert empresa.provedor_emissao == "spedy"
+    assert empresa.spedy_empresa_id == "spedy-empresa-1"
+
+
+@pytest.mark.asyncio
+async def test_segunda_edicao_sem_endereco_mantem_valor_anterior(db_session):
+    # Fix 1: razao_social/logradouro/numero/complemento/bairro/cep tambem
+    # nao podem ser silenciosamente apagados quando um request posterior nao
+    # os envia (cliente antigo que desconhece esses campos).
+    empresa, titular = await criar_empresa_titular(db_session)
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            primeira = await client.put(
+                "/api/empresas/mim",
+                data={**_form_edicao(), "razao_social": "EMPRESA TESTE LTDA", "logradouro": "Rua Um"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert primeira.status_code == 200
+            assert primeira.json()["razao_social"] == "EMPRESA TESTE LTDA"
+
+            # segunda edicao via _form_edicao() puro -- nao manda razao_social
+            # nem logradouro.
+            segunda = await client.put(
+                "/api/empresas/mim",
+                data=_form_edicao(descricao_servico_padrao="Lavagem e passagem de roupa"),
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert segunda.status_code == 200
+        corpo = segunda.json()
+        assert corpo["razao_social"] == "EMPRESA TESTE LTDA"
+        assert corpo["logradouro"] == "Rua Um"
+    finally:
+        app.dependency_overrides.clear()
+
+    await db_session.refresh(empresa)
+    assert empresa.razao_social == "EMPRESA TESTE LTDA"
+    assert empresa.logradouro == "Rua Um"
+
+
+@pytest.mark.asyncio
+async def test_trocar_certificado_de_empresa_ja_na_spedy_devolve_422(db_session, monkeypatch):
+    # Fix 6: uma empresa ja provisionada na Spedy nao pode ter o certificado
+    # trocado silenciosamente sem re-provisionar (rotacao anual de A1) --
+    # precisa recusar com erro claro em vez de deixar o cert local
+    # dessincronizado do que a Spedy conhece.
+    fernet_key = get_settings().fernet_key
+    empresa, titular = await criar_empresa_titular(
+        db_session, cnpj="99988877000155",
+        certificado_pfx_cifrado=cifrar("pfx-fake-base64", fernet_key),
+        certificado_senha_cifrada=cifrar("senha123", fernet_key),
+    )
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+    certificado_original = empresa.certificado_pfx_cifrado
+
+    import app.routers.empresas as empresas_router
+
+    async def _provisionar_falso(empresa_, pfx_base64, senha, settings):
+        return "spedy-empresa-1", "spedy-chave-1"
+
+    monkeypatch.setattr(empresas_router, "provisionar_empresa", _provisionar_falso)
+
+    pfx_b64 = _pfx_teste_base64(cnpj="99988877000155")
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            primeira = await client.put(
+                "/api/empresas/mim",
+                data={
+                    **_form_edicao(cnpj="99988877000155"),
+                    "provedor_emissao": "spedy", "razao_social": "EMPRESA TESTE LTDA",
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert primeira.status_code == 200
+
+            segunda = await client.put(
+                "/api/empresas/mim",
+                data={**_form_edicao(cnpj="99988877000155"), "senha_certificado": "senha123"},
+                files={"pfx": ("novo.pfx", base64.b64decode(pfx_b64), "application/x-pkcs12")},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert segunda.status_code == 422
+        assert "ja esta provisionada na Spedy" in segunda.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
+
+    await db_session.rollback()
+    await db_session.refresh(empresa)
+    assert empresa.certificado_pfx_cifrado == certificado_original
+
+
+@pytest.mark.asyncio
+async def test_trocar_ambiente_de_empresa_ja_na_spedy_devolve_422(db_session, monkeypatch):
+    # Mesma protecao do Fix 6, mas para o campo ambiente (homologacao <->
+    # producao): trocar o ambiente sem re-provisionar deixaria o cliente
+    # Spedy apontando pra conta errada (sandbox vs producao).
+    fernet_key = get_settings().fernet_key
+    empresa, titular = await criar_empresa_titular(
+        db_session, cnpj="99988877000155",
+        certificado_pfx_cifrado=cifrar("pfx-fake-base64", fernet_key),
+        certificado_senha_cifrada=cifrar("senha123", fernet_key),
+    )
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+    ambiente_original = empresa.ambiente
+
+    import app.routers.empresas as empresas_router
+
+    async def _provisionar_falso(empresa_, pfx_base64, senha, settings):
+        return "spedy-empresa-1", "spedy-chave-1"
+
+    monkeypatch.setattr(empresas_router, "provisionar_empresa", _provisionar_falso)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            primeira = await client.put(
+                "/api/empresas/mim",
+                data={
+                    **_form_edicao(cnpj="99988877000155"),
+                    "provedor_emissao": "spedy", "razao_social": "EMPRESA TESTE LTDA",
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert primeira.status_code == 200
+
+            segunda = await client.put(
+                "/api/empresas/mim",
+                data=_form_edicao(cnpj="99988877000155", ambiente="producao"),
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert segunda.status_code == 422
+        assert "ja esta provisionada na Spedy" in segunda.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
+
+    await db_session.rollback()
+    await db_session.refresh(empresa)
+    assert empresa.ambiente == ambiente_original
+
+
+@pytest.mark.asyncio
 async def test_provedor_emissao_invalido_devolve_422(db_session):
     empresa, titular = await criar_empresa_titular(db_session)
     token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
