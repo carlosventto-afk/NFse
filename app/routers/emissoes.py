@@ -375,10 +375,25 @@ async def excluir_emissao(
     emissao = await session.get(Emissao, emissao_id)
     if emissao is None or emissao.empresa_id != contexto.empresa_id:
         raise HTTPException(status_code=404)
-    if emissao.status not in (StatusEmissao.pendente, StatusEmissao.rejeitada):
+
+    if emissao.status == StatusEmissao.autorizada:
+        # Autorizada so pode ser excluida em homologacao — la e so nota de
+        # teste, sem efeito fiscal real. Em producao a nota autorizada e um
+        # documento fiscal de verdade: so pode ser cancelada (/cancelar),
+        # nunca apagada.
+        empresa = await session.get(Empresa, emissao.empresa_id)
+        if AmbienteEnum(empresa.ambiente) != AmbienteEnum.homologacao:
+            raise HTTPException(
+                status_code=409,
+                detail="Nota autorizada em producao so pode ser cancelada, nao excluida",
+            )
+    elif emissao.status not in (StatusEmissao.pendente, StatusEmissao.rejeitada):
         raise HTTPException(
             status_code=409,
-            detail=f"So e possivel excluir emissao pendente ou rejeitada (status atual: {emissao.status})",
+            detail=(
+                "So e possivel excluir emissao pendente, rejeitada, ou autorizada em "
+                f"homologacao (status atual: {emissao.status})"
+            ),
         )
     await session.delete(emissao)
     await session.commit()

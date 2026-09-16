@@ -201,7 +201,7 @@ export default function EmissoesPage() {
                       </button>
                     </>
                   )}
-                  {(emissao.status === "pendente" || emissao.status === "rejeitada") && (
+                  {(emissao.status === "pendente" || emissao.status === "rejeitada" || emissao.status === "autorizada") && (
                     <button className="perigo" onClick={() => excluir(emissao.id)}>Excluir</button>
                   )}
                 </td>

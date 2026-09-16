@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from app.db import get_db
 from app.main import app
-from app.models import Emissao, OrigemEmissao, PapelUsuario, StatusEmissao
+from app.models import AmbienteEnum, Emissao, OrigemEmissao, PapelUsuario, StatusEmissao
 from app.security import criar_token
 from tests.apoio import criar_empresa_titular
 
@@ -17,8 +17,10 @@ async def _yield_session(session):
     yield session
 
 
-async def _empresa_titular_e_emissao(db_session, status: StatusEmissao) -> tuple:
-    empresa, titular = await criar_empresa_titular(db_session)
+async def _empresa_titular_e_emissao(
+    db_session, status: StatusEmissao, *, ambiente: AmbienteEnum = AmbienteEnum.homologacao,
+) -> tuple:
+    empresa, titular = await criar_empresa_titular(db_session, ambiente=ambiente)
     emissao = Emissao(
         empresa_id=empresa.id, origem=OrigemEmissao.csv, status=status,
         stone_charge_id="stone-123",
@@ -72,8 +74,35 @@ async def test_admin_exclui_emissao_pendente(db_session):
 
 
 @pytest.mark.asyncio
-async def test_excluir_emissao_autorizada_devolve_409(db_session):
-    empresa, titular, emissao = await _empresa_titular_e_emissao(db_session, StatusEmissao.autorizada)
+async def test_admin_exclui_emissao_autorizada_em_homologacao(db_session):
+    empresa, titular, emissao = await _empresa_titular_e_emissao(
+        db_session, StatusEmissao.autorizada, ambiente=AmbienteEnum.homologacao,
+    )
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.delete(
+                f"/api/emissoes/{emissao.id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 204
+    finally:
+        app.dependency_overrides.clear()
+
+    restante = (
+        await db_session.execute(select(Emissao).where(Emissao.id == emissao.id))
+    ).scalar_one_or_none()
+    assert restante is None
+
+
+@pytest.mark.asyncio
+async def test_excluir_emissao_autorizada_em_producao_devolve_409(db_session):
+    empresa, titular, emissao = await _empresa_titular_e_emissao(
+        db_session, StatusEmissao.autorizada, ambiente=AmbienteEnum.producao,
+    )
     token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
 
     app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
