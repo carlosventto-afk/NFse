@@ -8,6 +8,33 @@ import type { Emissao } from "../api/types";
 
 const STATUS = ["", "pendente", "autorizada", "rejeitada", "cancelada", "cancelamento_pendente", "erro_cancelamento"];
 
+const ROTULOS_STATUS: Record<string, string> = {
+  pendente: "Pendente",
+  autorizada: "Autorizada",
+  rejeitada: "Rejeitada",
+  cancelada: "Cancelada",
+  cancelamento_pendente: "Cancelamento pendente",
+  erro_cancelamento: "Erro no cancelamento",
+  aguardando_confirmacao: "Aguardando confirmação",
+  cancelamento_aguardando_confirmacao: "Cancel. aguardando confirmação",
+};
+
+const CLASSES_PILULA: Record<string, string> = {
+  autorizada: "autorizada",
+  rejeitada: "rejeitada",
+  erro_cancelamento: "rejeitada",
+  cancelada: "cancelada",
+  pendente: "pendente",
+  cancelamento_pendente: "pendente",
+  aguardando_confirmacao: "pendente",
+  cancelamento_aguardando_confirmacao: "pendente",
+};
+
+function PilulaStatus({ status }: { status: string }) {
+  const classe = CLASSES_PILULA[status] ?? "cancelada";
+  return <span className={`pilula ${classe}`}>{ROTULOS_STATUS[status] ?? status}</span>;
+}
+
 function salvarBlobComoArquivo(blob: Blob, nomeArquivo: string) {
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
@@ -146,12 +173,12 @@ export default function EmissoesPage() {
 
   return (
     <div>
-      <h1>Emissoes</h1>
-      <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
-        <div className="form-linha" style={{ maxWidth: 240 }}>
+      <h1>Emissões</h1>
+      <div className="painel-filtros">
+        <div className="form-linha">
           <label htmlFor="status">Filtrar por status</label>
           <select id="status" value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
-            {STATUS.map((s) => <option key={s} value={s}>{s || "Todos"}</option>)}
+            {STATUS.map((s) => <option key={s} value={s}>{s ? ROTULOS_STATUS[s] ?? s : "Todos"}</option>)}
           </select>
         </div>
         <div className="form-linha">
@@ -159,22 +186,23 @@ export default function EmissoesPage() {
           <input id="data_inicio" type="date" value={filtroInicio} onChange={(e) => setFiltroInicio(e.target.value)} />
         </div>
         <div className="form-linha">
-          <label htmlFor="data_fim">Ate</label>
+          <label htmlFor="data_fim">Até</label>
           <input id="data_fim" type="date" value={filtroFim} onChange={(e) => setFiltroFim(e.target.value)} />
         </div>
       </div>
 
       {selecionados.size > 0 && (
-        <div className="form-linha" style={{ flexDirection: "row", gap: "0.5rem" }}>
+        <div className="barra-selecao">
+          <span className="contagem">{selecionados.size} selecionada{selecionados.size > 1 ? "s" : ""}</span>
           <button className="secundario" onClick={() => baixarSelecionados(urlDownloadXmlsLote(), "notas_xml.zip")}>
-            Baixar XMLs selecionados ({selecionados.size})
+            Baixar XMLs selecionados
           </button>
           <button className="secundario" onClick={() => baixarSelecionados(urlDownloadPdfsLote(), "notas_pdf.zip")}>
-            Baixar PDFs selecionados ({selecionados.size})
+            Baixar PDFs selecionados
           </button>
           {selecionados.size > 1 && (
             <button className="perigo" onClick={excluirSelecionados}>
-              Excluir selecionados ({selecionados.size})
+              Excluir selecionadas
             </button>
           )}
         </div>
@@ -185,63 +213,71 @@ export default function EmissoesPage() {
       {carregando ? (
         <p>Carregando...</p>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th><input type="checkbox" checked={todosSelecionados} onChange={alternarSelecaoTodos} /></th>
-              <th>Numero</th><th>Origem</th><th>Status</th><th>Valor</th><th>Competencia</th><th>Erro</th><th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {emissoes.map((emissao) => (
-              <tr key={emissao.id}>
-                <td>
-                  <input
-                    type="checkbox"
-                    checked={selecionados.has(emissao.id)}
-                    onChange={() => alternarSelecao(emissao.id)}
-                  />
-                </td>
-                <td>{emissao.serie}/{emissao.numero}</td>
-                <td>{emissao.origem}</td>
-                <td>{emissao.status}</td>
-                <td>R$ {emissao.valor}</td>
-                <td>{emissao.competencia}</td>
-                <td className="erro" style={{ maxWidth: 320, wordBreak: "break-word" }}>
-                  {emissao.erros ?? ""}
-                </td>
-                <td>
-                  {emissao.status === "autorizada" && (
-                    <>
-                      <button className="secundario" onClick={() => baixar(urlXml(emissao.id), `NFSe_${emissao.serie}_${emissao.numero}.xml`)}>XML</button>
-                      <button className="secundario" onClick={() => baixar(urlPdf(emissao.id), `NFSe_${emissao.serie}_${emissao.numero}.pdf`)}>PDF</button>
-                      <button className="perigo" onClick={() => setCancelandoId(emissao.id)}>Cancelar</button>
-                    </>
-                  )}
-                  {emissao.status === "rejeitada" && (
-                    <>
-                      <button
-                        className="secundario"
-                        onClick={() => baixar(urlXml(emissao.id), `DPS_${emissao.serie}_${emissao.numero}.xml`)}
-                      >
-                        XML
-                      </button>
-                      <button
-                        className="secundario"
-                        onClick={() => baixar(urlRespostaBruta(emissao.id), `RESPOSTA_${emissao.serie}_${emissao.numero}.json`)}
-                      >
-                        Resposta SEFIN
-                      </button>
-                    </>
-                  )}
-                  {(emissao.status === "pendente" || emissao.status === "rejeitada" || emissao.status === "autorizada") && (
-                    <button className="perigo" onClick={() => excluir(emissao.id)}>Excluir</button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="painel-tabela">
+          <div className="rolagem-tabela">
+            <table>
+              <thead>
+                <tr>
+                  <th className="col-check"><input type="checkbox" checked={todosSelecionados} onChange={alternarSelecaoTodos} /></th>
+                  <th>Número</th><th>Origem</th><th>Status</th><th className="col-valor">Valor</th><th>Competência</th><th>Erro</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {emissoes.map((emissao) => (
+                  <tr key={emissao.id}>
+                    <td className="col-check">
+                      <input
+                        type="checkbox"
+                        checked={selecionados.has(emissao.id)}
+                        onChange={() => alternarSelecao(emissao.id)}
+                      />
+                    </td>
+                    <td className="num">{emissao.serie}/{emissao.numero}</td>
+                    <td>{emissao.origem}</td>
+                    <td><PilulaStatus status={emissao.status} /></td>
+                    <td className="col-valor num">R$ {emissao.valor}</td>
+                    <td>{emissao.competencia}</td>
+                    <td>
+                      {emissao.erros ? (
+                        <span className="erro-texto" title={emissao.erros}>{emissao.erros}</span>
+                      ) : (
+                        <span className="sem-erro">—</span>
+                      )}
+                    </td>
+                    <td>
+                      {emissao.status === "autorizada" && (
+                        <>
+                          <button className="secundario" onClick={() => baixar(urlXml(emissao.id), `NFSe_${emissao.serie}_${emissao.numero}.xml`)}>XML</button>
+                          <button className="secundario" onClick={() => baixar(urlPdf(emissao.id), `NFSe_${emissao.serie}_${emissao.numero}.pdf`)}>PDF</button>
+                          <button className="perigo" onClick={() => setCancelandoId(emissao.id)}>Cancelar</button>
+                        </>
+                      )}
+                      {emissao.status === "rejeitada" && (
+                        <>
+                          <button
+                            className="secundario"
+                            onClick={() => baixar(urlXml(emissao.id), `DPS_${emissao.serie}_${emissao.numero}.xml`)}
+                          >
+                            XML
+                          </button>
+                          <button
+                            className="secundario"
+                            onClick={() => baixar(urlRespostaBruta(emissao.id), `RESPOSTA_${emissao.serie}_${emissao.numero}.json`)}
+                          >
+                            Resposta SEFIN
+                          </button>
+                        </>
+                      )}
+                      {(emissao.status === "pendente" || emissao.status === "rejeitada" || emissao.status === "autorizada") && (
+                        <button className="perigo" onClick={() => excluir(emissao.id)}>Excluir</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       {cancelandoId && (
