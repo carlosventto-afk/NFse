@@ -240,7 +240,7 @@ export default function EmissoesPage() {
           </button>
           {selecionados.size > 1 && (
             <>
-              <button onClick={emitirSelecionados}>Emitir selecionadas</button>
+              <button onClick={emitirSelecionados}>Emitir/reemitir selecionadas</button>
               <button className="perigo" onClick={excluirSelecionados}>
                 Excluir selecionadas
               </button>
@@ -298,6 +298,7 @@ export default function EmissoesPage() {
                       )}
                       {emissao.status === "rejeitada" && (
                         <>
+                          <button onClick={() => emitir(emissao.id)}>Reemitir</button>
                           <button
                             className="secundario"
                             onClick={() => baixar(urlXml(emissao.id), `DPS_${emissao.serie}_${emissao.numero}.xml`)}

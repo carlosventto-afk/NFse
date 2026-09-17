@@ -210,3 +210,70 @@ async def test_excluir_emissao_aguardando_emissao_funciona(db_session):
         await db_session.execute(select(Emissao).where(Emissao.id == emissao.id))
     ).scalar_one_or_none()
     assert restante is None
+
+
+@pytest.mark.asyncio
+async def test_reemitir_nota_rejeitada_individual(db_session):
+    empresa, titular, emissao = await _empresa_titular_e_emissao(db_session, StatusEmissao.rejeitada)
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                f"/api/emissoes/{emissao.id}/emitir",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 200
+        assert resposta.json()["status"] == "pendente"
+    finally:
+        app.dependency_overrides.clear()
+
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.pendente
+
+
+@pytest.mark.asyncio
+async def test_reemitir_lote_inclui_rejeitadas_e_aguardando_emissao(db_session):
+    empresa, titular = await criar_empresa_titular(db_session)
+    rejeitada = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.csv, status=StatusEmissao.rejeitada,
+        serie="1", numero=1, erros="E0008", descricao="Lavagem",
+        valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    aguardando = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.csv, status=StatusEmissao.aguardando_emissao,
+        serie="1", numero=2, descricao="Lavagem", valor=Decimal("13.99"), competencia=date(2026, 8, 1),
+    )
+    ja_autorizada = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.csv, status=StatusEmissao.autorizada,
+        serie="1", numero=3, chave_acesso="chave-1", descricao="Lavagem",
+        valor=Decimal("15.99"), competencia=date(2026, 8, 1),
+    )
+    db_session.add_all([rejeitada, aguardando, ja_autorizada])
+    await db_session.commit()
+    for emissao in (rejeitada, aguardando, ja_autorizada):
+        await db_session.refresh(emissao)
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                "/api/emissoes/emitir-lote",
+                json={"ids": [str(rejeitada.id), str(aguardando.id), str(ja_autorizada.id)]},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 200
+        assert resposta.json() == {"emitidas": 2, "puladas": 1}
+    finally:
+        app.dependency_overrides.clear()
+
+    await db_session.refresh(rejeitada)
+    await db_session.refresh(aguardando)
+    await db_session.refresh(ja_autorizada)
+    assert rejeitada.status == StatusEmissao.pendente
+    assert aguardando.status == StatusEmissao.pendente
+    assert ja_autorizada.status == StatusEmissao.autorizada

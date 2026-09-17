@@ -458,10 +458,13 @@ async def emitir_emissao(
     emissao = await session.get(Emissao, emissao_id)
     if emissao is None or emissao.empresa_id != contexto.empresa_id:
         raise HTTPException(status_code=404)
-    if emissao.status != StatusEmissao.aguardando_emissao:
+    if emissao.status not in (StatusEmissao.aguardando_emissao, StatusEmissao.rejeitada):
         raise HTTPException(
             status_code=409,
-            detail=f"So e possivel emitir nota aguardando emissao (status atual: {emissao.status})",
+            detail=(
+                "So e possivel emitir/reemitir nota aguardando emissao ou rejeitada "
+                f"(status atual: {emissao.status})"
+            ),
         )
     # So muda o status pra "pendente" -- o worker (loop_worker) e quem de
     # fato processa, do mesmo jeito que ja faz pra emissao manual/webhook.
@@ -484,7 +487,7 @@ async def emitir_emissoes_em_lote(
 
     emitidas = 0
     for emissao in emissoes:
-        if emissao.status != StatusEmissao.aguardando_emissao:
+        if emissao.status not in (StatusEmissao.aguardando_emissao, StatusEmissao.rejeitada):
             continue
         emissao.status = StatusEmissao.pendente
         emitidas += 1
