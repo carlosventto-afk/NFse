@@ -10,6 +10,7 @@ export interface DadosEmpresaForm {
   regime_apuracao_sn: string;
   codigo_tributacao: string;
   codigo_tributacao_municipal: string;
+  cnae: string;
   descricao_servico_padrao: string;
   ambiente: string;
   senha_certificado: string;

@@ -85,6 +85,11 @@ class Empresa(Base):
     # de cada prefeitura, distinta do codigo nacional acima. So obrigatorio
     # para municipios com validacao propria (ex.: Belem, erro L0017).
     codigo_tributacao_municipal: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    # CNAE da atividade (so digitos, ex.: "9601302"). Nao faz parte do XSD da
+    # DPS nacional, mas a Spedy tem um campo proprio (cnaeCode) que alguns
+    # municipios exigem por fora -- confirmado ao vivo que Belem rejeita a
+    # emissao sem ele (L999 "Atividade nao informada").
+    cnae: Mapped[str | None] = mapped_column(String(10), nullable=True)
     descricao_servico_padrao: Mapped[str] = mapped_column(String(2000), nullable=False)
     ambiente: Mapped[AmbienteEnum] = mapped_column(
         String(20), default=AmbienteEnum.homologacao, nullable=False

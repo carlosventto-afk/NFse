@@ -73,3 +73,16 @@ def test_inclui_receiver_quando_ha_documento_do_tomador():
 def test_inclui_codigo_tributacao_municipal_quando_presente():
     payload = montar_payload_spedy(_empresa(codigo_tributacao_municipal="007"), _emissao())
     assert payload["cityServiceCode"] == "007"
+
+
+def test_nao_inclui_cnae_quando_ausente():
+    payload = montar_payload_spedy(_empresa(), _emissao())
+    assert "cnaeCode" not in payload
+
+
+def test_inclui_cnae_quando_presente():
+    # Confirmado ao vivo (17/09): Belem rejeita a emissao via Spedy sem esse
+    # campo (L999 "Atividade nao informada"), mesmo com federalServiceCode
+    # preenchido.
+    payload = montar_payload_spedy(_empresa(cnae="9601302"), _emissao())
+    assert payload["cnaeCode"] == "9601302"

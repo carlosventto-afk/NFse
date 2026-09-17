@@ -4,6 +4,7 @@ import { editarEmpresa, obterMinhaEmpresa, type DadosEdicaoEmpresa } from "../ap
 const VAZIO: DadosEdicaoEmpresa = {
   cnpj: "", inscricao_municipal: "", municipio_ibge: "", local_prestacao_ibge: "",
   op_simp_nac: "3", regime_apuracao_sn: "", codigo_tributacao: "", codigo_tributacao_municipal: "",
+  cnae: "",
   descricao_servico_padrao: "", ambiente: "homologacao",
   senha_certificado: "",
   provedor_emissao: "direto", razao_social: "", logradouro: "", numero: "", complemento: "", bairro: "", cep: "",
@@ -31,6 +32,7 @@ export default function EditarEmpresaPage() {
           regime_apuracao_sn: empresa.regime_apuracao_sn != null ? String(empresa.regime_apuracao_sn) : "",
           codigo_tributacao: empresa.codigo_tributacao,
           codigo_tributacao_municipal: empresa.codigo_tributacao_municipal ?? "",
+          cnae: empresa.cnae ?? "",
           descricao_servico_padrao: empresa.descricao_servico_padrao,
           ambiente: empresa.ambiente,
           senha_certificado: "",
@@ -131,6 +133,13 @@ export default function EditarEmpresaPage() {
           </label>
           <input id="cod_trib_mun" maxLength={3} value={dados.codigo_tributacao_municipal}
             onChange={(e) => atualizar("codigo_tributacao_municipal", e.target.value)} />
+        </div>
+        <div className="form-linha">
+          <label htmlFor="cnae">
+            CNAE (so digitos — alguns municipios, como Belem, exigem pra emitir)
+          </label>
+          <input id="cnae" maxLength={10} value={dados.cnae}
+            onChange={(e) => atualizar("cnae", e.target.value)} />
         </div>
         <div className="form-linha">
           <label htmlFor="descricao">Descricao padrao do servico</label>

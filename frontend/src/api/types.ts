@@ -106,6 +106,7 @@ export interface EmpresaDetalhe {
   regime_apuracao_sn: number | null;
   codigo_tributacao: string;
   codigo_tributacao_municipal: string | null;
+  cnae: string | null;
   descricao_servico_padrao: string;
   ambiente: string;
   certificado_valido_ate: string;

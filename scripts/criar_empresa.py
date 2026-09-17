@@ -38,6 +38,7 @@ async def criar_empresa(
     regime_apuracao_sn: int | None = None,
     codigo_tributacao: str,
     codigo_tributacao_municipal: str | None = None,
+    cnae: str | None = None,
     descricao_servico_padrao: str,
     ambiente: str,
     pfx_base64: str,
@@ -87,6 +88,7 @@ async def criar_empresa(
         regime_apuracao_sn=regime_apuracao_sn,
         codigo_tributacao=codigo_tributacao,
         codigo_tributacao_municipal=codigo_tributacao_municipal,
+        cnae=cnae,
         descricao_servico_padrao=descricao_servico_padrao,
         ambiente=AmbienteEnum(ambiente),
         certificado_pfx_cifrado=cifrar(pfx_base64, fernet_key),
@@ -126,6 +128,7 @@ async def _main() -> None:
     parser.add_argument(
         "--cod-tributacao-municipal", required=False, default=None, dest="codigo_tributacao_municipal",
     )
+    parser.add_argument("--cnae", required=False, default=None)
     parser.add_argument("--descricao", required=True, dest="descricao_servico_padrao")
     parser.add_argument("--ambiente", required=True, choices=["homologacao", "producao"])
     parser.add_argument("--pfx", required=True, type=Path, dest="pfx_path")
@@ -148,6 +151,7 @@ async def _main() -> None:
             regime_apuracao_sn=args.regime_apuracao_sn,
             codigo_tributacao=args.codigo_tributacao,
             codigo_tributacao_municipal=args.codigo_tributacao_municipal,
+            cnae=args.cnae,
             descricao_servico_padrao=args.descricao_servico_padrao,
             ambiente=args.ambiente,
             pfx_base64=pfx_base64,

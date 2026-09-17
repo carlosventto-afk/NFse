@@ -34,6 +34,7 @@ async def criar_empresa_via_api(
     regime_apuracao_sn: str | None = Form(None),
     codigo_tributacao: str = Form(...),
     codigo_tributacao_municipal: str | None = Form(None),
+    cnae: str | None = Form(None),
     descricao_servico_padrao: str = Form(...),
     ambiente: str = Form(...),
     senha_certificado: str = Form(...),
@@ -51,6 +52,7 @@ async def criar_empresa_via_api(
     inscricao_municipal = (inscricao_municipal or "").strip() or None
     local_prestacao_ibge = (local_prestacao_ibge or "").strip() or None
     codigo_tributacao_municipal = (codigo_tributacao_municipal or "").strip() or None
+    cnae = (cnae or "").strip() or None
     regime_apuracao_sn_int = int(regime_apuracao_sn) if (regime_apuracao_sn or "").strip() else None
 
     pfx_bytes = await pfx.read()
@@ -67,6 +69,7 @@ async def criar_empresa_via_api(
             regime_apuracao_sn=regime_apuracao_sn_int,
             codigo_tributacao=codigo_tributacao,
             codigo_tributacao_municipal=codigo_tributacao_municipal,
+            cnae=cnae,
             descricao_servico_padrao=descricao_servico_padrao,
             ambiente=ambiente,
             pfx_base64=pfx_base64,
@@ -143,6 +146,7 @@ async def editar_minha_empresa(
     regime_apuracao_sn: str | None = Form(None),
     codigo_tributacao: str = Form(...),
     codigo_tributacao_municipal: str | None = Form(None),
+    cnae: str | None = Form(None),
     descricao_servico_padrao: str = Form(...),
     ambiente: str = Form(...),
     senha_certificado: str | None = Form(None),
@@ -167,6 +171,7 @@ async def editar_minha_empresa(
     inscricao_municipal = (inscricao_municipal or "").strip() or None
     local_prestacao_ibge = (local_prestacao_ibge or "").strip() or None
     codigo_tributacao_municipal = (codigo_tributacao_municipal or "").strip() or None
+    cnae = (cnae or "").strip() or None
     regime_apuracao_sn_int = int(regime_apuracao_sn) if (regime_apuracao_sn or "").strip() else None
 
     empresa = await session.get(Empresa, contexto.empresa_id)
@@ -218,6 +223,7 @@ async def editar_minha_empresa(
     empresa.regime_apuracao_sn = regime_apuracao_sn_int
     empresa.codigo_tributacao = codigo_tributacao
     empresa.codigo_tributacao_municipal = codigo_tributacao_municipal
+    empresa.cnae = cnae
     empresa.descricao_servico_padrao = descricao_servico_padrao
     empresa.ambiente = ambiente
 

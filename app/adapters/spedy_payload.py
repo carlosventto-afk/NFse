@@ -24,6 +24,8 @@ def montar_payload_spedy(empresa: Empresa, emissao: Emissao) -> dict:
     }
     if empresa.codigo_tributacao_municipal:
         payload["cityServiceCode"] = empresa.codigo_tributacao_municipal
+    if empresa.cnae:
+        payload["cnaeCode"] = empresa.cnae
     if emissao.tomador_cpf_cnpj:
         payload["receiver"] = {
             "federalTaxNumber": emissao.tomador_cpf_cnpj,

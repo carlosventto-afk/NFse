@@ -193,6 +193,7 @@ class EmpresaDetalheOut(BaseModel):
     regime_apuracao_sn: int | None
     codigo_tributacao: str
     codigo_tributacao_municipal: str | None
+    cnae: str | None
     descricao_servico_padrao: str
     ambiente: str
     certificado_valido_ate: datetime
