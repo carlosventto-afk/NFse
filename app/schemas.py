@@ -212,6 +212,11 @@ class ExclusaoLoteOut(BaseModel):
     puladas: int
 
 
+class EmissaoLoteOut(BaseModel):
+    emitidas: int
+    puladas: int
+
+
 class EmissaoOut(BaseModel):
     id: uuid.UUID
     origem: str

@@ -176,6 +176,18 @@ hr { border: none; border-top: 1px solid var(--borda); margin: 1.25rem 0; }
 .pilula.pendente { background: var(--status-pendente-bg); color: var(--status-pendente-texto); }
 .pilula.rejeitada { background: var(--status-rejeitada-bg); color: var(--status-rejeitada-texto); }
 .pilula.cancelada { background: var(--status-cancelada-bg); color: var(--status-cancelada-texto); }
+.pilula.rascunho { background: #e3ecf3; color: var(--acento); }
+
+/* -- totalizador -- */
+
+.totalizador {
+  display: flex;
+  gap: 1.5rem;
+  color: var(--texto-suave);
+  font-size: 13px;
+  margin-bottom: 0.75rem;
+}
+.totalizador strong { color: var(--texto); font-weight: 600; }
 
 /* -- painel de tabela -- */
 

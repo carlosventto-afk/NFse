@@ -29,6 +29,7 @@ class ProvedorEmissao(str, enum.Enum):
 
 
 class StatusEmissao(str, enum.Enum):
+    aguardando_emissao = "aguardando_emissao"
     pendente = "pendente"
     autorizada = "autorizada"
     rejeitada = "rejeitada"

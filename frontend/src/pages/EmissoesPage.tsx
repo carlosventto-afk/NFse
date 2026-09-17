@@ -1,14 +1,18 @@
 import { useEffect, useState } from "react";
 import {
-  cancelarEmissao, excluirEmissao, excluirEmissoesLote, listarEmissoes,
+  cancelarEmissao, emitirEmissao, emitirEmissoesLote, excluirEmissao, excluirEmissoesLote, listarEmissoes,
   urlDownloadPdfsLote, urlDownloadXmlsLote, urlPdf, urlRespostaBruta, urlXml,
 } from "../api/emissoes";
 import { obterToken } from "../api/client";
 import type { Emissao } from "../api/types";
 
-const STATUS = ["", "pendente", "autorizada", "rejeitada", "cancelada", "cancelamento_pendente", "erro_cancelamento"];
+const STATUS = [
+  "", "aguardando_emissao", "pendente", "autorizada", "rejeitada", "cancelada",
+  "cancelamento_pendente", "erro_cancelamento",
+];
 
 const ROTULOS_STATUS: Record<string, string> = {
+  aguardando_emissao: "Aguardando emissão",
   pendente: "Pendente",
   autorizada: "Autorizada",
   rejeitada: "Rejeitada",
@@ -20,6 +24,7 @@ const ROTULOS_STATUS: Record<string, string> = {
 };
 
 const CLASSES_PILULA: Record<string, string> = {
+  aguardando_emissao: "rascunho",
   autorizada: "autorizada",
   rejeitada: "rejeitada",
   erro_cancelamento: "rejeitada",
@@ -125,6 +130,32 @@ export default function EmissoesPage() {
     }
   }
 
+  async function emitir(id: string) {
+    setErro(null);
+    try {
+      await emitirEmissao(id);
+      await carregar();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Nao foi possivel emitir a emissao");
+    }
+  }
+
+  async function emitirSelecionados() {
+    setErro(null);
+    try {
+      const resultado = await emitirEmissoesLote(Array.from(selecionados));
+      if (resultado.puladas > 0) {
+        setErro(
+          `${resultado.emitidas} enviada(s) pra emissao; ${resultado.puladas} nao pode(m) ser `
+          + "emitida(s) (status nao esta aguardando emissao)",
+        );
+      }
+      await carregar();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Nao foi possivel emitir as emissoes selecionadas");
+    }
+  }
+
   async function excluirSelecionados() {
     if (!window.confirm(`Excluir ${selecionados.size} emissoes selecionadas? Essa acao nao pode ser desfeita.`)) {
       return;
@@ -171,9 +202,16 @@ export default function EmissoesPage() {
     salvarBlobComoArquivo(await resposta.blob(), nomeArquivo);
   }
 
+  const totalNotas = emissoes.length;
+  const valorTotal = emissoes.reduce((soma, e) => soma + Number(e.valor), 0);
+
   return (
     <div>
       <h1>Emissões</h1>
+      <div className="totalizador">
+        <span><strong>{totalNotas}</strong> nota{totalNotas === 1 ? "" : "s"}</span>
+        <span>Total: <strong>R$ {valorTotal.toFixed(2)}</strong></span>
+      </div>
       <div className="painel-filtros">
         <div className="form-linha">
           <label htmlFor="status">Filtrar por status</label>
@@ -201,9 +239,12 @@ export default function EmissoesPage() {
             Baixar PDFs selecionados
           </button>
           {selecionados.size > 1 && (
-            <button className="perigo" onClick={excluirSelecionados}>
-              Excluir selecionadas
-            </button>
+            <>
+              <button onClick={emitirSelecionados}>Emitir selecionadas</button>
+              <button className="perigo" onClick={excluirSelecionados}>
+                Excluir selecionadas
+              </button>
+            </>
           )}
         </div>
       )}
@@ -245,6 +286,9 @@ export default function EmissoesPage() {
                       )}
                     </td>
                     <td>
+                      {emissao.status === "aguardando_emissao" && (
+                        <button onClick={() => emitir(emissao.id)}>Emitir</button>
+                      )}
                       {emissao.status === "autorizada" && (
                         <>
                           <button className="secundario" onClick={() => baixar(urlXml(emissao.id), `NFSe_${emissao.serie}_${emissao.numero}.xml`)}>XML</button>
@@ -268,7 +312,10 @@ export default function EmissoesPage() {
                           </button>
                         </>
                       )}
-                      {(emissao.status === "pendente" || emissao.status === "rejeitada" || emissao.status === "autorizada") && (
+                      {(
+                        emissao.status === "aguardando_emissao" || emissao.status === "pendente"
+                        || emissao.status === "rejeitada" || emissao.status === "autorizada"
+                      ) && (
                         <button className="perigo" onClick={() => excluir(emissao.id)}>Excluir</button>
                       )}
                     </td>

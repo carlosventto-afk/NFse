@@ -49,6 +49,11 @@ export interface ExclusaoLoteResultado {
   puladas: number;
 }
 
+export interface EmissaoLoteResultado {
+  emitidas: number;
+  puladas: number;
+}
+
 export interface ResultadoImportacaoCsv {
   total_notas: number;
   valor_total: string;

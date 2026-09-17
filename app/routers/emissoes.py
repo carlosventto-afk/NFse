@@ -18,7 +18,9 @@ from app.db import get_db
 from app.models import AmbienteEnum, Cliente, Emissao, Empresa, OrigemEmissao, ProvedorEmissao, StatusEmissao
 from app.numeracao import reservar_proximo_numero
 from app.periodo import FUSO_BRT, fim_do_dia_brt, inicio_do_dia_brt
-from app.schemas import CancelarEmissaoIn, EmissaoManualIn, EmissaoOut, EmissoesIdsIn, ExclusaoLoteOut
+from app.schemas import (
+    CancelarEmissaoIn, EmissaoLoteOut, EmissaoManualIn, EmissaoOut, EmissoesIdsIn, ExclusaoLoteOut,
+)
 from app.security import ContextoAutenticado, exigir_admin_empresa, get_empresa_ativa
 from nfse_core import SefinClient
 
@@ -326,7 +328,7 @@ async def _processar_csv(
                 empresa_id=contexto.empresa_id,
                 origem=OrigemEmissao.csv,
                 stone_charge_id=nota.stone_charge_id,
-                status=StatusEmissao.pendente,
+                status=StatusEmissao.aguardando_emissao,
                 serie=serie,
                 numero=numero,
                 cliente_id=cliente_padrao.id,
@@ -397,7 +399,9 @@ def _pode_excluir(emissao: Emissao, empresa: Empresa) -> bool:
     # fiscal de verdade: so pode ser cancelada (/cancelar), nunca apagada.
     if emissao.status == StatusEmissao.autorizada:
         return AmbienteEnum(empresa.ambiente) == AmbienteEnum.homologacao
-    return emissao.status in (StatusEmissao.pendente, StatusEmissao.rejeitada)
+    return emissao.status in (
+        StatusEmissao.pendente, StatusEmissao.rejeitada, StatusEmissao.aguardando_emissao,
+    )
 
 
 @router.delete("/{emissao_id}", status_code=204)
@@ -416,8 +420,8 @@ async def excluir_emissao(
             "Nota autorizada em producao so pode ser cancelada, nao excluida"
             if emissao.status == StatusEmissao.autorizada
             else (
-                "So e possivel excluir emissao pendente, rejeitada, ou autorizada em "
-                f"homologacao (status atual: {emissao.status})"
+                "So e possivel excluir emissao aguardando emissao, pendente, rejeitada, ou "
+                f"autorizada em homologacao (status atual: {emissao.status})"
             )
         )
         raise HTTPException(status_code=409, detail=detalhe)
@@ -443,3 +447,46 @@ async def excluir_emissoes_em_lote(
         excluidas += 1
     await session.commit()
     return ExclusaoLoteOut(excluidas=excluidas, puladas=len(dados.ids) - excluidas)
+
+
+@router.post("/{emissao_id}/emitir", response_model=EmissaoOut)
+async def emitir_emissao(
+    emissao_id: uuid.UUID,
+    contexto: ContextoAutenticado = Depends(get_empresa_ativa),
+    session: AsyncSession = Depends(get_db),
+) -> Emissao:
+    emissao = await session.get(Emissao, emissao_id)
+    if emissao is None or emissao.empresa_id != contexto.empresa_id:
+        raise HTTPException(status_code=404)
+    if emissao.status != StatusEmissao.aguardando_emissao:
+        raise HTTPException(
+            status_code=409,
+            detail=f"So e possivel emitir nota aguardando emissao (status atual: {emissao.status})",
+        )
+    # So muda o status pra "pendente" -- o worker (loop_worker) e quem de
+    # fato processa, do mesmo jeito que ja faz pra emissao manual/webhook.
+    # Evita duplicar a logica de emissao aqui e mantem o request rapido (nao
+    # bloqueia esperando a SEFIN/Spedy responder).
+    emissao.status = StatusEmissao.pendente
+    await session.commit()
+    await session.refresh(emissao)
+    return emissao
+
+
+@router.post("/emitir-lote", response_model=EmissaoLoteOut)
+async def emitir_emissoes_em_lote(
+    dados: EmissoesIdsIn,
+    contexto: ContextoAutenticado = Depends(get_empresa_ativa),
+    session: AsyncSession = Depends(get_db),
+) -> EmissaoLoteOut:
+    stmt = select(Emissao).where(Emissao.id.in_(dados.ids), Emissao.empresa_id == contexto.empresa_id)
+    emissoes = list((await session.execute(stmt)).scalars().all())
+
+    emitidas = 0
+    for emissao in emissoes:
+        if emissao.status != StatusEmissao.aguardando_emissao:
+            continue
+        emissao.status = StatusEmissao.pendente
+        emitidas += 1
+    await session.commit()
+    return EmissaoLoteOut(emitidas=emitidas, puladas=len(dados.ids) - emitidas)

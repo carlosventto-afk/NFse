@@ -74,7 +74,7 @@ async def test_preview_csv_nao_grava_nada_e_devolve_resumo_correto(db_session):
 
 
 @pytest.mark.asyncio
-async def test_confirmar_csv_cria_emissoes_pendentes_com_numero_reservado(db_session):
+async def test_confirmar_csv_cria_emissoes_aguardando_emissao_com_numero_reservado(db_session):
     empresa, token = await _empresa_e_usuario(db_session)
     conteudo = _csv(
         "Venda;30/07/2026 14:30:04;31/07/2026;31163337249888;1;1;27,980000;Pago;05/08/2026 09:15:00",
@@ -108,7 +108,7 @@ async def test_confirmar_csv_cria_emissoes_pendentes_com_numero_reservado(db_ses
     assert [e.numero for e in emissoes] == [1, 2]
     assert [e.serie for e in emissoes] == ["1", "1"]
     assert {e.origem for e in emissoes} == {OrigemEmissao.csv}
-    assert {e.status for e in emissoes} == {StatusEmissao.pendente}
+    assert {e.status for e in emissoes} == {StatusEmissao.aguardando_emissao}
     assert {e.stone_charge_id for e in emissoes} == {"31163337249888", "31163341016913"}
     # descricao leva a data de vencimento junto, alem do texto padrao da empresa
     assert {e.descricao for e in emissoes} == {"Lavagem de roupa - Vencimento: 31/07/2026"}
