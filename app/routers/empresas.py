@@ -128,18 +128,19 @@ async def editar_minha_empresa(
 
     # Calculado ANTES do bloco de troca de certificado de proposito: precisa
     # comparar `ambiente` (form) contra o `empresa.ambiente` ainda intacto
-    # (valor do banco), e bloquear a troca de certificado/ambiente antes que
-    # qualquer mutacao seja aplicada -- senao o certificado seria trocado
-    # localmente mesmo com a resposta 422, deixando local/Spedy inconsistentes.
+    # (valor do banco), e bloquear a troca de certificado antes que qualquer
+    # mutacao seja aplicada -- senao o certificado seria trocado localmente
+    # mesmo com a resposta 422, deixando local/Spedy inconsistentes.
     provedor_emissao_final = provedor_emissao if provedor_emissao is not None else empresa.provedor_emissao
     ja_provisionada_spedy = provedor_emissao_final == "spedy" and empresa.spedy_empresa_id is not None
-    if ja_provisionada_spedy and (pfx is not None or ambiente != empresa.ambiente):
+    ambiente_mudou = ambiente != empresa.ambiente
+    if ja_provisionada_spedy and pfx is not None:
         raise HTTPException(
             status_code=422,
             detail=(
-                "esta empresa ja esta provisionada na Spedy -- trocar o certificado ou o "
-                "ambiente exige reconfigurar o provedor manualmente (ainda nao suportado "
-                "automaticamente); contate o suporte"
+                "esta empresa ja esta provisionada na Spedy -- trocar o certificado exige "
+                "reconfigurar o provedor manualmente (ainda nao suportado automaticamente); "
+                "contate o suporte"
             ),
         )
 
@@ -191,7 +192,16 @@ async def editar_minha_empresa(
     if cep is not None:
         empresa.cep = cep.strip() or None
 
-    precisa_provisionar = provedor_emissao_final == "spedy" and empresa.spedy_empresa_id is None
+    # Reprovisiona do zero quando o ambiente muda numa empresa ja provisionada
+    # na Spedy: homologacao e producao sao contas/chaves mestras separadas la
+    # (ver _chave_mestre em spedy_provisionamento.py), entao so trocar o
+    # campo local deixaria o spedy_empresa_id/api_key antigos apontando pra
+    # conta errada. `empresa.ambiente` ja foi sobrescrito ha pouco (linha
+    # acima), entao provisionar_empresa abaixo ja usa a chave mestra do
+    # ambiente NOVO.
+    precisa_provisionar = provedor_emissao_final == "spedy" and (
+        empresa.spedy_empresa_id is None or (ja_provisionada_spedy and ambiente_mudou)
+    )
     empresa.provedor_emissao = provedor_emissao_final
 
     if precisa_provisionar:
