@@ -4,7 +4,9 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.routers import auth, clientes, convites, dashboard, emissoes, empresas, planos, webhook_stone
+from app.routers import (
+    auth, clientes, convites, dashboard, emissoes, empresas, planos, usuarios, webhook_stone,
+)
 
 app = FastAPI(title="NFS-e Automatizada")
 app.include_router(auth.router, prefix="/api")
@@ -13,6 +15,7 @@ app.include_router(clientes.router, prefix="/api")
 app.include_router(empresas.router, prefix="/api")
 app.include_router(emissoes.router, prefix="/api")
 app.include_router(planos.router, prefix="/api")
+app.include_router(usuarios.router, prefix="/api")
 app.include_router(webhook_stone.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
 

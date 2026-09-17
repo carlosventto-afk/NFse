@@ -68,6 +68,26 @@ class ConviteAceitarIn(BaseModel):
         return v
 
 
+class UsuarioCriarIn(BaseModel):
+    email: EmailStr = Field(max_length=TAMANHO_EMAIL_USUARIO)
+    senha: str = Field(min_length=8, max_length=TAMANHO_SENHA_MAX)
+    plano_id: uuid.UUID
+
+    @field_validator("senha")
+    @classmethod
+    def senha_valida(cls, v: str) -> str:
+        if len(v.encode()) > TAMANHO_SENHA_MAX:
+            raise ValueError(f"senha nao pode passar de {TAMANHO_SENHA_MAX} bytes")
+        return v
+
+
+class UsuarioOut(BaseModel):
+    id: uuid.UUID
+    email: str
+
+    model_config = {"from_attributes": True}
+
+
 class ClienteCriarIn(BaseModel):
     cpf_cnpj: str | None = Field(default=None, max_length=14)
     nome: str = Field(max_length=TAMANHO_NOME)

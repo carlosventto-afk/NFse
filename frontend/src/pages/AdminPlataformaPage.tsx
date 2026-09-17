@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { listarTodasEmpresas } from "../api/empresas";
 import { listarPlanos } from "../api/planos";
 import { convidarTitular } from "../api/convites";
+import { criarUsuario } from "../api/usuarios";
 import type { EmpresaResumo, Plano } from "../api/types";
 
 export default function AdminPlataformaPage() {
@@ -13,8 +14,14 @@ export default function AdminPlataformaPage() {
   const [planos, setPlanos] = useState<Plano[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
-  const [emailConvite, setEmailConvite] = useState("");
   const [planoId, setPlanoId] = useState("");
+
+  const [emailNovo, setEmailNovo] = useState("");
+  const [senhaNovo, setSenhaNovo] = useState("");
+  const [criandoUsuario, setCriandoUsuario] = useState(false);
+  const [usuarioCriado, setUsuarioCriado] = useState(false);
+
+  const [emailConvite, setEmailConvite] = useState("");
   const [enviandoConvite, setEnviandoConvite] = useState(false);
   const [conviteEnviado, setConviteEnviado] = useState(false);
 
@@ -38,6 +45,23 @@ export default function AdminPlataformaPage() {
       navegar("/emissoes");
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Nao foi possivel entrar nessa empresa");
+    }
+  }
+
+  async function criarUsuarioDireto(evento: FormEvent) {
+    evento.preventDefault();
+    setErro(null);
+    setUsuarioCriado(false);
+    setCriandoUsuario(true);
+    try {
+      await criarUsuario(emailNovo, senhaNovo, planoId);
+      setUsuarioCriado(true);
+      setEmailNovo("");
+      setSenhaNovo("");
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Nao foi possivel criar o usuario");
+    } finally {
+      setCriandoUsuario(false);
     }
   }
 
@@ -69,10 +93,44 @@ export default function AdminPlataformaPage() {
 
         {erro && <p className="erro">{erro}</p>}
 
-        <h2>Convidar titular</h2>
+        <h2>Cadastrar usuário</h2>
         <p className="ajuda">
-          Envia um convite por e-mail pra criar uma conta nova, com o plano
-          escolhido, que depois cadastra a própria empresa.
+          Cria a conta na hora, já com a senha definida — sem precisar de
+          convite por e-mail.
+        </p>
+        <form onSubmit={criarUsuarioDireto}>
+          <div className="form-linha">
+            <label htmlFor="email_novo">E-mail</label>
+            <input
+              id="email_novo" type="email" required
+              value={emailNovo} onChange={(e) => setEmailNovo(e.target.value)}
+            />
+          </div>
+          <div className="form-linha">
+            <label htmlFor="senha_novo">Senha</label>
+            <input
+              id="senha_novo" type="password" required minLength={8}
+              value={senhaNovo} onChange={(e) => setSenhaNovo(e.target.value)}
+            />
+          </div>
+          <div className="form-linha">
+            <label htmlFor="plano_novo">Plano</label>
+            <select id="plano_novo" required value={planoId} onChange={(e) => setPlanoId(e.target.value)}>
+              {planos.map((p) => (
+                <option key={p.id} value={p.id}>{p.nome} (até {p.limite_empresas} empresas)</option>
+              ))}
+            </select>
+          </div>
+          <button type="submit" disabled={criandoUsuario || !planoId}>
+            {criandoUsuario ? "Criando..." : "Criar usuário"}
+          </button>
+          {usuarioCriado && <p>Usuário criado.</p>}
+        </form>
+
+        <h2>Convidar titular por e-mail</h2>
+        <p className="ajuda">
+          Alternativa: envia um convite por e-mail pra a própria pessoa
+          definir a senha.
         </p>
         <form onSubmit={enviarConvite}>
           <div className="form-linha">
@@ -83,14 +141,14 @@ export default function AdminPlataformaPage() {
             />
           </div>
           <div className="form-linha">
-            <label htmlFor="plano">Plano</label>
-            <select id="plano" required value={planoId} onChange={(e) => setPlanoId(e.target.value)}>
+            <label htmlFor="plano_convite">Plano</label>
+            <select id="plano_convite" required value={planoId} onChange={(e) => setPlanoId(e.target.value)}>
               {planos.map((p) => (
                 <option key={p.id} value={p.id}>{p.nome} (até {p.limite_empresas} empresas)</option>
               ))}
             </select>
           </div>
-          <button type="submit" disabled={enviandoConvite || !planoId}>
+          <button type="submit" className="secundario" disabled={enviandoConvite || !planoId}>
             {enviandoConvite ? "Enviando..." : "Enviar convite"}
           </button>
           {conviteEnviado && <p>Convite enviado.</p>}
