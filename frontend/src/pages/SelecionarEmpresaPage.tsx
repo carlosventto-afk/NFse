@@ -14,9 +14,10 @@ export default function SelecionarEmpresaPage() {
           <div className="marca-auth"><span className="simbolo">🧾</span> NFS-e</div>
           <h1>Administrador da plataforma</h1>
           <p className="ajuda">
-            Convites de titular e cadastro de empresa para outra pessoa ainda
-            sao feitos via API por este perfil.
+            Acesso total: entre em qualquer empresa cadastrada ou convide um
+            novo titular.
           </p>
+          <button onClick={() => navegar("/admin-plataforma")}>Administrar plataforma</button>
         </div>
       </div>
     );

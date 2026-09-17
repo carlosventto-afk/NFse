@@ -4,6 +4,7 @@ import RotaProtegida from "./components/RotaProtegida";
 import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
 import SelecionarEmpresaPage from "./pages/SelecionarEmpresaPage";
+import AdminPlataformaPage from "./pages/AdminPlataformaPage";
 import AceitarConvitePage from "./pages/AceitarConvitePage";
 import CadastroEmpresaPage from "./pages/CadastroEmpresaPage";
 import NumeracaoPage from "./pages/NumeracaoPage";
@@ -22,6 +23,7 @@ export default function App() {
           <Route element={<RotaProtegida />}>
             <Route path="/" element={<Navigate to="/selecionar-empresa" replace />} />
             <Route path="/selecionar-empresa" element={<SelecionarEmpresaPage />} />
+            <Route path="/admin-plataforma" element={<AdminPlataformaPage />} />
             <Route element={<Layout />}>
               <Route path="/emissoes" element={<EmissoesPage />} />
               <Route path="/cadastro-empresa" element={<CadastroEmpresaPage />} />

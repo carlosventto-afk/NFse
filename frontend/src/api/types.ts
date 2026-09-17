@@ -84,6 +84,18 @@ export interface Numeracao {
   proximo_numero: number;
 }
 
+export interface EmpresaResumo {
+  id: string;
+  cnpj: string;
+  razao_social: string | null;
+}
+
+export interface Plano {
+  id: string;
+  nome: string;
+  limite_empresas: number;
+}
+
 export interface EmpresaDetalhe {
   id: string;
   cnpj: string;

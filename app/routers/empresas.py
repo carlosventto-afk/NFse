@@ -12,8 +12,10 @@ from app.adapters.spedy_provisionamento import provisionar_empresa
 from app.adapters.spedy_client import SpedyError
 from app.db import get_db
 from app.models import Emissao, Empresa
-from app.schemas import EmpresaDetalheOut, NumeracaoIn, NumeracaoOut
-from app.security import ContextoAutenticado, exigir_admin_empresa, get_contexto_autenticado
+from app.schemas import EmpresaDetalheOut, EmpresaResumoOut, NumeracaoIn, NumeracaoOut
+from app.security import (
+    ContextoAutenticado, exigir_admin_empresa, exigir_admin_plataforma, get_contexto_autenticado,
+)
 from nfse_core import CertificateError, conferir_titularidade, inspecionar
 from scripts.criar_empresa import criar_empresa
 
@@ -78,6 +80,15 @@ async def criar_empresa_via_api(
         "id": str(empresa.id), "cnpj": empresa.cnpj,
         "ambiente": empresa.ambiente if isinstance(empresa.ambiente, str) else empresa.ambiente.value,
     }
+
+
+@router.get("", response_model=list[EmpresaResumoOut])
+async def listar_todas_as_empresas(
+    contexto: ContextoAutenticado = Depends(exigir_admin_plataforma),
+    session: AsyncSession = Depends(get_db),
+) -> list[Empresa]:
+    stmt = select(Empresa).order_by(Empresa.cnpj)
+    return list((await session.execute(stmt)).scalars().all())
 
 
 @router.get("/mim", response_model=EmpresaDetalheOut)

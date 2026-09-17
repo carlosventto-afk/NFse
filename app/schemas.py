@@ -128,6 +128,22 @@ class TrocarEmpresaIn(BaseModel):
     empresa_id: uuid.UUID
 
 
+class EmpresaResumoOut(BaseModel):
+    id: uuid.UUID
+    cnpj: str
+    razao_social: str | None
+
+    model_config = {"from_attributes": True}
+
+
+class PlanoOut(BaseModel):
+    id: uuid.UUID
+    nome: str
+    limite_empresas: int
+
+    model_config = {"from_attributes": True}
+
+
 class NumeracaoOut(BaseModel):
     serie: str
     proximo_numero: int

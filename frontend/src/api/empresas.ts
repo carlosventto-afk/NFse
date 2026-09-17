@@ -1,5 +1,5 @@
 import { apiFetch, apiFetchJson } from "./client";
-import type { EmpresaCriada, EmpresaDetalhe, Numeracao } from "./types";
+import type { EmpresaCriada, EmpresaDetalhe, EmpresaResumo, Numeracao } from "./types";
 
 export interface DadosEmpresaForm {
   cnpj: string;
@@ -35,6 +35,10 @@ export function criarEmpresa(dados: DadosEmpresaForm, pfx: File): Promise<Empres
 
 export function obterMinhaEmpresa(): Promise<EmpresaDetalhe> {
   return apiFetch<EmpresaDetalhe>("/api/empresas/mim");
+}
+
+export function listarTodasEmpresas(): Promise<EmpresaResumo[]> {
+  return apiFetch<EmpresaResumo[]>("/api/empresas");
 }
 
 export function editarEmpresa(dados: DadosEdicaoEmpresa, pfx: File | null): Promise<EmpresaDetalhe> {

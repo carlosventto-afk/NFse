@@ -69,7 +69,20 @@ async def trocar_empresa(
         )
     ).scalar_one_or_none()
     if vinculo is None:
-        raise HTTPException(status_code=403, detail="Sem acesso a essa empresa")
+        if not contexto.eh_admin_plataforma:
+            raise HTTPException(status_code=403, detail="Sem acesso a essa empresa")
+        # Admin da plataforma pode entrar em qualquer empresa mesmo sem
+        # vinculo previo -- cria o vinculo (papel admin) na hora, na
+        # primeira vez que ele pede pra entrar nela.
+        empresa = await session.get(Empresa, dados.empresa_id)
+        if empresa is None:
+            raise HTTPException(status_code=404, detail="Empresa nao encontrada")
+        vinculo = UsuarioEmpresa(
+            usuario_id=contexto.usuario.id, empresa_id=dados.empresa_id, papel=PapelUsuario.admin,
+        )
+        session.add(vinculo)
+        await session.commit()
+        await session.refresh(vinculo)
     return TokenOut(
         access_token=criar_token(
             contexto.usuario, empresa_id=vinculo.empresa_id, papel=PapelUsuario(vinculo.papel)
