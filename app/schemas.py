@@ -42,6 +42,18 @@ class ConviteCriarIn(BaseModel):
         return v
 
 
+class VincularUsuarioIn(BaseModel):
+    email: EmailStr = Field(max_length=TAMANHO_EMAIL_USUARIO)
+    papel: str
+
+    @field_validator("papel")
+    @classmethod
+    def papel_valido(cls, v: str) -> str:
+        if v not in ("admin", "operador"):
+            raise ValueError("papel deve ser admin ou operador")
+        return v
+
+
 class ConviteOut(BaseModel):
     id: uuid.UUID
     email: str

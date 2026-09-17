@@ -24,6 +24,7 @@ def test_todas_as_rotas_esperadas_estao_registradas():
         "/api/empresas/numeracao",
         "/api/planos",
         "/api/usuarios",
+        "/api/empresas/{empresa_id}/vincular-usuario",
         "/api/webhooks/stone/{empresa_id}",
         "/api/emissoes/manual",
         "/api/emissoes",

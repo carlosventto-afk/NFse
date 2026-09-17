@@ -1,5 +1,6 @@
 import base64
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import func, select
@@ -11,8 +12,8 @@ from app.crypto import cifrar, decifrar
 from app.adapters.spedy_provisionamento import provisionar_empresa
 from app.adapters.spedy_client import SpedyError
 from app.db import get_db
-from app.models import Emissao, Empresa
-from app.schemas import EmpresaDetalheOut, EmpresaResumoOut, NumeracaoIn, NumeracaoOut
+from app.models import Emissao, Empresa, PapelUsuario, Usuario, UsuarioEmpresa
+from app.schemas import EmpresaDetalheOut, EmpresaResumoOut, NumeracaoIn, NumeracaoOut, VincularUsuarioIn
 from app.security import (
     ContextoAutenticado, exigir_admin_empresa, exigir_admin_plataforma, get_contexto_autenticado,
 )
@@ -89,6 +90,39 @@ async def listar_todas_as_empresas(
 ) -> list[Empresa]:
     stmt = select(Empresa).order_by(Empresa.cnpj)
     return list((await session.execute(stmt)).scalars().all())
+
+
+@router.post("/{empresa_id}/vincular-usuario", status_code=204)
+async def vincular_usuario_a_empresa(
+    empresa_id: uuid.UUID,
+    dados: VincularUsuarioIn,
+    contexto: ContextoAutenticado = Depends(exigir_admin_plataforma),
+    session: AsyncSession = Depends(get_db),
+) -> None:
+    empresa = await session.get(Empresa, empresa_id)
+    if empresa is None:
+        raise HTTPException(status_code=404, detail="Empresa nao encontrada")
+
+    usuario = (
+        await session.execute(select(Usuario).where(Usuario.email == dados.email))
+    ).scalar_one_or_none()
+    if usuario is None:
+        raise HTTPException(status_code=404, detail="Nenhum usuario com esse e-mail")
+
+    vinculo_existente = (
+        await session.execute(
+            select(UsuarioEmpresa).where(
+                UsuarioEmpresa.usuario_id == usuario.id, UsuarioEmpresa.empresa_id == empresa_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if vinculo_existente is not None:
+        raise HTTPException(status_code=409, detail="Usuario ja tem acesso a essa empresa")
+
+    session.add(
+        UsuarioEmpresa(usuario_id=usuario.id, empresa_id=empresa_id, papel=PapelUsuario(dados.papel))
+    )
+    await session.commit()
 
 
 @router.get("/mim", response_model=EmpresaDetalheOut)

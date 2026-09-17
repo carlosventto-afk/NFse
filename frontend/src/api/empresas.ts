@@ -41,6 +41,10 @@ export function listarTodasEmpresas(): Promise<EmpresaResumo[]> {
   return apiFetch<EmpresaResumo[]>("/api/empresas");
 }
 
+export function vincularUsuarioAEmpresa(empresaId: string, email: string, papel: string): Promise<void> {
+  return apiFetchJson<void>(`/api/empresas/${empresaId}/vincular-usuario`, "POST", { email, papel });
+}
+
 export function editarEmpresa(dados: DadosEdicaoEmpresa, pfx: File | null): Promise<EmpresaDetalhe> {
   const formulario = new FormData();
   const dadosLimpos = { ...dados, cnpj: dados.cnpj.replace(/\D/g, "") };

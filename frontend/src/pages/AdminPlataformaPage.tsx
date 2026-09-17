@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { listarTodasEmpresas } from "../api/empresas";
+import { listarTodasEmpresas, vincularUsuarioAEmpresa } from "../api/empresas";
 import { listarPlanos } from "../api/planos";
 import { convidarTitular } from "../api/convites";
 import { criarUsuario } from "../api/usuarios";
@@ -24,6 +24,12 @@ export default function AdminPlataformaPage() {
   const [emailConvite, setEmailConvite] = useState("");
   const [enviandoConvite, setEnviandoConvite] = useState(false);
   const [conviteEnviado, setConviteEnviado] = useState(false);
+
+  const [emailVincular, setEmailVincular] = useState("");
+  const [empresaIdVincular, setEmpresaIdVincular] = useState("");
+  const [papelVincular, setPapelVincular] = useState("operador");
+  const [vinculando, setVinculando] = useState(false);
+  const [vinculoFeito, setVinculoFeito] = useState(false);
 
   useEffect(() => {
     Promise.all([listarTodasEmpresas(), listarPlanos()])
@@ -62,6 +68,22 @@ export default function AdminPlataformaPage() {
       setErro(e instanceof Error ? e.message : "Nao foi possivel criar o usuario");
     } finally {
       setCriandoUsuario(false);
+    }
+  }
+
+  async function vincular(evento: FormEvent) {
+    evento.preventDefault();
+    setErro(null);
+    setVinculoFeito(false);
+    setVinculando(true);
+    try {
+      await vincularUsuarioAEmpresa(empresaIdVincular, emailVincular, papelVincular);
+      setVinculoFeito(true);
+      setEmailVincular("");
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Nao foi possivel vincular o usuario");
+    } finally {
+      setVinculando(false);
     }
   }
 
@@ -125,6 +147,46 @@ export default function AdminPlataformaPage() {
             {criandoUsuario ? "Criando..." : "Criar usuário"}
           </button>
           {usuarioCriado && <p>Usuário criado.</p>}
+        </form>
+
+        <h2>Vincular usuário a uma empresa</h2>
+        <p className="ajuda">
+          Dá acesso a uma empresa já cadastrada pra um usuário que já existe
+          (por e-mail), sem passar por convite.
+        </p>
+        <form onSubmit={vincular}>
+          <div className="form-linha">
+            <label htmlFor="email_vincular">E-mail do usuário</label>
+            <input
+              id="email_vincular" type="email" required
+              value={emailVincular} onChange={(e) => setEmailVincular(e.target.value)}
+            />
+          </div>
+          <div className="form-linha">
+            <label htmlFor="empresa_vincular">Empresa</label>
+            <select
+              id="empresa_vincular" required value={empresaIdVincular}
+              onChange={(e) => setEmpresaIdVincular(e.target.value)}
+            >
+              <option value="">Selecione</option>
+              {empresas.map((empresa) => (
+                <option key={empresa.id} value={empresa.id}>
+                  {empresa.cnpj}{empresa.razao_social ? ` - ${empresa.razao_social}` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-linha">
+            <label htmlFor="papel_vincular">Papel</label>
+            <select id="papel_vincular" value={papelVincular} onChange={(e) => setPapelVincular(e.target.value)}>
+              <option value="admin">Admin</option>
+              <option value="operador">Operador</option>
+            </select>
+          </div>
+          <button type="submit" disabled={vinculando || !empresaIdVincular}>
+            {vinculando ? "Vinculando..." : "Vincular"}
+          </button>
+          {vinculoFeito && <p>Usuário vinculado.</p>}
         </form>
 
         <h2>Convidar titular por e-mail</h2>
