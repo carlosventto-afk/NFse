@@ -43,7 +43,7 @@ export default function NumeracaoPage() {
   return (
     <div className="cartao">
       <h1>Numeracao das notas</h1>
-      <p>
+      <p className="ajuda">
         Define a serie e o proximo numero de DPS a ser usado na proxima emissao
         desta empresa. Util para continuar a numeracao de um sistema anterior.
       </p>

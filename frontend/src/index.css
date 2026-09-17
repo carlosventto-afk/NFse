@@ -110,6 +110,26 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--acento);
 .cartao { background: var(--superficie); border: 1px solid var(--borda); padding: 1.5rem; border-radius: 8px; max-width: 480px; margin: 2rem auto; }
 .form-linha { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.75rem; }
 
+hr { border: none; border-top: 1px solid var(--borda); margin: 1.25rem 0; }
+.ajuda { color: var(--texto-suave); font-size: 13px; }
+
+/* -- telas de autenticacao (fora do shell) -- */
+
+.tela-auth { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem 1rem; }
+.tela-auth .cartao { margin: 0; width: 100%; }
+
+.marca-auth { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 1.25rem; color: var(--sidebar-bg); font-weight: 600; font-size: 16px; }
+.marca-auth .simbolo { font-size: 22px; }
+
+.lista-empresas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.lista-empresas button { width: 100%; text-align: left; }
+
+/* -- caixa secundaria (previa, resultado) -- */
+
+.caixa { background: var(--superficie-alt); border: 1px solid var(--borda); border-radius: 8px; padding: 1rem 1.1rem; margin-top: 1rem; }
+.caixa h2 { margin-bottom: 0.5rem; }
+.caixa p { margin: 0.35rem 0; }
+
 /* -- painel de filtros e barra de selecao -- */
 
 .painel-filtros {

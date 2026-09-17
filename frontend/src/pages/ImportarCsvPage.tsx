@@ -52,10 +52,10 @@ export default function ImportarCsvPage() {
       {erro && <p className="erro">{erro}</p>}
 
       {preview && (
-        <div>
+        <div className="caixa">
           <h2>Previa</h2>
-          <p>{preview.total_notas} notas, total R$ {preview.valor_total}</p>
-          <p>
+          <p className="num">{preview.total_notas} notas, total R$ {preview.valor_total}</p>
+          <p className="ajuda">
             Ignoradas — status nao pago: {preview.ignoradas.status_nao_pago},
             categoria nao venda: {preview.ignoradas.categoria_nao_venda},
             linha invalida: {preview.ignoradas.linha_invalida},
@@ -66,9 +66,9 @@ export default function ImportarCsvPage() {
       )}
 
       {resultado && (
-        <div>
+        <div className="caixa">
           <h2>Importacao confirmada</h2>
-          <p>{resultado.total_notas} notas criadas, total R$ {resultado.valor_total}</p>
+          <p className="num">{resultado.total_notas} notas criadas, total R$ {resultado.valor_total}</p>
         </div>
       )}
     </div>

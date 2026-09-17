@@ -138,29 +138,33 @@ export default function ClientesPage() {
       {carregando ? (
         <p>Carregando...</p>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Nome</th><th>CPF/CNPJ</th><th>E-mail</th><th>Ativo</th><th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {clientes.map((cliente) => (
-              <tr key={cliente.id}>
-                <td>{cliente.nome}</td>
-                <td>{cliente.cpf_cnpj ?? "-"}</td>
-                <td>{cliente.email ?? "-"}</td>
-                <td>{cliente.ativo ? "Sim" : "Nao"}</td>
-                <td>
-                  <button className="secundario" onClick={() => iniciarEdicao(cliente)}>Editar</button>
-                  <button className={cliente.ativo ? "perigo" : ""} onClick={() => alternarAtivo(cliente)}>
-                    {cliente.ativo ? "Inativar" : "Reativar"}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="painel-tabela">
+          <div className="rolagem-tabela">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nome</th><th>CPF/CNPJ</th><th>E-mail</th><th>Status</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {clientes.map((cliente) => (
+                  <tr key={cliente.id}>
+                    <td>{cliente.nome}</td>
+                    <td className="num">{cliente.cpf_cnpj ?? "-"}</td>
+                    <td>{cliente.email ?? "-"}</td>
+                    <td><span className={`pilula ${cliente.ativo ? "autorizada" : "cancelada"}`}>{cliente.ativo ? "Ativo" : "Inativo"}</span></td>
+                    <td>
+                      <button className="secundario" onClick={() => iniciarEdicao(cliente)}>Editar</button>
+                      <button className={cliente.ativo ? "perigo" : ""} onClick={() => alternarAtivo(cliente)}>
+                        {cliente.ativo ? "Inativar" : "Reativar"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
     </div>
   );

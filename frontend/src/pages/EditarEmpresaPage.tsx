@@ -156,7 +156,7 @@ export default function EditarEmpresaPage() {
         </div>
         {dados.provedor_emissao === "spedy" && (
           <>
-            <p>
+            <p className="ajuda">
               {spedyEmpresaId
                 ? `Ja provisionada na Spedy (ID: ${spedyEmpresaId}).`
                 : "Ainda nao provisionada — sera provisionada na Spedy ao salvar."}
@@ -194,7 +194,7 @@ export default function EditarEmpresaPage() {
             </div>
           </>
         )}
-        <p>
+        <p className="ajuda">
           Certificado atual valido ate:{" "}
           {certificadoValidoAte ? new Date(certificadoValidoAte).toLocaleDateString("pt-BR") : "-"}.
           Preencha os campos abaixo somente para trocar o certificado.

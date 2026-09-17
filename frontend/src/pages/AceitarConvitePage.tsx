@@ -26,34 +26,44 @@ export default function AceitarConvitePage() {
   }
 
   if (!token) {
-    return <div className="cartao"><p className="erro">Link de convite invalido (sem token).</p></div>;
+    return (
+      <div className="tela-auth">
+        <div className="cartao"><p className="erro">Link de convite invalido (sem token).</p></div>
+      </div>
+    );
   }
 
   if (sucesso) {
     return (
-      <div className="cartao">
-        <h1>Convite aceito</h1>
-        <button onClick={() => navegar("/login")}>Ir para o login</button>
+      <div className="tela-auth">
+        <div className="cartao">
+          <div className="marca-auth"><span className="simbolo">🧾</span> NFS-e</div>
+          <h1>Convite aceito</h1>
+          <button onClick={() => navegar("/login")}>Ir para o login</button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="cartao">
-      <h1>Aceitar convite</h1>
-      <p>
-        Se voce ja tem uma conta neste sistema, deixe a senha em branco —
-        so vamos vincular o acesso novo. Se e a sua primeira vez aqui,
-        defina uma senha.
-      </p>
-      <form onSubmit={enviar}>
-        <div className="form-linha">
-          <label htmlFor="senha">Senha (deixe em branco se ja tiver conta)</label>
-          <input id="senha" type="password" value={senha} onChange={(e) => setSenha(e.target.value)} />
-        </div>
-        {erro && <p className="erro">{erro}</p>}
-        <button type="submit" disabled={enviando}>{enviando ? "Enviando..." : "Aceitar convite"}</button>
-      </form>
+    <div className="tela-auth">
+      <div className="cartao">
+        <div className="marca-auth"><span className="simbolo">🧾</span> NFS-e</div>
+        <h1>Aceitar convite</h1>
+        <p className="ajuda">
+          Se voce ja tem uma conta neste sistema, deixe a senha em branco —
+          so vamos vincular o acesso novo. Se e a sua primeira vez aqui,
+          defina uma senha.
+        </p>
+        <form onSubmit={enviar}>
+          <div className="form-linha">
+            <label htmlFor="senha">Senha (deixe em branco se ja tiver conta)</label>
+            <input id="senha" type="password" value={senha} onChange={(e) => setSenha(e.target.value)} />
+          </div>
+          {erro && <p className="erro">{erro}</p>}
+          <button type="submit" disabled={enviando}>{enviando ? "Enviando..." : "Aceitar convite"}</button>
+        </form>
+      </div>
     </div>
   );
 }

@@ -29,21 +29,24 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="cartao">
-      <h1>Entrar</h1>
-      <form onSubmit={enviar}>
-        <div className="form-linha">
-          <label htmlFor="email">E-mail</label>
-          <input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-        </div>
-        <div className="form-linha">
-          <label htmlFor="senha">Senha</label>
-          <input id="senha" type="password" required value={senha} onChange={(e) => setSenha(e.target.value)} />
-        </div>
-        {erro && <p className="erro">{erro}</p>}
-        <button type="submit" disabled={enviando}>{enviando ? "Entrando..." : "Entrar"}</button>
-      </form>
-      <p><a href="/aceitar-convite">Tenho um convite</a></p>
+    <div className="tela-auth">
+      <div className="cartao">
+        <div className="marca-auth"><span className="simbolo">🧾</span> NFS-e</div>
+        <h1>Entrar</h1>
+        <form onSubmit={enviar}>
+          <div className="form-linha">
+            <label htmlFor="email">E-mail</label>
+            <input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+          <div className="form-linha">
+            <label htmlFor="senha">Senha</label>
+            <input id="senha" type="password" required value={senha} onChange={(e) => setSenha(e.target.value)} />
+          </div>
+          {erro && <p className="erro">{erro}</p>}
+          <button type="submit" disabled={enviando}>{enviando ? "Entrando..." : "Entrar"}</button>
+        </form>
+        <p><a href="/aceitar-convite">Tenho um convite</a></p>
+      </div>
     </div>
   );
 }
