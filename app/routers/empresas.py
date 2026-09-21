@@ -9,10 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.crypto import cifrar, decifrar
-from app.adapters.spedy_provisionamento import provisionar_empresa
-from app.adapters.spedy_client import SpedyError
+from app.adapters.spedy_provisionamento import montar_dados_regime_tributario, provisionar_empresa
+from app.adapters.spedy_client import SpedyClient, SpedyError
 from app.db import get_db
-from app.models import Emissao, Empresa, PapelUsuario, Usuario, UsuarioEmpresa
+from app.models import AmbienteEnum, Emissao, Empresa, PapelUsuario, Usuario, UsuarioEmpresa
 from app.schemas import EmpresaDetalheOut, EmpresaResumoOut, NumeracaoIn, NumeracaoOut, VincularUsuarioIn
 from app.security import (
     ContextoAutenticado, exigir_admin_empresa, exigir_admin_plataforma, get_contexto_autenticado,
@@ -282,6 +282,24 @@ async def editar_minha_empresa(
             raise HTTPException(status_code=502, detail=str(exc))
         empresa.spedy_empresa_id = spedy_empresa_id
         empresa.spedy_api_key_cifrada = cifrar(spedy_api_key, fernet_key)
+    elif provedor_emissao_final == "spedy" and empresa.spedy_empresa_id:
+        # Empresa ja provisionada, sem reprovisionar agora: taxRegime/
+        # specialTaxRegime sao campos do CADASTRO da empresa na Spedy (nao da
+        # nota) -- sincroniza a cada edicao pra nao deixar o cadastro la
+        # desatualizado indefinidamente (ver caso Belem, erro E188).
+        fernet_key = get_settings().fernet_key
+        api_key = decifrar(empresa.spedy_api_key_cifrada, fernet_key)
+        cliente = SpedyClient(AmbienteEnum(empresa.ambiente).value, api_key)
+        try:
+            await cliente.alterar_empresa(empresa.spedy_empresa_id, montar_dados_regime_tributario(empresa))
+        except SpedyError as exc:
+            logger.warning(
+                "falha ao sincronizar regime tributario da empresa %s na Spedy: %s | corpo bruto: %s",
+                empresa.id, exc, exc.body, exc_info=True,
+            )
+            raise HTTPException(status_code=502, detail=str(exc))
+        finally:
+            await cliente.close()
 
     try:
         await session.commit()

@@ -167,6 +167,23 @@ async def test_adicionar_certificado_envia_multipart_com_os_campos_certos():
 
 
 @pytest.mark.asyncio
+async def test_alterar_empresa_chama_put_no_path_correto():
+    cliente = SpedyClient("homologacao", "chave-mestre")
+    chamadas = []
+
+    async def _request_falso(method, path, **kwargs):
+        chamadas.append((method, path, kwargs))
+        return _RespostaFalsa(200, {"id": "empresa-1"})
+
+    cliente._request = _request_falso
+    await cliente.alterar_empresa("empresa-1", {"taxRegime": "simplesNacional"})
+
+    metodo, caminho, kwargs = chamadas[0]
+    assert (metodo, caminho) == ("PUT", "/companies/empresa-1")
+    assert kwargs["json"] == {"taxRegime": "simplesNacional"}
+
+
+@pytest.mark.asyncio
 async def test_configurar_nfse_envelopa_em_serviceinvoice():
     cliente = SpedyClient("homologacao", "chave-empresa")
     chamadas = []

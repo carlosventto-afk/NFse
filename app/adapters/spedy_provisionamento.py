@@ -19,6 +19,34 @@ from app.models import AmbienteEnum, Empresa
 _INTERVALO_ENTRE_CHAMADAS_SEGUNDOS = 1.0
 
 
+_MAPA_REGIME_APURACAO_SN = {
+    1: "federalAndMunicipalBySimplesNacional",
+    2: "federalBySimplesAndIssqnByNfse",
+    3: "federalAndMunicipalByNfse",
+}
+
+
+def montar_dados_regime_tributario(empresa: Empresa) -> dict:
+    """Mapeia op_simp_nac/regime_apuracao_sn para os campos de regime
+    tributario que a Spedy guarda no CADASTRO da empresa (taxRegime,
+    specialTaxRegime, simplesNacionalTaxRegime -- nao por nota).
+
+    Confirmado ao vivo (Belem, CNPJ 49055093000140, erro E188 "Opcao simples
+    nacional conflita com o regime especial de tributacao informado"): sem
+    esses campos a prefeitura assume um regime especial (05-MEI ou 06-ME/EPP)
+    por conta propria, que conflita com a ausencia de "optante pelo Simples"
+    do nosso lado. Valores de enum confirmados na doc da Spedy
+    (alterar-empresa)."""
+    if empresa.op_simp_nac == 1:
+        return {"taxRegime": "regimeNormal", "specialTaxRegime": "noSpecialRegime"}
+    if empresa.op_simp_nac == 2:
+        return {"taxRegime": "simplesNacionalMEI", "specialTaxRegime": "individualMicroenterprise"}
+    dados: dict = {"taxRegime": "simplesNacional", "specialTaxRegime": "microenterpriseAndSmallBusiness"}
+    if empresa.regime_apuracao_sn in _MAPA_REGIME_APURACAO_SN:
+        dados["simplesNacionalTaxRegime"] = _MAPA_REGIME_APURACAO_SN[empresa.regime_apuracao_sn]
+    return dados
+
+
 def _chave_mestre(ambiente: str, settings: Settings) -> str:
     chave = (
         settings.spedy_api_key_master_producao if ambiente == "producao"
@@ -49,6 +77,7 @@ async def provisionar_empresa(
             "number": empresa.numero or "S/N",
             "city": {"code": empresa.municipio_ibge},
         },
+        **montar_dados_regime_tributario(empresa),
     }
 
     cliente_mestre = SpedyClient(ambiente, chave_mestre)

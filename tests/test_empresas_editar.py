@@ -404,6 +404,18 @@ async def test_segunda_edicao_sem_provedor_emissao_mantem_spedy(db_session, monk
 
     monkeypatch.setattr(empresas_router, "provisionar_empresa", _provisionar_falso)
 
+    class _ClienteSpedyFalso:
+        def __init__(self, ambiente, api_key):
+            pass
+
+        async def alterar_empresa(self, spedy_empresa_id, dados):
+            return {}
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(empresas_router, "SpedyClient", _ClienteSpedyFalso)
+
     app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
     try:
         transport = ASGITransport(app=app)
@@ -440,6 +452,76 @@ async def test_segunda_edicao_sem_provedor_emissao_mantem_spedy(db_session, monk
     await db_session.refresh(empresa)
     assert empresa.provedor_emissao == "spedy"
     assert empresa.spedy_empresa_id == "spedy-empresa-1"
+
+
+@pytest.mark.asyncio
+async def test_segunda_edicao_de_empresa_ja_na_spedy_sincroniza_regime_tributario(db_session, monkeypatch):
+    # Regressao do erro E188 em Belem: taxRegime/specialTaxRegime sao
+    # campos do CADASTRO da empresa na Spedy (nao da nota) -- uma empresa
+    # provisionada antes desses campos existirem no nosso payload fica com
+    # o cadastro desatualizado na Spedy pra sempre, a nao ser que toda
+    # edicao normal (que nao reprovisiona) tambem sincronize isso.
+    fernet_key = get_settings().fernet_key
+    empresa, titular = await criar_empresa_titular(
+        db_session, cnpj="99988877000155",
+        certificado_pfx_cifrado=cifrar("pfx-fake-base64", fernet_key),
+        certificado_senha_cifrada=cifrar("senha123", fernet_key),
+    )
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    import app.routers.empresas as empresas_router
+
+    async def _provisionar_falso(empresa_, pfx_base64, senha, settings):
+        return "spedy-empresa-1", "spedy-chave-1"
+
+    monkeypatch.setattr(empresas_router, "provisionar_empresa", _provisionar_falso)
+
+    chamadas = []
+
+    class _ClienteSpedyFalso:
+        def __init__(self, ambiente, api_key):
+            pass
+
+        async def alterar_empresa(self, spedy_empresa_id, dados):
+            chamadas.append((spedy_empresa_id, dados))
+            return {}
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(empresas_router, "SpedyClient", _ClienteSpedyFalso)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            primeira = await client.put(
+                "/api/empresas/mim",
+                data={
+                    **_form_edicao(cnpj="99988877000155"),
+                    "provedor_emissao": "spedy", "razao_social": "EMPRESA TESTE LTDA",
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert primeira.status_code == 200
+            # o provisionamento inicial ja manda o regime junto (ver
+            # test_spedy_provisionamento.py) -- a sincronizacao aqui e so
+            # pra edicoes SEGUINTES, que nao reprovisionam.
+            assert chamadas == []
+
+            segunda = await client.put(
+                "/api/empresas/mim",
+                data=_form_edicao(cnpj="99988877000155", op_simp_nac="2"),
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert segunda.status_code == 200
+    finally:
+        app.dependency_overrides.clear()
+
+    assert len(chamadas) == 1
+    spedy_empresa_id, dados = chamadas[0]
+    assert spedy_empresa_id == "spedy-empresa-1"
+    assert dados == {"taxRegime": "simplesNacionalMEI", "specialTaxRegime": "individualMicroenterprise"}
 
 
 @pytest.mark.asyncio

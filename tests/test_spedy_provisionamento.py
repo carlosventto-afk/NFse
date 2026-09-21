@@ -85,6 +85,12 @@ async def test_provisionar_empresa_chama_os_tres_passos_na_ordem(monkeypatch):
     assert len([c for c in chamadas if c[0] == "init"]) == 1
     assert chamadas[2][2] == b"conteudo-pfx"  # pfx decodificado de base64
     assert chamadas[2][3] == "senha123"
+    # Regressao do erro E188 em Belem: sem taxRegime/specialTaxRegime no
+    # cadastro da empresa na Spedy, a prefeitura assume um regime especial
+    # que conflita com a ausencia de "optante pelo Simples".
+    dados_criar_empresa = chamadas[1][1]
+    assert dados_criar_empresa["taxRegime"] == "simplesNacional"
+    assert dados_criar_empresa["specialTaxRegime"] == "microenterpriseAndSmallBusiness"
 
 
 @pytest.mark.asyncio

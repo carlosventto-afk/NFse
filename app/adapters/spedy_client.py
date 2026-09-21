@@ -68,6 +68,10 @@ class SpedyClient:
         itens = corpo.get("items") or []
         return [item for item in itens if item.get("federalTaxNumber") == cnpj]
 
+    async def alterar_empresa(self, spedy_empresa_id: str, dados: dict) -> dict:
+        resp = await self._request("PUT", f"/companies/{spedy_empresa_id}", json=dados)
+        return self._handle_estrito(resp)
+
     async def excluir_empresa(self, spedy_empresa_id: str) -> None:
         resp = await self._request("DELETE", f"/companies/{spedy_empresa_id}")
         self._handle_estrito(resp)
