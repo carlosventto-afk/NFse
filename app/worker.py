@@ -73,6 +73,12 @@ async def _processar_pendente_spedy(
         await _marcar_rejeitada(session, emissao, "DADOS_INVALIDOS", str(exc))
         return True
 
+    # Log do payload de saida (sem token/API key -- essa vai so no header via
+    # SpedyClient, nunca no corpo) para poder anexar como evidencia em
+    # chamados com a Spedy/prefeitura quando uma emissao e rejeitada.
+    logger.info(
+        "emissao %s: payload enviado a Spedy: %s", emissao.id, json.dumps(payload, ensure_ascii=False),
+    )
     try:
         bruta = await cliente.emitir_nfse(payload)
     except SpedyError as exc:
