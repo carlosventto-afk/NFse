@@ -97,6 +97,85 @@ async def test_processar_uma_pendente_via_spedy_rejeicao_sincrona(db_session, mo
 
 
 @pytest.mark.asyncio
+async def test_processar_uma_pendente_via_spedy_grava_requisicao_bruta_ao_aceitar(db_session, monkeypatch):
+    # O JSON exato enviado a Spedy precisa ficar gravado (nao so no log
+    # efemero do worker) para poder ser exportado como evidencia junto a
+    # Spedy/prefeitura quando uma emissao e rejeitada -- mesma motivacao do
+    # resposta_bruta, so que do lado da requisicao.
+    emissao = await _empresa_spedy_e_emissao_pendente(db_session)
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def emitir_nfse(self, payload):
+            return {"_http_status": 200, "id": "nota-spedy-1", "status": "enqueued"}
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(worker, "SpedyClient", ClienteFalso)
+
+    processou = await worker.processar_uma_pendente(db_session)
+
+    assert processou is True
+    await db_session.refresh(emissao)
+    assert emissao.requisicao_bruta is not None
+    assert json.loads(emissao.requisicao_bruta)["integrationId"] == str(emissao.id)
+
+
+@pytest.mark.asyncio
+async def test_processar_uma_pendente_via_spedy_grava_requisicao_bruta_ao_rejeitar(db_session, monkeypatch):
+    emissao = await _empresa_spedy_e_emissao_pendente(db_session)
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def emitir_nfse(self, payload):
+            return {"_http_status": 400, "processingDetail": {"message": "Atividade nao informada"}}
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(worker, "SpedyClient", ClienteFalso)
+
+    processou = await worker.processar_uma_pendente(db_session)
+
+    assert processou is True
+    await db_session.refresh(emissao)
+    assert emissao.requisicao_bruta is not None
+    assert json.loads(emissao.requisicao_bruta)["integrationId"] == str(emissao.id)
+
+
+@pytest.mark.asyncio
+async def test_processar_uma_pendente_via_spedy_grava_requisicao_bruta_em_falha_de_transporte(db_session, monkeypatch):
+    # Mesmo quando a Spedy nunca responde (timeout/DNS), o payload que a
+    # gente TENTOU enviar precisa ficar gravado -- e a unica evidencia que
+    # sobra desse lado pra investigar com a Spedy.
+    emissao = await _empresa_spedy_e_emissao_pendente(db_session)
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def emitir_nfse(self, payload):
+            raise SpedyError("falha de rede com a Spedy (ConnectTimeout)")
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(worker, "SpedyClient", ClienteFalso)
+
+    processou = await worker.processar_uma_pendente(db_session)
+
+    assert processou is True
+    await db_session.refresh(emissao)
+    assert emissao.requisicao_bruta is not None
+    assert json.loads(emissao.requisicao_bruta)["integrationId"] == str(emissao.id)
+
+
+@pytest.mark.asyncio
 async def test_processar_uma_pendente_via_spedy_falha_de_transporte(db_session, monkeypatch):
     emissao = await _empresa_spedy_e_emissao_pendente(db_session)
 

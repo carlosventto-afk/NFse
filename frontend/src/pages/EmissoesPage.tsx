@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   cancelarEmissao, emitirEmissao, emitirEmissoesLote, excluirEmissao, excluirEmissoesLote, listarEmissoes,
-  urlDownloadPdfsLote, urlDownloadXmlsLote, urlPdf, urlRespostaBruta, urlXml,
+  urlDownloadPdfsLote, urlDownloadXmlsLote, urlPdf, urlRequisicaoBruta, urlRespostaBruta, urlXml,
 } from "../api/emissoes";
 import { obterToken } from "../api/client";
 import type { Emissao } from "../api/types";
@@ -310,6 +310,12 @@ export default function EmissoesPage() {
                             onClick={() => baixar(urlRespostaBruta(emissao.id), `RESPOSTA_${emissao.serie}_${emissao.numero}.json`)}
                           >
                             Resposta SEFIN
+                          </button>
+                          <button
+                            className="secundario"
+                            onClick={() => baixar(urlRequisicaoBruta(emissao.id), `REQUISICAO_${emissao.serie}_${emissao.numero}.json`)}
+                          >
+                            Requisição enviada
                           </button>
                         </>
                       )}

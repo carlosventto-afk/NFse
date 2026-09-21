@@ -182,6 +182,24 @@ async def baixar_resposta_bruta(
     )
 
 
+@router.get("/{emissao_id}/requisicao-bruta")
+async def baixar_requisicao_bruta(
+    emissao_id: uuid.UUID,
+    contexto: ContextoAutenticado = Depends(get_empresa_ativa),
+    session: AsyncSession = Depends(get_db),
+) -> Response:
+    emissao = await session.get(Emissao, emissao_id)
+    if emissao is None or emissao.empresa_id != contexto.empresa_id or not emissao.requisicao_bruta:
+        raise HTTPException(status_code=404, detail="Requisicao bruta nao disponivel para esta emissao")
+
+    return Response(
+        content=emissao.requisicao_bruta, media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="REQUISICAO_{emissao.serie}_{emissao.numero}.json"'
+        },
+    )
+
+
 async def _gerar_pdf_bytes(emissao: Emissao, empresa: Empresa, settings: Settings) -> bytes:
     # AmbienteEnum(...) normaliza o valor recem-carregado do banco — ver
     # comentario equivalente no worker.py (Task 10) e o bug original na Task 5.

@@ -62,6 +62,10 @@ export function urlRespostaBruta(id: string): string {
   return `/api/emissoes/${id}/resposta-bruta`;
 }
 
+export function urlRequisicaoBruta(id: string): string {
+  return `/api/emissoes/${id}/requisicao-bruta`;
+}
+
 export function urlDownloadXmlsLote(): string {
   return `/api/emissoes/download-xmls`;
 }

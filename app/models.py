@@ -235,6 +235,7 @@ class Emissao(Base):
     xml_nfse: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     erros: Mapped[str | None] = mapped_column(Text, nullable=True)
     resposta_bruta: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requisicao_bruta: Mapped[str | None] = mapped_column(Text, nullable=True)
     tomador_cpf_cnpj: Mapped[str | None] = mapped_column(String(14), nullable=True)
     tomador_nome: Mapped[str | None] = mapped_column(String(300), nullable=True)
     tomador_email: Mapped[str | None] = mapped_column(String(80), nullable=True)

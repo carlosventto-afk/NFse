@@ -137,6 +137,52 @@ async def test_baixar_resposta_bruta_devolve_json_da_sefin(db_session):
 
 
 @pytest.mark.asyncio
+async def test_baixar_requisicao_bruta_devolve_json_enviado_a_spedy(db_session):
+    empresa, usuario = await criar_empresa_titular(db_session)
+    emissao = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.manual, status=StatusEmissao.rejeitada,
+        serie="1", numero=2, erros="L999",
+        requisicao_bruta='{"description": "Lavagem", "cnaeCode": "9601701"}',
+        descricao="Lavagem", valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    db_session.add(emissao)
+    await db_session.commit()
+    await db_session.refresh(emissao)
+    token = criar_token(usuario, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.get(
+                f"/api/emissoes/{emissao.id}/requisicao-bruta", headers={"Authorization": f"Bearer {token}"}
+            )
+        assert resposta.status_code == 200
+        assert resposta.json() == {"description": "Lavagem", "cnaeCode": "9601701"}
+        assert resposta.headers["content-type"].startswith("application/json")
+        assert "REQUISICAO_1_2.json" in resposta.headers["content-disposition"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_baixar_requisicao_bruta_devolve_404_quando_nao_disponivel(db_session):
+    empresa, usuario, emissao = await _empresa_usuario_emissao_autorizada(db_session)
+    token = criar_token(usuario, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.get(
+                f"/api/emissoes/{emissao.id}/requisicao-bruta", headers={"Authorization": f"Bearer {token}"}
+            )
+        assert resposta.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
 async def test_baixar_resposta_bruta_devolve_404_quando_nao_disponivel(db_session):
     empresa, usuario, emissao = await _empresa_usuario_emissao_autorizada(db_session)
     token = criar_token(usuario, empresa_id=empresa.id, papel=PapelUsuario.admin)
