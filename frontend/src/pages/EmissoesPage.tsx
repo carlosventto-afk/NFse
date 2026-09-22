@@ -5,6 +5,7 @@ import {
 } from "../api/emissoes";
 import { obterToken } from "../api/client";
 import type { Emissao } from "../api/types";
+import MenuAcoes from "../components/MenuAcoes";
 
 const STATUS = [
   "", "aguardando_emissao", "pendente", "autorizada", "rejeitada", "cancelada",
@@ -285,38 +286,39 @@ export default function EmissoesPage() {
                         <span className="sem-erro">—</span>
                       )}
                     </td>
-                    <td>
+                    <td className="celula-acoes">
                       {emissao.status === "aguardando_emissao" && (
-                        <button onClick={() => emitir(emissao.id)}>Emitir</button>
+                        <>
+                          <button onClick={() => emitir(emissao.id)}>Emitir</button>
+                          <button className="perigo" onClick={() => excluir(emissao.id)}>Excluir</button>
+                        </>
+                      )}
+                      {emissao.status === "pendente" && (
+                        <button className="perigo" onClick={() => excluir(emissao.id)}>Excluir</button>
                       )}
                       {emissao.status === "autorizada" && (
                         <>
-                          <button className="secundario" onClick={() => baixar(urlXml(emissao.id), `NFSe_${emissao.serie}_${emissao.numero}.xml`)}>XML</button>
                           <button className="secundario" onClick={() => baixar(urlPdf(emissao.id), `NFSe_${emissao.serie}_${emissao.numero}.pdf`)}>PDF</button>
-                          <button className="perigo" onClick={() => setCancelandoId(emissao.id)}>Cancelar</button>
+                          <MenuAcoes
+                            itens={[
+                              { rotulo: "XML", onClick: () => baixar(urlXml(emissao.id), `NFSe_${emissao.serie}_${emissao.numero}.xml`) },
+                              { rotulo: "Cancelar", perigo: true, onClick: () => setCancelandoId(emissao.id) },
+                              { rotulo: "Excluir", perigo: true, onClick: () => excluir(emissao.id) },
+                            ]}
+                          />
                         </>
                       )}
                       {emissao.status === "rejeitada" && (
                         <>
                           <button onClick={() => emitir(emissao.id)}>Reemitir</button>
-                          <button
-                            className="secundario"
-                            onClick={() => baixar(urlXml(emissao.id), `DPS_${emissao.serie}_${emissao.numero}.xml`)}
-                          >
-                            XML
-                          </button>
-                          <button
-                            className="secundario"
-                            onClick={() => baixar(urlRespostaBruta(emissao.id), `RESPOSTA_${emissao.serie}_${emissao.numero}.json`)}
-                          >
-                            Resposta SEFIN
-                          </button>
-                          <button
-                            className="secundario"
-                            onClick={() => baixar(urlRequisicaoBruta(emissao.id), `REQUISICAO_${emissao.serie}_${emissao.numero}.json`)}
-                          >
-                            Requisição enviada
-                          </button>
+                          <MenuAcoes
+                            itens={[
+                              { rotulo: "XML", onClick: () => baixar(urlXml(emissao.id), `DPS_${emissao.serie}_${emissao.numero}.xml`) },
+                              { rotulo: "Resposta SEFIN", onClick: () => baixar(urlRespostaBruta(emissao.id), `RESPOSTA_${emissao.serie}_${emissao.numero}.json`) },
+                              { rotulo: "Requisição enviada", onClick: () => baixar(urlRequisicaoBruta(emissao.id), `REQUISICAO_${emissao.serie}_${emissao.numero}.json`) },
+                              { rotulo: "Excluir", perigo: true, onClick: () => excluir(emissao.id) },
+                            ]}
+                          />
                         </>
                       )}
                       {(
@@ -329,12 +331,6 @@ export default function EmissoesPage() {
                         >
                           Resposta SEFIN
                         </button>
-                      )}
-                      {(
-                        emissao.status === "aguardando_emissao" || emissao.status === "pendente"
-                        || emissao.status === "rejeitada" || emissao.status === "autorizada"
-                      ) && (
-                        <button className="perigo" onClick={() => excluir(emissao.id)}>Excluir</button>
                       )}
                     </td>
                   </tr>

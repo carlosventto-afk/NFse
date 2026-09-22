@@ -194,6 +194,34 @@ hr { border: none; border-top: 1px solid var(--borda); margin: 1.25rem 0; }
 .painel-tabela { background: var(--superficie); border: 1px solid var(--borda); border-radius: 8px; overflow: hidden; }
 .rolagem-tabela { overflow-x: auto; }
 .rolagem-tabela table { min-width: 760px; }
+.celula-acoes { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+.menu-acoes-painel {
+  position: fixed;
+  z-index: 40;
+  min-width: 190px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+}
+.menu-acoes-item {
+  width: 100%;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--texto);
+  font-weight: 500;
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+}
+.menu-acoes-item:hover { background: var(--superficie-alt); }
+.menu-acoes-item.perigo { color: var(--perigo); border-color: transparent; }
+.menu-acoes-item.perigo:hover { background: var(--perigo-bg); border-color: transparent; }
 
 /* -- shell: sidebar + topbar -- */
 
