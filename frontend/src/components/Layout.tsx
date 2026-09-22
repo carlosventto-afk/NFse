@@ -21,10 +21,19 @@ const GRUPOS_NAV = [
   },
 ];
 
+const CHAVE_RECOLHIDA = "nfse.menuRecolhido";
+
 export default function Layout() {
   const { payload, empresas, logout } = useAuth();
   const navegar = useNavigate();
   const [menuAberto, setMenuAberto] = useState(false);
+  const [recolhido, setRecolhido] = useState(() => {
+    try {
+      return localStorage.getItem(CHAVE_RECOLHIDA) === "1";
+    } catch {
+      return false;
+    }
+  });
 
   const empresaAtiva = empresas.find((e) => e.empresa_id === payload?.empresa_id);
 
@@ -33,12 +42,32 @@ export default function Layout() {
     navegar("/login");
   }
 
+  function alternarRecolhido() {
+    setRecolhido((atual) => {
+      const novo = !atual;
+      try {
+        localStorage.setItem(CHAVE_RECOLHIDA, novo ? "1" : "0");
+      } catch {
+        // localStorage indisponivel (modo privado etc.) -- preferencia so nao persiste
+      }
+      return novo;
+    });
+  }
+
   return (
-    <div className={`shell${menuAberto ? " menu-aberto" : ""}`}>
+    <div className={`shell${menuAberto ? " menu-aberto" : ""}${recolhido ? " menu-recolhido" : ""}`}>
       <aside className="sidebar">
         <div className="marca">
           <span className="marca-simbolo">🧾</span>
           <span className="marca-nome">NFS-e</span>
+          <button
+            className="btn-recolher"
+            onClick={alternarRecolhido}
+            aria-label={recolhido ? "Expandir menu" : "Recolher menu"}
+            title={recolhido ? "Expandir menu" : "Recolher menu"}
+          >
+            ☰
+          </button>
         </div>
         {GRUPOS_NAV.map((grupo) => (
           <nav className="nav-grupo" key={grupo.rotulo}>
@@ -49,8 +78,10 @@ export default function Layout() {
                 to={item.to}
                 className={({ isActive }) => `nav-item${isActive ? " ativo" : ""}`}
                 onClick={() => setMenuAberto(false)}
+                title={recolhido ? item.label : undefined}
               >
-                <span className="icone">{item.icone}</span> {item.label}
+                <span className="icone">{item.icone}</span>
+                <span className="nav-texto">{item.label}</span>
               </NavLink>
             ))}
           </nav>

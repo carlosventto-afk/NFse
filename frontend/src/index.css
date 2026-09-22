@@ -238,13 +238,29 @@ hr { border: none; border-top: 1px solid var(--borda); margin: 1.25rem 0; }
   padding: 1.1rem 0.85rem;
   position: fixed;
   top: 0; bottom: 0; left: 0;
-  transition: transform 0.2s ease;
+  transition: transform 0.2s ease, width 0.18s ease;
   z-index: 20;
 }
 
-.marca { display: flex; align-items: baseline; gap: 8px; padding: 0 0.6rem; }
+.marca { display: flex; align-items: center; gap: 8px; padding: 0 0.6rem; }
 .marca-simbolo { font-size: 20px; }
-.marca-nome { color: var(--sidebar-texto-ativo); font-weight: 600; font-size: 15px; }
+.marca-nome { color: var(--sidebar-texto-ativo); font-weight: 600; font-size: 15px; flex: 1; }
+
+.btn-recolher {
+  background: transparent;
+  border: none;
+  color: var(--sidebar-rotulo);
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 14px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.btn-recolher:hover { background: rgba(255, 255, 255, 0.08); color: var(--sidebar-texto-ativo); }
 
 .nav-grupo { display: flex; flex-direction: column; gap: 2px; }
 .nav-rotulo { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: var(--sidebar-rotulo); padding: 6px 10px 4px; }
@@ -266,7 +282,7 @@ hr { border: none; border-top: 1px solid var(--borda); margin: 1.25rem 0; }
 .nav-item.ativo { background: var(--sidebar-bg-ativo); color: var(--sidebar-texto-ativo); }
 .nav-item .icone { font-size: 15px; width: 18px; text-align: center; }
 
-.conteudo { flex: 1; margin-left: 232px; display: flex; flex-direction: column; min-width: 0; }
+.conteudo { flex: 1; margin-left: 232px; display: flex; flex-direction: column; min-width: 0; transition: margin-left 0.18s ease; }
 
 .topbar {
   background: var(--superficie);
@@ -310,11 +326,26 @@ hr { border: none; border-top: 1px solid var(--borda); margin: 1.25rem 0; }
 
 .conteudo main { padding: 1.5rem 1.75rem 3rem; flex: 1; }
 
+@media (min-width: 861px) {
+  /* Recolher pra uma trilha so de icones e coisa de tela larga -- no
+     mobile a sidebar ja e um overlay full-width que abre/fecha (menu-aberto
+     abaixo), os dois modos juntos so confundiriam. */
+  .shell.menu-recolhido .sidebar { width: 68px; }
+  .shell.menu-recolhido .conteudo { margin-left: 68px; }
+  .shell.menu-recolhido .marca { justify-content: center; padding: 0; }
+  .shell.menu-recolhido .marca-nome,
+  .shell.menu-recolhido .nav-rotulo,
+  .shell.menu-recolhido .nav-texto { display: none; }
+  .shell.menu-recolhido .nav-item { justify-content: center; padding: 8px 0; }
+  .shell.menu-recolhido .nav-item .icone { width: auto; }
+}
+
 @media (max-width: 860px) {
   .sidebar { transform: translateX(-100%); box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25); }
   .shell.menu-aberto .sidebar { transform: translateX(0); }
   .conteudo { margin-left: 0; }
   .btn-menu { display: inline-flex; }
+  .btn-recolher { display: none; }
   .topbar { padding: 0.7rem 1rem; }
   .conteudo main { padding: 1rem 1rem 2.5rem; }
   .topbar-conta .cnpj-rotulo { display: none; }
