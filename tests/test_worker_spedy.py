@@ -584,6 +584,37 @@ async def test_confirmacao_cancelamento_spedy_ainda_processando_nao_conta_como_t
 
 
 @pytest.mark.asyncio
+async def test_confirmacao_cancelamento_spedy_grava_resposta_bruta_mesmo_sem_resolver(db_session, monkeypatch):
+    # Caso real: uma nota ficou presa em "cancelamento_aguardando_confirmacao"
+    # por mais de um dia sem NENHUMA evidencia acessivel do que a Spedy
+    # estava respondendo de verdade nessa consulta -- so log efemero. A
+    # resposta crua precisa ficar gravada a cada tentativa (nao so quando
+    # finalmente resolve), pro "Resposta SEFIN" mostrar o estado atual.
+    emissao = await _emissao_cancelamento_pendente_spedy(db_session)
+    emissao.status = StatusEmissao.cancelamento_aguardando_confirmacao
+    await db_session.commit()
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def consultar_nfse(self, spedy_nota_id):
+            return {"_http_status": 200, "status": "canceling"}
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(worker, "SpedyClient", ClienteFalso)
+
+    processou = await worker.processar_um_cancelamento_aguardando_confirmacao_spedy(db_session)
+
+    assert processou is False
+    await db_session.refresh(emissao)
+    assert emissao.resposta_bruta is not None
+    assert json.loads(emissao.resposta_bruta) == {"_http_status": 200, "status": "canceling"}
+
+
+@pytest.mark.asyncio
 async def test_confirmacao_cancelamento_spedy_http_erro_nao_resolve_e_nao_derruba(db_session, monkeypatch):
     # Mirror do teste equivalente pra emissao (Fix I1): 401/403/404 no
     # consultar_nfse nao pode ser confundido com "ainda processando" silencioso.

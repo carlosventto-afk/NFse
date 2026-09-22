@@ -501,6 +501,13 @@ async def processar_um_cancelamento_aguardando_confirmacao_spedy(
         return False
     await cliente.close()
 
+    # Grava a resposta crua a CADA tentativa, nao so quando finalmente
+    # resolve -- uma nota presa em cancelamento_aguardando_confirmacao por
+    # dias nao deixava nenhuma evidencia acessivel do que a Spedy estava
+    # respondendo de verdade (so log efemero). Agora o botao "Resposta
+    # SEFIN" sempre mostra o ultimo estado consultado.
+    emissao.resposta_bruta = json.dumps(bruta, ensure_ascii=False)
+
     http_status = int(bruta.get("_http_status") or 0)
     if http_status >= 400:
         logger.warning(

@@ -320,6 +320,17 @@ export default function EmissoesPage() {
                         </>
                       )}
                       {(
+                        emissao.status === "cancelamento_aguardando_confirmacao"
+                        || emissao.status === "erro_cancelamento"
+                      ) && (
+                        <button
+                          className="secundario"
+                          onClick={() => baixar(urlRespostaBruta(emissao.id), `RESPOSTA_${emissao.serie}_${emissao.numero}.json`)}
+                        >
+                          Resposta SEFIN
+                        </button>
+                      )}
+                      {(
                         emissao.status === "aguardando_emissao" || emissao.status === "pendente"
                         || emissao.status === "rejeitada" || emissao.status === "autorizada"
                       ) && (
