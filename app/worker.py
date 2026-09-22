@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.adapters.dps_builder import DadosEmissao, montar_dps_data
 from app.adapters.spedy_client import SpedyClient, SpedyError
 from app.adapters.spedy_payload import montar_payload_spedy
-from app.adapters.spedy_resposta import chave_acesso_de, interpretar_status_emissao
+from app.adapters.spedy_resposta import chave_acesso_de, interpretar_status_cancelamento, interpretar_status_emissao
 from app.config import Settings, get_settings
 from app.crypto import decifrar
 from app.models import AmbienteEnum, Emissao, Empresa, ProvedorEmissao, StatusEmissao
@@ -518,10 +518,23 @@ async def processar_um_cancelamento_aguardando_confirmacao_spedy(
         await session.commit()
         return False
 
-    if bruta.get("status") == "canceled":
+    status_cancelamento = interpretar_status_cancelamento(bruta)
+    if status_cancelamento == "canceled":
         emissao.status = StatusEmissao.cancelada
         emissao.cancelada_em = datetime.now(timezone.utc)
         await session.commit()
+        return True
+    if status_cancelamento == "failed":
+        # A NOTA continua autorizada (interpretar_status_cancelamento so olha
+        # processingDetail) -- so o cancelamento em si foi recusado. Sem
+        # tratar como terminal, a linha ficava presa "aguardando confirmacao"
+        # pra sempre (caso real: mais de 1 dia parada, prazo de cancelamento
+        # expirado na prefeitura).
+        detalhe = bruta.get("processingDetail") or {}
+        await _marcar_erro_cancelamento(
+            session, emissao, detalhe.get("code") or "SPEDY",
+            detalhe.get("message") or "Cancelamento recusado pela Spedy",
+        )
         return True
 
     emissao.atualizada_em = datetime.now(timezone.utc)

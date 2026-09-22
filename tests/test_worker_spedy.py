@@ -615,6 +615,45 @@ async def test_confirmacao_cancelamento_spedy_grava_resposta_bruta_mesmo_sem_res
 
 
 @pytest.mark.asyncio
+async def test_confirmacao_cancelamento_spedy_recusado_definitivamente_marca_erro(db_session, monkeypatch):
+    # Caso real (Belem): a Spedy devolve status="authorized" (a nota em si
+    # continua autorizada) mas processingDetail.status="failed" quando o
+    # CANCELAMENTO especificamente e recusado (prazo expirado, L999). Antes
+    # dessa correcao a nota ficava presa em cancelamento_aguardando_confirmacao
+    # pra sempre, porque so "status": "canceled" era tratado como terminal.
+    emissao = await _emissao_cancelamento_pendente_spedy(db_session)
+    emissao.status = StatusEmissao.cancelamento_aguardando_confirmacao
+    await db_session.commit()
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def consultar_nfse(self, spedy_nota_id):
+            return {
+                "_http_status": 200, "status": "authorized",
+                "processingDetail": {
+                    "status": "failed", "code": "L999",
+                    "message": "O prazo para cancelamento desta nota expirou.",
+                },
+            }
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(worker, "SpedyClient", ClienteFalso)
+
+    processou = await worker.processar_um_cancelamento_aguardando_confirmacao_spedy(db_session)
+
+    assert processou is True
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.erro_cancelamento
+    erros = json.loads(emissao.erros)
+    assert erros[0]["codigo"] == "L999"
+    assert "prazo" in erros[0]["titulo"]
+
+
+@pytest.mark.asyncio
 async def test_confirmacao_cancelamento_spedy_http_erro_nao_resolve_e_nao_derruba(db_session, monkeypatch):
     # Mirror do teste equivalente pra emissao (Fix I1): 401/403/404 no
     # consultar_nfse nao pode ser confundido com "ainda processando" silencioso.

@@ -17,6 +17,21 @@ def interpretar_status_emissao(bruta: dict) -> str:
     return "pending"
 
 
+def interpretar_status_cancelamento(bruta: dict) -> str:
+    """Devolve "canceled", "failed" ou "pending".
+
+    Diferente de interpretar_status_emissao: o campo `status` de nivel
+    superior e o status da NOTA em si, que continua "authorized" mesmo
+    quando so o CANCELAMENTO e recusado (confirmado ao vivo em Belem: prazo
+    de cancelamento expirado, L999) -- o resultado do cancelamento vem em
+    processingDetail.status."""
+    if bruta.get("status") == "canceled":
+        return "canceled"
+    if (bruta.get("processingDetail") or {}).get("status") == "failed":
+        return "failed"
+    return "pending"
+
+
 def chave_acesso_de(bruta: dict) -> str | None:
     for chave in ("accessKey", "chaveAcesso", "nfseAccessKey"):
         valor = bruta.get(chave)
