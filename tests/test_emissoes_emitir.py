@@ -1,4 +1,5 @@
 import functools
+import json
 from datetime import date
 from decimal import Decimal
 
@@ -232,6 +233,32 @@ async def test_reemitir_nota_rejeitada_individual(db_session):
 
     await db_session.refresh(emissao)
     assert emissao.status == StatusEmissao.pendente
+
+
+@pytest.mark.asyncio
+async def test_reemitir_nota_rejeitada_limpa_erro_da_tentativa_anterior(db_session):
+    # Sem isso o erro antigo (ex.: E188) fica preso na coluna mesmo depois
+    # do usuario clicar Reemitir, dando a falsa impressao de que a nota
+    # ainda esta com problema enquanto o worker reprocessa.
+    empresa, titular, emissao = await _empresa_titular_e_emissao(db_session, StatusEmissao.rejeitada)
+    emissao.erros = json.dumps([{"codigo": "E188", "titulo": "Opcao simples nacional conflita..."}])
+    await db_session.commit()
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                f"/api/emissoes/{emissao.id}/emitir",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 200
+    finally:
+        app.dependency_overrides.clear()
+
+    await db_session.refresh(emissao)
+    assert emissao.erros is None
 
 
 @pytest.mark.asyncio

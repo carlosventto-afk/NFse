@@ -487,8 +487,11 @@ async def emitir_emissao(
     # So muda o status pra "pendente" -- o worker (loop_worker) e quem de
     # fato processa, do mesmo jeito que ja faz pra emissao manual/webhook.
     # Evita duplicar a logica de emissao aqui e mantem o request rapido (nao
-    # bloqueia esperando a SEFIN/Spedy responder).
+    # bloqueia esperando a SEFIN/Spedy responder). Limpa o erro da tentativa
+    # anterior na hora -- senao ele fica preso na tela ate o worker terminar
+    # de reprocessar, parecendo que a nota ainda esta com problema.
     emissao.status = StatusEmissao.pendente
+    emissao.erros = None
     await session.commit()
     await session.refresh(emissao)
     return emissao
@@ -508,6 +511,7 @@ async def emitir_emissoes_em_lote(
         if emissao.status not in (StatusEmissao.aguardando_emissao, StatusEmissao.rejeitada):
             continue
         emissao.status = StatusEmissao.pendente
+        emissao.erros = None
         emitidas += 1
     await session.commit()
     return EmissaoLoteOut(emitidas=emitidas, puladas=len(dados.ids) - emitidas)

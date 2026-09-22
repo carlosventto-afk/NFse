@@ -315,6 +315,10 @@ async def processar_uma_aguardando_confirmacao_spedy(
     if status == "authorized":
         emissao.status = StatusEmissao.autorizada
         emissao.chave_acesso = chave_acesso_de(bruta)
+        # Limpa o erro da tentativa REJEITADA anterior (se houve reemissao) --
+        # senao uma nota ja autorizada continua mostrando na tela o erro
+        # antigo, como se ainda tivesse problema.
+        emissao.erros = None
         await session.commit()
         return True
     if status == "rejected":

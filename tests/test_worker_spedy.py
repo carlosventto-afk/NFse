@@ -249,6 +249,36 @@ async def test_confirmacao_spedy_marca_autorizada(db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_confirmacao_spedy_autorizada_limpa_erro_de_tentativa_anterior(db_session, monkeypatch):
+    # Uma nota que foi rejeitada e reemitida com sucesso nao pode continuar
+    # mostrando na tela o erro da tentativa ANTERIOR -- confunde o usuario
+    # fazendo parecer que uma nota ja autorizada ainda tem problema (caso
+    # real: Belem, erro E188 que ficou preso na coluna mesmo apos autorizar).
+    emissao = await _emissao_aguardando_confirmacao(db_session)
+    emissao.erros = json.dumps([{"codigo": "E188", "titulo": "Opcao simples nacional conflita..."}])
+    await db_session.commit()
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def consultar_nfse(self, spedy_nota_id):
+            return {"_http_status": 200, "status": "authorized", "accessKey": "chave-final-1"}
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(worker, "SpedyClient", ClienteFalso)
+
+    processou = await worker.processar_uma_aguardando_confirmacao_spedy(db_session)
+
+    assert processou is True
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.autorizada
+    assert emissao.erros is None
+
+
+@pytest.mark.asyncio
 async def test_confirmacao_spedy_marca_rejeitada(db_session, monkeypatch):
     emissao = await _emissao_aguardando_confirmacao(db_session)
 
