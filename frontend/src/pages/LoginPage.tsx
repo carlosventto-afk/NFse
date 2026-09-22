@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import LogoVTR from "../components/LogoVTR";
 
 export default function LoginPage() {
   const { login, payload } = useAuth();
@@ -31,7 +32,7 @@ export default function LoginPage() {
   return (
     <div className="tela-auth">
       <div className="cartao">
-        <div className="marca-auth"><span className="simbolo">🧾</span> NFS-e</div>
+        <div className="marca-auth"><LogoVTR tamanho={26} /><span className="wordmark">VTR</span> NFS-e</div>
         <h1>Entrar</h1>
         <form onSubmit={enviar}>
           <div className="form-linha">

@@ -6,6 +6,7 @@ import { listarPlanos } from "../api/planos";
 import { convidarTitular } from "../api/convites";
 import { criarUsuario } from "../api/usuarios";
 import type { EmpresaResumo, Plano } from "../api/types";
+import LogoVTR from "../components/LogoVTR";
 
 export default function AdminPlataformaPage() {
   const { trocarEmpresa } = useAuth();
@@ -110,7 +111,7 @@ export default function AdminPlataformaPage() {
   return (
     <div className="tela-auth">
       <div className="cartao" style={{ maxWidth: 720 }}>
-        <div className="marca-auth"><span className="simbolo">🧾</span> NFS-e</div>
+        <div className="marca-auth"><LogoVTR tamanho={26} /><span className="wordmark">VTR</span> NFS-e</div>
         <h1>Administração da plataforma</h1>
 
         {erro && <p className="erro">{erro}</p>}

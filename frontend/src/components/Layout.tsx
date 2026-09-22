@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import LogoVTR from "./LogoVTR";
 
 const GRUPOS_NAV = [
   {
@@ -58,8 +59,10 @@ export default function Layout() {
     <div className={`shell${menuAberto ? " menu-aberto" : ""}${recolhido ? " menu-recolhido" : ""}`}>
       <aside className="sidebar">
         <div className="marca">
-          <span className="marca-simbolo">🧾</span>
-          <span className="marca-nome">NFS-e</span>
+          <LogoVTR variante="contorno" tamanho={26} />
+          <span className="marca-nome">
+            <span className="wordmark">VTR</span> NFS-e
+          </span>
           <button
             className="btn-recolher"
             onClick={alternarRecolhido}

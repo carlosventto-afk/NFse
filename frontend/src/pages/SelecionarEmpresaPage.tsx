@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import LogoVTR from "../components/LogoVTR";
 
 export default function SelecionarEmpresaPage() {
   const { payload, empresas, trocarEmpresa } = useAuth();
@@ -11,7 +12,7 @@ export default function SelecionarEmpresaPage() {
     return (
       <div className="tela-auth">
         <div className="cartao">
-          <div className="marca-auth"><span className="simbolo">🧾</span> NFS-e</div>
+          <div className="marca-auth"><LogoVTR tamanho={26} /><span className="wordmark">VTR</span> NFS-e</div>
           <h1>Administrador da plataforma</h1>
           <p className="ajuda">
             Acesso total: entre em qualquer empresa cadastrada ou convide um
@@ -37,7 +38,7 @@ export default function SelecionarEmpresaPage() {
     return (
       <div className="tela-auth">
         <div className="cartao">
-          <div className="marca-auth"><span className="simbolo">🧾</span> NFS-e</div>
+          <div className="marca-auth"><LogoVTR tamanho={26} /><span className="wordmark">VTR</span> NFS-e</div>
           <h1>Nenhuma empresa cadastrada</h1>
           <p className="ajuda">Cadastre sua primeira empresa para comecar a emitir notas.</p>
           <button onClick={() => navegar("/cadastro-empresa")}>Cadastrar empresa</button>
@@ -49,7 +50,7 @@ export default function SelecionarEmpresaPage() {
   return (
     <div className="tela-auth">
       <div className="cartao">
-        <div className="marca-auth"><span className="simbolo">🧾</span> NFS-e</div>
+        <div className="marca-auth"><LogoVTR tamanho={26} /><span className="wordmark">VTR</span> NFS-e</div>
         <h1>Escolha uma empresa</h1>
         {erro && <p className="erro">{erro}</p>}
         <ul className="lista-empresas">

@@ -1,30 +1,30 @@
 :root {
-  --bg: #f4f6f8;
+  --bg: #f6f2ea;
   --superficie: #ffffff;
-  --superficie-alt: #f8fafc;
-  --borda: #dce3ea;
-  --texto: #1e293b;
-  --texto-suave: #64748b;
-  --sidebar-bg: #15324d;
-  --sidebar-bg-ativo: #1f4468;
-  --sidebar-texto: #c9d6e3;
-  --sidebar-texto-ativo: #ffffff;
-  --sidebar-rotulo: #6e93b2;
-  --acento: #2f6690;
-  --acento-hover: #24506f;
-  --acento-contraste: #ffffff;
+  --superficie-alt: #efe9dc;
+  --borda: #e1d9c8;
+  --texto: #14213d;
+  --texto-suave: #5b6b70;
+  --sidebar-bg: #14213d;
+  --sidebar-bg-ativo: #223a63;
+  --sidebar-texto: #c7d0dc;
+  --sidebar-texto-ativo: #f6f2ea;
+  --sidebar-rotulo: #7c8ca3;
+  --acento: #2fa98c;
+  --acento-hover: #25806b;
+  --acento-contraste: #f6f2ea;
   --perigo: #b3261e;
   --perigo-hover: #8f1e18;
   --perigo-bg: #fbe7e6;
-  --foco: #2f6690;
-  --status-autorizada-bg: #e4f3ea;
-  --status-autorizada-texto: #1f7a4d;
+  --foco: #2fa98c;
+  --status-autorizada-bg: #e0f2ec;
+  --status-autorizada-texto: #1f7a5e;
   --status-pendente-bg: #fbf0dd;
   --status-pendente-texto: #8a5a0a;
   --status-rejeitada-bg: #fbe7e6;
   --status-rejeitada-texto: #a32219;
-  --status-cancelada-bg: #e7eaee;
-  --status-cancelada-texto: #4b5768;
+  --status-cancelada-bg: #e7e5df;
+  --status-cancelada-texto: #5b6b70;
 }
 
 * { box-sizing: border-box; }
@@ -33,20 +33,25 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--texto);
-  font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: "Work Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
-h1, h2 { font-weight: 600; letter-spacing: -0.01em; }
+h1, h2 { font-weight: 700; letter-spacing: -0.01em; }
 h1 { font-size: 20px; margin: 0 0 1rem; }
 h2 { font-size: 16px; margin: 0 0 1rem; }
 
-a { color: var(--acento); }
+a { color: var(--acento-hover); }
+
+.wordmark {
+  font-family: "Manrope", "Work Sans", system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
 
 .num {
-  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
   font-variant-numeric: tabular-nums;
 }
 
@@ -118,8 +123,7 @@ hr { border: none; border-top: 1px solid var(--borda); margin: 1.25rem 0; }
 .tela-auth { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem 1rem; }
 .tela-auth .cartao { margin: 0; width: 100%; }
 
-.marca-auth { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 1.25rem; color: var(--sidebar-bg); font-weight: 600; font-size: 16px; }
-.marca-auth .simbolo { font-size: 22px; }
+.marca-auth { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 1.25rem; color: var(--texto); font-size: 18px; }
 
 .lista-empresas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
 .lista-empresas button { width: 100%; text-align: left; }
@@ -176,7 +180,7 @@ hr { border: none; border-top: 1px solid var(--borda); margin: 1.25rem 0; }
 .pilula.pendente { background: var(--status-pendente-bg); color: var(--status-pendente-texto); }
 .pilula.rejeitada { background: var(--status-rejeitada-bg); color: var(--status-rejeitada-texto); }
 .pilula.cancelada { background: var(--status-cancelada-bg); color: var(--status-cancelada-texto); }
-.pilula.rascunho { background: #e3ecf3; color: var(--acento); }
+.pilula.rascunho { background: var(--superficie-alt); color: var(--texto-suave); }
 
 /* -- totalizador -- */
 
@@ -242,9 +246,9 @@ hr { border: none; border-top: 1px solid var(--borda); margin: 1.25rem 0; }
   z-index: 20;
 }
 
-.marca { display: flex; align-items: center; gap: 8px; padding: 0 0.6rem; }
-.marca-simbolo { font-size: 20px; }
-.marca-nome { color: var(--sidebar-texto-ativo); font-weight: 600; font-size: 15px; flex: 1; }
+.marca { display: flex; align-items: center; gap: 10px; padding: 0 0.6rem; }
+.marca svg { flex-shrink: 0; }
+.marca-nome { color: var(--sidebar-texto-ativo); font-size: 16px; flex: 1; }
 
 .btn-recolher {
   background: transparent;
@@ -252,6 +256,7 @@ hr { border: none; border-top: 1px solid var(--borda); margin: 1.25rem 0; }
   color: var(--sidebar-rotulo);
   width: 26px;
   height: 26px;
+  min-width: 26px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -297,7 +302,7 @@ hr { border: none; border-top: 1px solid var(--borda); margin: 1.25rem 0; }
 }
 
 .topbar-conta { margin-left: auto; display: flex; align-items: center; gap: 0.9rem; font-size: 13px; color: var(--texto-suave); }
-.topbar-conta .cnpj { font-family: "IBM Plex Mono", monospace; color: var(--texto); }
+.topbar-conta .cnpj { font-variant-numeric: tabular-nums; color: var(--texto); }
 
 .link-acao {
   background: transparent;
@@ -332,7 +337,7 @@ hr { border: none; border-top: 1px solid var(--borda); margin: 1.25rem 0; }
      abaixo), os dois modos juntos so confundiriam. */
   .shell.menu-recolhido .sidebar { width: 68px; }
   .shell.menu-recolhido .conteudo { margin-left: 68px; }
-  .shell.menu-recolhido .marca { justify-content: center; padding: 0; }
+  .shell.menu-recolhido .marca { flex-direction: column; justify-content: center; gap: 8px; padding: 0; }
   .shell.menu-recolhido .marca-nome,
   .shell.menu-recolhido .nav-rotulo,
   .shell.menu-recolhido .nav-texto { display: none; }

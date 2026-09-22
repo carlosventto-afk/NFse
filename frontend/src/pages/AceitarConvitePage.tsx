@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { aceitarConvite } from "../api/convites";
+import LogoVTR from "../components/LogoVTR";
 
 export default function AceitarConvitePage() {
   const [parametros] = useSearchParams();
@@ -37,7 +38,7 @@ export default function AceitarConvitePage() {
     return (
       <div className="tela-auth">
         <div className="cartao">
-          <div className="marca-auth"><span className="simbolo">🧾</span> NFS-e</div>
+          <div className="marca-auth"><LogoVTR tamanho={26} /><span className="wordmark">VTR</span> NFS-e</div>
           <h1>Convite aceito</h1>
           <button onClick={() => navegar("/login")}>Ir para o login</button>
         </div>
@@ -48,7 +49,7 @@ export default function AceitarConvitePage() {
   return (
     <div className="tela-auth">
       <div className="cartao">
-        <div className="marca-auth"><span className="simbolo">🧾</span> NFS-e</div>
+        <div className="marca-auth"><LogoVTR tamanho={26} /><span className="wordmark">VTR</span> NFS-e</div>
         <h1>Aceitar convite</h1>
         <p className="ajuda">
           Se voce ja tem uma conta neste sistema, deixe a senha em branco —
