@@ -1,7 +1,9 @@
 import functools
+import io
 from datetime import date
 from decimal import Decimal
 
+import openpyxl
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
@@ -163,18 +165,25 @@ async def test_excluir_emissao_libera_stone_charge_id_para_nova_importacao(db_se
                 f"/api/emissoes/{emissao.id}",
                 headers={"Authorization": f"Bearer {token}"},
             )
+            planilha = openpyxl.Workbook()
+            aba = planilha.active
+            aba.append((
+                "DOCUMENTO", "STONECODE", "DATA DA VENDA", "BANDEIRA", "PRODUTO", "STONE ID",
+                "N DE PARCELAS", "VALOR BRUTO", "ULTIMO STATUS", "DATA DO ULTIMO STATUS",
+            ))
+            aba.append((
+                "49055093000140", "477557478", "30/07/2026 14:30", "Visa", "Credito", "stone-123",
+                "1", "49,90", "Aprovada", "30/07/2026 14:30",
+            ))
+            buffer = io.BytesIO()
+            planilha.save(buffer)
+
             resposta_preview = await client.post(
                 "/api/emissoes/csv/preview",
                 files={
                     "arquivo": (
-                        "relatorio.csv",
-                        (
-                            "﻿CATEGORIA;DATA DA VENDA;DATA DE VENCIMENTO;STONE ID;QTD DE PARCELAS;"
-                            "Nº DA PARCELA;VALOR BRUTO;ÚLTIMO STATUS;DATA DO ÚLTIMO STATUS\n"
-                            "Venda;30/07/2026 14:30:04;31/07/2026;stone-123;1;1;49,90;Pago;"
-                            "30/07/2026 14:30:04\n"
-                        ).encode("utf-8"),
-                        "text/csv",
+                        "relatorio.xlsx", buffer.getvalue(),
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     )
                 },
                 headers={"Authorization": f"Bearer {token}"},

@@ -39,9 +39,9 @@ export default function ImportarCsvPage() {
 
   return (
     <div className="cartao">
-      <h1>Importar CSV da Stone</h1>
+      <h1>Importar vendas da Stone</h1>
       <div className="form-linha">
-        <input type="file" accept=".csv" onChange={(e) => {
+        <input type="file" accept=".xlsx" onChange={(e) => {
           setArquivo(e.target.files?.[0] ?? null);
           setPreview(null);
           setResultado(null);
@@ -56,8 +56,7 @@ export default function ImportarCsvPage() {
           <h2>Previa</h2>
           <p className="num">{preview.total_notas} notas, total R$ {preview.valor_total}</p>
           <p className="ajuda">
-            Ignoradas — status nao pago: {preview.ignoradas.status_nao_pago},
-            categoria nao venda: {preview.ignoradas.categoria_nao_venda},
+            Ignoradas — status nao aprovado: {preview.ignoradas.status_nao_aprovado},
             linha invalida: {preview.ignoradas.linha_invalida},
             ja emitida: {preview.ignoradas.ja_emitida_anteriormente}
           </p>

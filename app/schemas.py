@@ -279,6 +279,10 @@ class EmissaoOut(BaseModel):
     valor: Decimal
     competencia: date
     data_vencimento: date | None
+    produto: str | None
+    tipo_produto: str | None
+    bandeira: str | None
+    codigo_autorizacao: str | None
     erros: str | None
 
     model_config = {"from_attributes": True}

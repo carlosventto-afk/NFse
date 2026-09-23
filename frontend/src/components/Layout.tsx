@@ -9,7 +9,7 @@ const GRUPOS_NAV = [
     itens: [
       { to: "/emissoes", label: "Emissões", icone: "📄" },
       { to: "/clientes", label: "Clientes", icone: "👥" },
-      { to: "/importar-csv", label: "Importar CSV", icone: "⇪" },
+      { to: "/importar-csv", label: "Importar vendas", icone: "⇪" },
     ],
   },
   {

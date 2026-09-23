@@ -247,6 +247,12 @@ class Emissao(Base):
     # data de operacao. Nula pra emissoes manuais/webhook, que nao tem essa
     # informacao.
     data_vencimento: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Vindos do relatorio de vendas da Stone (planilha XLSX) -- ver
+    # app/adapters/stone_xlsx.py. Nulos pra emissoes manuais/webhook.
+    produto: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    tipo_produto: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    bandeira: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    codigo_autorizacao: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # Preenchido so na importacao de CSV de periodo retroativo: sobrescreve o
     # dhEmi da DPS (que por padrao e o momento real da emissao) pela data do
     # pagamento historico, permitindo notas de vendas ja passadas.

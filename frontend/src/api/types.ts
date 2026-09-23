@@ -42,6 +42,10 @@ export interface Emissao {
   valor: string;
   competencia: string;
   data_vencimento: string | null;
+  produto: string | null;
+  tipo_produto: string | null;
+  bandeira: string | null;
+  codigo_autorizacao: string | null;
   erros: string | null;
 }
 
@@ -59,8 +63,7 @@ export interface ResultadoImportacaoCsv {
   total_notas: number;
   valor_total: string;
   ignoradas: {
-    status_nao_pago: number;
-    categoria_nao_venda: number;
+    status_nao_aprovado: number;
     linha_invalida: number;
     ja_emitida_anteriormente: number;
   };

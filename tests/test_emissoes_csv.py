@@ -1,8 +1,10 @@
+import io
 from datetime import datetime
 from decimal import Decimal
 
 import functools
 
+import openpyxl
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
@@ -14,14 +16,30 @@ from app.periodo import FUSO_BRT
 from tests.apoio import criar_empresa_e_token
 
 CABECALHO = (
-    "CATEGORIA;DATA DA VENDA;DATA DE VENCIMENTO;STONE ID;QTD DE PARCELAS;Nº DA PARCELA;VALOR BRUTO;"
-    "ÚLTIMO STATUS;DATA DO ÚLTIMO STATUS"
+    "DOCUMENTO", "STONECODE", "DATA DA VENDA", "BANDEIRA", "PRODUTO", "STONE ID",
+    "N DE PARCELAS", "VALOR BRUTO", "ULTIMO STATUS", "DATA DO ULTIMO STATUS",
+    "CODIGO DE AUTORIZACAO",
 )
 
 
-def _csv(*linhas: str) -> bytes:
-    conteudo = "﻿" + "\n".join([CABECALHO, *linhas]) + "\n"
-    return conteudo.encode("utf-8")
+def _xlsx(*linhas: tuple) -> bytes:
+    planilha = openpyxl.Workbook()
+    aba = planilha.active
+    aba.append(CABECALHO)
+    for linha in linhas:
+        aba.append(linha)
+    buffer = io.BytesIO()
+    planilha.save(buffer)
+    return buffer.getvalue()
+
+
+def _arquivo(conteudo: bytes, nome: str = "vendas.xlsx"):
+    return {
+        "arquivo": (
+            nome, conteudo,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    }
 
 
 async def _yield_session(session):
@@ -36,13 +54,15 @@ async def _empresa_e_usuario(db_session) -> tuple[Empresa, str]:
 
 
 @pytest.mark.asyncio
-async def test_preview_csv_nao_grava_nada_e_devolve_resumo_correto(db_session):
+async def test_preview_xlsx_nao_grava_nada_e_devolve_resumo_correto(db_session):
     empresa, token = await _empresa_e_usuario(db_session)
-    conteudo = _csv(
-        "Venda;30/07/2026 14:30:04;31/07/2026;31163337249888;1;1;27,980000;Pago;30/07/2026 14:30:04",
-        "Venda;30/07/2026 17:00:47;31/07/2026;31163341016913;1;1;13,990000;Pago;30/07/2026 17:00:47",
-        "Ajuste Financeiro;30/07/2026 10:00:00;31/07/2026;31163300000000;1;1;5,000000;Pago;30/07/2026 10:00:00",
-        "Venda;30/07/2026 10:00:00;31/07/2026;31163300000001;1;1;5,000000;Estornado;30/07/2026 10:00:00",
+    conteudo = _xlsx(
+        ("49055093000140", "477557478", "30/07/2026 14:30", "Visa", "Credito", "31163337249888",
+         "1", "27,980000", "Aprovada", "30/07/2026 14:30", "AB123"),
+        ("49055093000140", "477557478", "30/07/2026 17:00", "Elo", "Debito", "31163341016913",
+         "1", "13,990000", "Aprovada", "30/07/2026 17:00", "AB124"),
+        ("49055093000140", "477557478", "30/07/2026 10:00", "Visa", "Credito", "31163300000001",
+         "1", "5,000000", "Negada", "30/07/2026 10:00", ""),
     )
 
     app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
@@ -50,8 +70,7 @@ async def test_preview_csv_nao_grava_nada_e_devolve_resumo_correto(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/api/emissoes/csv/preview",
-                files={"arquivo": ("relatorio.csv", conteudo, "text/csv")},
+                "/api/emissoes/csv/preview", files=_arquivo(conteudo),
                 headers={"Authorization": f"Bearer {token}"},
             )
         assert resposta.status_code == 200
@@ -59,8 +78,7 @@ async def test_preview_csv_nao_grava_nada_e_devolve_resumo_correto(db_session):
         assert corpo["total_notas"] == 2
         assert corpo["valor_total"] == "41.97"
         assert corpo["ignoradas"] == {
-            "status_nao_pago": 1, "categoria_nao_venda": 1,
-            "linha_invalida": 0, "ja_emitida_anteriormente": 0,
+            "status_nao_aprovado": 1, "linha_invalida": 0, "ja_emitida_anteriormente": 0,
         }
     finally:
         app.dependency_overrides.clear()
@@ -74,11 +92,13 @@ async def test_preview_csv_nao_grava_nada_e_devolve_resumo_correto(db_session):
 
 
 @pytest.mark.asyncio
-async def test_confirmar_csv_cria_emissoes_aguardando_emissao_com_numero_reservado(db_session):
+async def test_confirmar_xlsx_cria_emissoes_com_todos_os_campos_da_stone(db_session):
     empresa, token = await _empresa_e_usuario(db_session)
-    conteudo = _csv(
-        "Venda;30/07/2026 14:30:04;31/07/2026;31163337249888;1;1;27,980000;Pago;05/08/2026 09:15:00",
-        "Venda;30/07/2026 17:00:47;31/07/2026;31163341016913;1;1;13,990000;Pago;06/08/2026 11:20:00",
+    conteudo = _xlsx(
+        ("49055093000140", "477557478", "30/07/2026 14:30", "Visa", "Credito", "31163337249888",
+         "1", "27,980000", "Aprovada", "05/08/2026 09:15", "AB123"),
+        ("49055093000140", "", "30/07/2026 17:00", "", "Pix QRcode", "E20855875202608010010JR",
+         "", "13,990000", "Aprovada", "06/08/2026 11:20", ""),
     )
 
     app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
@@ -86,8 +106,7 @@ async def test_confirmar_csv_cria_emissoes_aguardando_emissao_com_numero_reserva
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/api/emissoes/csv/confirmar",
-                files={"arquivo": ("relatorio.csv", conteudo, "text/csv")},
+                "/api/emissoes/csv/confirmar", files=_arquivo(conteudo),
                 headers={"Authorization": f"Bearer {token}"},
             )
         assert resposta.status_code == 200
@@ -99,23 +118,37 @@ async def test_confirmar_csv_cria_emissoes_aguardando_emissao_com_numero_reserva
 
     emissoes = (
         await db_session.execute(
-            select(Emissao)
-            .where(Emissao.empresa_id == empresa.id)
-            .order_by(Emissao.numero)
+            select(Emissao).where(Emissao.empresa_id == empresa.id).order_by(Emissao.numero)
         )
     ).scalars().all()
     assert len(emissoes) == 2
     assert [e.numero for e in emissoes] == [1, 2]
-    assert [e.serie for e in emissoes] == ["1", "1"]
     assert {e.origem for e in emissoes} == {OrigemEmissao.csv}
     assert {e.status for e in emissoes} == {StatusEmissao.aguardando_emissao}
-    assert {e.stone_charge_id for e in emissoes} == {"31163337249888", "31163341016913"}
-    # descricao leva a data de vencimento junto, alem do texto padrao da empresa
-    assert {e.descricao for e in emissoes} == {"Lavagem de roupa - Vencimento: 31/07/2026"}
+    assert {e.stone_charge_id for e in emissoes} == {"31163337249888", "E20855875202608010010JR"}
+    # descricao leva a data da venda junto (nao ha mais "vencimento" separado
+    # nesse relatorio), alem do texto padrao da empresa
+    assert {e.descricao for e in emissoes} == {
+        "Lavagem de roupa - Venda: 30/07/2026",
+    }
     assert {e.valor for e in emissoes} == {Decimal("27.98"), Decimal("13.99")}
-    # competencia vem da DATA DE VENCIMENTO, nao da DATA DA VENDA
+    # competencia e data_vencimento vem da DATA DA VENDA (nao existe mais
+    # DATA DE VENCIMENTO nesse relatorio de vendas)
     assert {e.competencia.isoformat() for e in emissoes} == {"2026-07-01"}
-    assert {e.data_vencimento.isoformat() for e in emissoes} == {"2026-07-31"}
+    assert {e.data_vencimento.isoformat() for e in emissoes} == {"2026-07-30"}
+
+    cartao = next(e for e in emissoes if e.stone_charge_id == "31163337249888")
+    assert cartao.produto == "Credito"
+    assert cartao.tipo_produto == "Credito"
+    assert cartao.bandeira == "Visa"
+    assert cartao.codigo_autorizacao == "AB123"
+
+    pix = next(e for e in emissoes if e.stone_charge_id == "E20855875202608010010JR")
+    assert pix.produto == "Pix QRcode"
+    assert pix.tipo_produto == "PIX"
+    assert pix.bandeira is None
+    assert pix.codigo_autorizacao is None
+
     # dh_emi_original vem da coluna DATA DO ULTIMO STATUS (pagamento real,
     # nao a data em que a importacao rodou) — permite competencia retroativa.
     assert {e.dh_emi_original.astimezone(FUSO_BRT).replace(tzinfo=None) for e in emissoes} == {
@@ -124,36 +157,11 @@ async def test_confirmar_csv_cria_emissoes_aguardando_emissao_com_numero_reserva
 
 
 @pytest.mark.asyncio
-async def test_competencia_usa_mes_da_data_de_vencimento_mesmo_com_venda_em_mes_diferente(db_session):
+async def test_confirmar_xlsx_duas_vezes_nao_duplica_nem_reserva_numero_de_novo(db_session):
     empresa, token = await _empresa_e_usuario(db_session)
-    conteudo = _csv(
-        "Venda;30/07/2026 14:30:04;03/08/2026;31163337249888;1;1;27,980000;Pago;30/07/2026 14:30:04",
-    )
-
-    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
-    try:
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            await client.post(
-                "/api/emissoes/csv/confirmar",
-                files={"arquivo": ("relatorio.csv", conteudo, "text/csv")},
-                headers={"Authorization": f"Bearer {token}"},
-            )
-    finally:
-        app.dependency_overrides.clear()
-
-    emissao = (
-        await db_session.execute(select(Emissao).where(Emissao.empresa_id == empresa.id))
-    ).scalar_one()
-    assert emissao.competencia.isoformat() == "2026-08-01"
-    assert emissao.descricao == "Lavagem de roupa - Vencimento: 03/08/2026"
-
-
-@pytest.mark.asyncio
-async def test_confirmar_csv_duas_vezes_nao_duplica_nem_reserva_numero_de_novo(db_session):
-    empresa, token = await _empresa_e_usuario(db_session)
-    conteudo = _csv(
-        "Venda;30/07/2026 14:30:04;31/07/2026;31163337249888;1;1;27,980000;Pago;30/07/2026 14:30:04"
+    conteudo = _xlsx(
+        ("49055093000140", "477557478", "30/07/2026 14:30", "Visa", "Credito", "31163337249888",
+         "1", "27,980000", "Aprovada", "30/07/2026 14:30", "AB123"),
     )
 
     app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
@@ -161,13 +169,11 @@ async def test_confirmar_csv_duas_vezes_nao_duplica_nem_reserva_numero_de_novo(d
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             primeira = await client.post(
-                "/api/emissoes/csv/confirmar",
-                files={"arquivo": ("relatorio.csv", conteudo, "text/csv")},
+                "/api/emissoes/csv/confirmar", files=_arquivo(conteudo),
                 headers={"Authorization": f"Bearer {token}"},
             )
             segunda = await client.post(
-                "/api/emissoes/csv/confirmar",
-                files={"arquivo": ("relatorio.csv", conteudo, "text/csv")},
+                "/api/emissoes/csv/confirmar", files=_arquivo(conteudo),
                 headers={"Authorization": f"Bearer {token}"},
             )
         assert primeira.json()["total_notas"] == 1
@@ -187,7 +193,7 @@ async def test_confirmar_csv_duas_vezes_nao_duplica_nem_reserva_numero_de_novo(d
 
 
 @pytest.mark.asyncio
-async def test_confirmar_csv_nao_cruza_dedupe_nem_visibilidade_entre_empresas(db_session):
+async def test_confirmar_xlsx_nao_cruza_dedupe_nem_visibilidade_entre_empresas(db_session):
     empresa_a, token_a = await _empresa_e_usuario(db_session)
     empresa_b, token_b = await criar_empresa_e_token(
         db_session, cnpj="99999999000199", email="op-b@teste.com",
@@ -196,8 +202,9 @@ async def test_confirmar_csv_nao_cruza_dedupe_nem_visibilidade_entre_empresas(db
     )
 
     # mesmo STONE ID em ambas as empresas — nao deveria haver colisao de dedupe
-    conteudo = _csv(
-        "Venda;30/07/2026 14:30:04;31/07/2026;31163337249888;1;1;27,980000;Pago;30/07/2026 14:30:04"
+    conteudo = _xlsx(
+        ("49055093000140", "477557478", "30/07/2026 14:30", "Visa", "Credito", "31163337249888",
+         "1", "27,980000", "Aprovada", "30/07/2026 14:30", "AB123"),
     )
 
     app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
@@ -205,13 +212,11 @@ async def test_confirmar_csv_nao_cruza_dedupe_nem_visibilidade_entre_empresas(db
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta_a = await client.post(
-                "/api/emissoes/csv/confirmar",
-                files={"arquivo": ("relatorio.csv", conteudo, "text/csv")},
+                "/api/emissoes/csv/confirmar", files=_arquivo(conteudo),
                 headers={"Authorization": f"Bearer {token_a}"},
             )
             resposta_b = await client.post(
-                "/api/emissoes/csv/confirmar",
-                files={"arquivo": ("relatorio.csv", conteudo, "text/csv")},
+                "/api/emissoes/csv/confirmar", files=_arquivo(conteudo),
                 headers={"Authorization": f"Bearer {token_b}"},
             )
         assert resposta_a.json()["total_notas"] == 1
@@ -225,21 +230,25 @@ async def test_confirmar_csv_nao_cruza_dedupe_nem_visibilidade_entre_empresas(db
         await db_session.execute(select(Emissao).where(Emissao.empresa_id == empresa_b.id))
     ).scalars().all()
     assert len(emissoes_b) == 1
-    assert emissoes_b[0].descricao == "Lavagem de roupa B - Vencimento: 31/07/2026"
+    assert emissoes_b[0].descricao == "Lavagem de roupa B - Venda: 30/07/2026"
 
 
 @pytest.mark.asyncio
-async def test_csv_com_cabecalho_invalido_devolve_400_sem_gravar_nada(db_session):
+async def test_xlsx_com_cabecalho_invalido_devolve_400_sem_gravar_nada(db_session):
     empresa, token = await _empresa_e_usuario(db_session)
-    conteudo = "﻿COLUNA_ERRADA;OUTRA\nx;y\n".encode("utf-8")
+    planilha = openpyxl.Workbook()
+    aba = planilha.active
+    aba.append(("COLUNA_ERRADA", "OUTRA"))
+    aba.append(("x", "y"))
+    buffer = io.BytesIO()
+    planilha.save(buffer)
 
     app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
     try:
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resposta = await client.post(
-                "/api/emissoes/csv/confirmar",
-                files={"arquivo": ("relatorio.csv", conteudo, "text/csv")},
+                "/api/emissoes/csv/confirmar", files=_arquivo(buffer.getvalue()),
                 headers={"Authorization": f"Bearer {token}"},
             )
         assert resposta.status_code == 400
@@ -253,15 +262,17 @@ async def test_csv_com_cabecalho_invalido_devolve_400_sem_gravar_nada(db_session
 
 
 @pytest.mark.asyncio
-async def test_confirmar_csv_vincula_cliente_padrao_e_reutiliza_entre_importacoes(db_session):
+async def test_confirmar_xlsx_vincula_cliente_padrao_e_reutiliza_entre_importacoes(db_session):
     from app.models import Cliente
 
     empresa, token = await _empresa_e_usuario(db_session)
-    primeira = _csv(
-        "Venda;30/07/2026 14:30:04;31/07/2026;31163337249888;1;1;27,980000;Pago;30/07/2026 14:30:04"
+    primeira = _xlsx(
+        ("49055093000140", "477557478", "30/07/2026 14:30", "Visa", "Credito", "31163337249888",
+         "1", "27,980000", "Aprovada", "30/07/2026 14:30", "AB123"),
     )
-    segunda = _csv(
-        "Venda;30/07/2026 15:00:00;31/07/2026;31163337249999;1;1;15,000000;Pago;30/07/2026 15:00:00"
+    segunda = _xlsx(
+        ("49055093000140", "477557478", "30/07/2026 15:00", "Visa", "Credito", "31163337249999",
+         "1", "15,000000", "Aprovada", "30/07/2026 15:00", "AB124"),
     )
 
     app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
@@ -269,13 +280,11 @@ async def test_confirmar_csv_vincula_cliente_padrao_e_reutiliza_entre_importacoe
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             await client.post(
-                "/api/emissoes/csv/confirmar",
-                files={"arquivo": ("relatorio1.csv", primeira, "text/csv")},
+                "/api/emissoes/csv/confirmar", files=_arquivo(primeira, "relatorio1.xlsx"),
                 headers={"Authorization": f"Bearer {token}"},
             )
             await client.post(
-                "/api/emissoes/csv/confirmar",
-                files={"arquivo": ("relatorio2.csv", segunda, "text/csv")},
+                "/api/emissoes/csv/confirmar", files=_arquivo(segunda, "relatorio2.xlsx"),
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
@@ -298,9 +307,11 @@ async def test_confirmar_csv_vincula_cliente_padrao_e_reutiliza_entre_importacoe
 @pytest.mark.asyncio
 async def test_listar_emissoes_filtra_por_data_de_vencimento(db_session):
     empresa, token = await _empresa_e_usuario(db_session)
-    conteudo = _csv(
-        "Venda;29/07/2026 14:30:04;30/07/2026;31163337249888;1;1;27,980000;Pago;29/07/2026 14:30:04",
-        "Venda;30/07/2026 17:00:47;31/07/2026;31163341016913;1;1;13,990000;Pago;30/07/2026 17:00:47",
+    conteudo = _xlsx(
+        ("49055093000140", "477557478", "29/07/2026 14:30", "Visa", "Credito", "31163337249888",
+         "1", "27,980000", "Aprovada", "29/07/2026 14:30", "AB123"),
+        ("49055093000140", "477557478", "30/07/2026 17:00", "Elo", "Debito", "31163341016913",
+         "1", "13,990000", "Aprovada", "30/07/2026 17:00", "AB124"),
     )
 
     app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
@@ -308,18 +319,60 @@ async def test_listar_emissoes_filtra_por_data_de_vencimento(db_session):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             await client.post(
-                "/api/emissoes/csv/confirmar",
-                files={"arquivo": ("relatorio.csv", conteudo, "text/csv")},
+                "/api/emissoes/csv/confirmar", files=_arquivo(conteudo),
                 headers={"Authorization": f"Bearer {token}"},
             )
             resposta = await client.get(
                 "/api/emissoes",
-                params={"vencimento_inicio": "2026-07-31", "vencimento_fim": "2026-07-31"},
+                params={"vencimento_inicio": "2026-07-30", "vencimento_fim": "2026-07-30"},
                 headers={"Authorization": f"Bearer {token}"},
             )
         assert resposta.status_code == 200
         corpo = resposta.json()
         assert len(corpo) == 1
-        assert corpo[0]["data_vencimento"] == "2026-07-31"
+        assert corpo[0]["data_vencimento"] == "2026-07-30"
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_listar_emissoes_filtra_por_produto_tipo_produto_e_bandeira(db_session):
+    empresa, token = await _empresa_e_usuario(db_session)
+    conteudo = _xlsx(
+        ("49055093000140", "477557478", "30/07/2026 14:30", "Visa", "Credito", "31163337249888",
+         "1", "27,980000", "Aprovada", "30/07/2026 14:30", "AB123"),
+        ("49055093000140", "477557478", "30/07/2026 15:00", "MasterCard", "Debito Pre-pago", "31163337249901",
+         "1", "13,990000", "Aprovada", "30/07/2026 15:00", "AB125"),
+        ("49055093000140", "", "30/07/2026 16:00", "", "Pix QRcode", "E20855875202608010010JR",
+         "", "13,990000", "Aprovada", "30/07/2026 16:00", ""),
+    )
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.post(
+                "/api/emissoes/csv/confirmar", files=_arquivo(conteudo),
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+            por_tipo = await client.get(
+                "/api/emissoes", params={"tipo_produto": "Debito"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            por_bandeira = await client.get(
+                "/api/emissoes", params={"bandeira": "Visa"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            por_produto = await client.get(
+                "/api/emissoes", params={"produto": "Pix QRcode"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert len(por_tipo.json()) == 1
+        assert por_tipo.json()[0]["produto"] == "Debito Pre-pago"
+        assert len(por_bandeira.json()) == 1
+        assert por_bandeira.json()[0]["bandeira"] == "Visa"
+        assert len(por_produto.json()) == 1
+        assert por_produto.json()[0]["tipo_produto"] == "PIX"
     finally:
         app.dependency_overrides.clear()

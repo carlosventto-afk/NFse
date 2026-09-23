@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.spedy_client import SpedyClient
-from app.adapters.stone_csv import CabecalhoInvalidoError, NotaCandidata, parsear_relatorio_stone
+from app.adapters.stone_xlsx import CabecalhoInvalidoError, NotaCandidata, parsear_relatorio_stone
 from app.config import Settings, get_settings
 from app.crypto import decifrar
 from app.danfe import gerar_danfse_fallback
@@ -63,6 +63,10 @@ async def listar_emissoes(
     fim: date | None = Query(default=None),
     vencimento_inicio: date | None = Query(default=None),
     vencimento_fim: date | None = Query(default=None),
+    produto: str | None = Query(default=None),
+    tipo_produto: str | None = Query(default=None),
+    bandeira: str | None = Query(default=None),
+    codigo_autorizacao: str | None = Query(default=None),
     contexto: ContextoAutenticado = Depends(get_empresa_ativa),
     session: AsyncSession = Depends(get_db),
 ) -> list[Emissao]:
@@ -81,6 +85,14 @@ async def listar_emissoes(
         stmt = stmt.where(Emissao.data_vencimento >= vencimento_inicio)
     if vencimento_fim is not None:
         stmt = stmt.where(Emissao.data_vencimento <= vencimento_fim)
+    if produto is not None:
+        stmt = stmt.where(Emissao.produto == produto)
+    if tipo_produto is not None:
+        stmt = stmt.where(Emissao.tipo_produto == tipo_produto)
+    if bandeira is not None:
+        stmt = stmt.where(Emissao.bandeira == bandeira)
+    if codigo_autorizacao is not None:
+        stmt = stmt.where(Emissao.codigo_autorizacao == codigo_autorizacao)
     stmt = stmt.order_by(Emissao.criada_em.desc())
     return list((await session.execute(stmt)).scalars().all())
 
@@ -359,11 +371,15 @@ async def _processar_csv(
                 cliente_id=cliente_padrao.id,
                 descricao=(
                     f"{empresa.descricao_servico_padrao} - "
-                    f"Vencimento: {nota.data_vencimento:%d/%m/%Y}"
+                    f"Venda: {nota.data_vencimento:%d/%m/%Y}"
                 ),
                 valor=nota.valor,
                 competencia=nota.data_vencimento.replace(day=1),
                 data_vencimento=nota.data_vencimento,
+                produto=nota.produto,
+                tipo_produto=nota.tipo_produto,
+                bandeira=nota.bandeira,
+                codigo_autorizacao=nota.codigo_autorizacao,
                 dh_emi_original=nota.data_ultimo_status.replace(tzinfo=FUSO_BRT),
                 criada_por_usuario_id=contexto.usuario.id,
             )
