@@ -61,6 +61,8 @@ async def listar_emissoes(
     status: StatusEmissao | None = Query(default=None),
     inicio: date | None = Query(default=None),
     fim: date | None = Query(default=None),
+    vencimento_inicio: date | None = Query(default=None),
+    vencimento_fim: date | None = Query(default=None),
     contexto: ContextoAutenticado = Depends(get_empresa_ativa),
     session: AsyncSession = Depends(get_db),
 ) -> list[Emissao]:
@@ -74,6 +76,11 @@ async def listar_emissoes(
         stmt = stmt.where(Emissao.criada_em >= inicio_do_dia_brt(inicio))
     if fim is not None:
         stmt = stmt.where(Emissao.criada_em < fim_do_dia_brt(fim))
+    # `data_vencimento` e Date puro (sem timezone), sem a mesma pegadinha.
+    if vencimento_inicio is not None:
+        stmt = stmt.where(Emissao.data_vencimento >= vencimento_inicio)
+    if vencimento_fim is not None:
+        stmt = stmt.where(Emissao.data_vencimento <= vencimento_fim)
     stmt = stmt.order_by(Emissao.criada_em.desc())
     return list((await session.execute(stmt)).scalars().all())
 
@@ -356,6 +363,7 @@ async def _processar_csv(
                 ),
                 valor=nota.valor,
                 competencia=nota.data_vencimento.replace(day=1),
+                data_vencimento=nota.data_vencimento,
                 dh_emi_original=nota.data_ultimo_status.replace(tzinfo=FUSO_BRT),
                 criada_por_usuario_id=contexto.usuario.id,
             )

@@ -278,6 +278,7 @@ class EmissaoOut(BaseModel):
     descricao: str
     valor: Decimal
     competencia: date
+    data_vencimento: date | None
     erros: str | None
 
     model_config = {"from_attributes": True}

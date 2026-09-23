@@ -115,6 +115,7 @@ async def test_confirmar_csv_cria_emissoes_aguardando_emissao_com_numero_reserva
     assert {e.valor for e in emissoes} == {Decimal("27.98"), Decimal("13.99")}
     # competencia vem da DATA DE VENCIMENTO, nao da DATA DA VENDA
     assert {e.competencia.isoformat() for e in emissoes} == {"2026-07-01"}
+    assert {e.data_vencimento.isoformat() for e in emissoes} == {"2026-07-31"}
     # dh_emi_original vem da coluna DATA DO ULTIMO STATUS (pagamento real,
     # nao a data em que a importacao rodou) — permite competencia retroativa.
     assert {e.dh_emi_original.astimezone(FUSO_BRT).replace(tzinfo=None) for e in emissoes} == {
@@ -292,3 +293,33 @@ async def test_confirmar_csv_vincula_cliente_padrao_e_reutiliza_entre_importacoe
     ).scalars().all()
     assert len(emissoes) == 2
     assert {e.cliente_id for e in emissoes} == {clientes_padrao[0].id}
+
+
+@pytest.mark.asyncio
+async def test_listar_emissoes_filtra_por_data_de_vencimento(db_session):
+    empresa, token = await _empresa_e_usuario(db_session)
+    conteudo = _csv(
+        "Venda;29/07/2026 14:30:04;30/07/2026;31163337249888;1;1;27,980000;Pago;29/07/2026 14:30:04",
+        "Venda;30/07/2026 17:00:47;31/07/2026;31163341016913;1;1;13,990000;Pago;30/07/2026 17:00:47",
+    )
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.post(
+                "/api/emissoes/csv/confirmar",
+                files={"arquivo": ("relatorio.csv", conteudo, "text/csv")},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            resposta = await client.get(
+                "/api/emissoes",
+                params={"vencimento_inicio": "2026-07-31", "vencimento_fim": "2026-07-31"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 200
+        corpo = resposta.json()
+        assert len(corpo) == 1
+        assert corpo[0]["data_vencimento"] == "2026-07-31"
+    finally:
+        app.dependency_overrides.clear()

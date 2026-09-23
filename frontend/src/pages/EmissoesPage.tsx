@@ -261,7 +261,7 @@ export default function EmissoesPage() {
               <thead>
                 <tr>
                   <th className="col-check"><input type="checkbox" checked={todosSelecionados} onChange={alternarSelecaoTodos} /></th>
-                  <th>Número</th><th>Origem</th><th>Status</th><th className="col-valor">Valor</th><th>Competência</th><th>Erro</th><th></th>
+                  <th>Número</th><th>Origem</th><th>Status</th><th className="col-valor">Valor</th><th>Competência</th><th>Vencimento</th><th>Erro</th><th></th>
                 </tr>
               </thead>
               <tbody>
@@ -279,6 +279,7 @@ export default function EmissoesPage() {
                     <td><PilulaStatus status={emissao.status} /></td>
                     <td className="col-valor num">R$ {emissao.valor}</td>
                     <td>{emissao.competencia}</td>
+                    <td>{emissao.data_vencimento ?? "—"}</td>
                     <td>
                       {emissao.erros ? (
                         <span className="erro-texto" title={emissao.erros}>{emissao.erros}</span>

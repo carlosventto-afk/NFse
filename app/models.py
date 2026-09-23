@@ -242,6 +242,11 @@ class Emissao(Base):
     descricao: Mapped[str] = mapped_column(String(2000), nullable=False)
     valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     competencia: Mapped[date] = mapped_column(Date, nullable=False)
+    # Data de vencimento vinda do relatorio da Stone (dia exato, nao truncada
+    # pro mes como a `competencia`) -- permite agrupar/filtrar valores por
+    # data de operacao. Nula pra emissoes manuais/webhook, que nao tem essa
+    # informacao.
+    data_vencimento: Mapped[date | None] = mapped_column(Date, nullable=True)
     # Preenchido so na importacao de CSV de periodo retroativo: sobrescreve o
     # dhEmi da DPS (que por padrao e o momento real da emissao) pela data do
     # pagamento historico, permitindo notas de vendas ja passadas.

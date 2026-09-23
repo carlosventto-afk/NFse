@@ -41,6 +41,7 @@ export interface Emissao {
   descricao: string;
   valor: string;
   competencia: string;
+  data_vencimento: string | null;
   erros: string | null;
 }
 
