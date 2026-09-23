@@ -336,6 +336,37 @@ async def test_listar_emissoes_filtra_por_data_de_vencimento(db_session):
 
 
 @pytest.mark.asyncio
+async def test_listar_emissoes_filtra_por_competencia(db_session):
+    empresa, token = await _empresa_e_usuario(db_session)
+    conteudo = _xlsx(
+        ("49055093000140", "477557478", "31/07/2026 14:30", "Visa", "Credito", "31163337249888",
+         "1", "27,980000", "Aprovada", "31/07/2026 14:30", "AB123"),
+        ("49055093000140", "477557478", "01/08/2026 17:00", "Elo", "Debito", "31163341016913",
+         "1", "13,990000", "Aprovada", "01/08/2026 17:00", "AB124"),
+    )
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.post(
+                "/api/emissoes/csv/confirmar", files=_arquivo(conteudo),
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            resposta = await client.get(
+                "/api/emissoes",
+                params={"competencia_inicio": "2026-08-01", "competencia_fim": "2026-08-31"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 200
+        corpo = resposta.json()
+        assert len(corpo) == 1
+        assert corpo[0]["competencia"] == "2026-08-01"
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
 async def test_listar_emissoes_filtra_por_produto_tipo_produto_e_bandeira(db_session):
     empresa, token = await _empresa_e_usuario(db_session)
     conteudo = _xlsx(

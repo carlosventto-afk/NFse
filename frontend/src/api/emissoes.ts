@@ -19,11 +19,16 @@ export function confirmarCsv(arquivo: File): Promise<ResultadoImportacaoCsv> {
   });
 }
 
-export async function listarEmissoes(status?: string, inicio?: string, fim?: string): Promise<Emissao[]> {
+export type TipoFiltroData = "competencia" | "data_venda";
+
+export async function listarEmissoes(
+  status?: string, tipoData?: TipoFiltroData, inicio?: string, fim?: string,
+): Promise<Emissao[]> {
   const parametros = new URLSearchParams();
   if (status) parametros.set("status", status);
-  if (inicio) parametros.set("inicio", inicio);
-  if (fim) parametros.set("fim", fim);
+  const prefixo = tipoData === "data_venda" ? "vencimento" : "competencia";
+  if (inicio) parametros.set(`${prefixo}_inicio`, inicio);
+  if (fim) parametros.set(`${prefixo}_fim`, fim);
   const query = parametros.toString();
   return apiFetch<Emissao[]>(`/api/emissoes${query ? `?${query}` : ""}`);
 }

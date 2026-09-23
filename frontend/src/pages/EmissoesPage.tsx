@@ -3,6 +3,7 @@ import {
   cancelarEmissao, emitirEmissao, emitirEmissoesLote, excluirEmissao, excluirEmissoesLote, listarEmissoes,
   urlDownloadPdfsLote, urlDownloadXmlsLote, urlPdf, urlRequisicaoBruta, urlRespostaBruta, urlXml,
 } from "../api/emissoes";
+import type { TipoFiltroData } from "../api/emissoes";
 import { obterToken } from "../api/client";
 import type { Emissao } from "../api/types";
 import MenuAcoes from "../components/MenuAcoes";
@@ -61,6 +62,7 @@ async function extrairDetalheErro(resposta: Response, generico: string): Promise
 export default function EmissoesPage() {
   const [emissoes, setEmissoes] = useState<Emissao[]>([]);
   const [filtroStatus, setFiltroStatus] = useState("");
+  const [filtroTipoData, setFiltroTipoData] = useState<TipoFiltroData>("competencia");
   const [filtroInicio, setFiltroInicio] = useState("");
   const [filtroFim, setFiltroFim] = useState("");
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
@@ -75,7 +77,9 @@ export default function EmissoesPage() {
     setErro(null);
     setSelecionados(new Set());
     try {
-      setEmissoes(await listarEmissoes(filtroStatus || undefined, filtroInicio || undefined, filtroFim || undefined));
+      setEmissoes(
+        await listarEmissoes(filtroStatus || undefined, filtroTipoData, filtroInicio || undefined, filtroFim || undefined),
+      );
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Nao foi possivel carregar as emissoes");
     } finally {
@@ -86,7 +90,7 @@ export default function EmissoesPage() {
   useEffect(() => {
     carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtroStatus, filtroInicio, filtroFim]);
+  }, [filtroStatus, filtroTipoData, filtroInicio, filtroFim]);
 
   const todosSelecionados = emissoes.length > 0 && emissoes.every((e) => selecionados.has(e.id));
 
@@ -221,6 +225,16 @@ export default function EmissoesPage() {
           </select>
         </div>
         <div className="form-linha">
+          <label htmlFor="tipo_data">Filtrar por</label>
+          <select
+            id="tipo_data" value={filtroTipoData}
+            onChange={(e) => setFiltroTipoData(e.target.value as TipoFiltroData)}
+          >
+            <option value="competencia">Competência</option>
+            <option value="data_venda">Data Venda</option>
+          </select>
+        </div>
+        <div className="form-linha">
           <label htmlFor="data_inicio">De</label>
           <input id="data_inicio" type="date" value={filtroInicio} onChange={(e) => setFiltroInicio(e.target.value)} />
         </div>
@@ -261,7 +275,7 @@ export default function EmissoesPage() {
               <thead>
                 <tr>
                   <th className="col-check"><input type="checkbox" checked={todosSelecionados} onChange={alternarSelecaoTodos} /></th>
-                  <th>Número</th><th>Origem</th><th>Status</th><th className="col-valor">Valor</th><th>Competência</th><th>Vencimento</th><th>Produto</th><th>Tipo</th><th>Bandeira</th><th>Erro</th><th></th>
+                  <th>Número</th><th>Origem</th><th>Status</th><th className="col-valor">Valor</th><th>Competência</th><th>Data Venda</th><th>Produto</th><th>Tipo</th><th>Bandeira</th><th>Erro</th><th></th>
                 </tr>
               </thead>
               <tbody>

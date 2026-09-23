@@ -63,6 +63,8 @@ async def listar_emissoes(
     fim: date | None = Query(default=None),
     vencimento_inicio: date | None = Query(default=None),
     vencimento_fim: date | None = Query(default=None),
+    competencia_inicio: date | None = Query(default=None),
+    competencia_fim: date | None = Query(default=None),
     produto: str | None = Query(default=None),
     tipo_produto: str | None = Query(default=None),
     bandeira: str | None = Query(default=None),
@@ -85,6 +87,10 @@ async def listar_emissoes(
         stmt = stmt.where(Emissao.data_vencimento >= vencimento_inicio)
     if vencimento_fim is not None:
         stmt = stmt.where(Emissao.data_vencimento <= vencimento_fim)
+    if competencia_inicio is not None:
+        stmt = stmt.where(Emissao.competencia >= competencia_inicio)
+    if competencia_fim is not None:
+        stmt = stmt.where(Emissao.competencia <= competencia_fim)
     if produto is not None:
         stmt = stmt.where(Emissao.produto == produto)
     if tipo_produto is not None:
