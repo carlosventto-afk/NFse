@@ -7,6 +7,7 @@ const GRUPOS_NAV = [
   {
     rotulo: "Operação",
     itens: [
+      { to: "/painel", label: "Painel", icone: "📊" },
       { to: "/emissoes", label: "Emissões", icone: "📄" },
       { to: "/clientes", label: "Clientes", icone: "👥" },
       { to: "/importar-csv", label: "Importar vendas", icone: "⇪" },

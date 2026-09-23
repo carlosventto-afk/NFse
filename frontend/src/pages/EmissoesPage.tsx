@@ -7,35 +7,12 @@ import type { TipoFiltroData } from "../api/emissoes";
 import { obterToken } from "../api/client";
 import type { Emissao } from "../api/types";
 import MenuAcoes from "../components/MenuAcoes";
+import { CLASSES_PILULA, ROTULOS_STATUS } from "../lib/status";
 
 const STATUS = [
   "", "aguardando_emissao", "pendente", "autorizada", "rejeitada", "cancelada",
   "cancelamento_pendente", "erro_cancelamento",
 ];
-
-const ROTULOS_STATUS: Record<string, string> = {
-  aguardando_emissao: "Aguardando emissão",
-  pendente: "Pendente",
-  autorizada: "Autorizada",
-  rejeitada: "Rejeitada",
-  cancelada: "Cancelada",
-  cancelamento_pendente: "Cancelamento pendente",
-  erro_cancelamento: "Erro no cancelamento",
-  aguardando_confirmacao: "Aguardando confirmação",
-  cancelamento_aguardando_confirmacao: "Cancel. aguardando confirmação",
-};
-
-const CLASSES_PILULA: Record<string, string> = {
-  aguardando_emissao: "rascunho",
-  autorizada: "autorizada",
-  rejeitada: "rejeitada",
-  erro_cancelamento: "rejeitada",
-  cancelada: "cancelada",
-  pendente: "pendente",
-  cancelamento_pendente: "pendente",
-  aguardando_confirmacao: "pendente",
-  cancelamento_aguardando_confirmacao: "pendente",
-};
 
 function PilulaStatus({ status }: { status: string }) {
   const classe = CLASSES_PILULA[status] ?? "cancelada";

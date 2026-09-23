@@ -193,6 +193,52 @@ hr { border: none; border-top: 1px solid var(--borda); margin: 1.25rem 0; }
 }
 .totalizador strong { color: var(--texto); font-weight: 600; }
 
+/* -- painel (dashboard) -- */
+
+.painel-metricas { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.cartao-metrica {
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.rotulo-metrica { font-size: 13px; color: var(--texto-suave); }
+.valor-metrica { font-size: 28px; font-weight: 700; color: var(--texto); }
+
+.painel-blocos { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+.bloco-resumo { background: var(--superficie); border: 1px solid var(--borda); border-radius: 8px; padding: 1rem 1.25rem; }
+.bloco-resumo h2 { font-size: 14px; margin-bottom: 0.75rem; }
+
+.lista-resumo { display: flex; flex-direction: column; gap: 0.6rem; }
+.linha-resumo { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.15rem 0.75rem; font-size: 13px; }
+.linha-resumo-rotulo { display: flex; align-items: center; gap: 0.4rem; color: var(--texto); }
+.linha-resumo-qtd { color: var(--texto-suave); font-size: 12px; }
+.linha-resumo-valor { grid-row: 1; text-align: right; font-weight: 600; color: var(--texto); white-space: nowrap; }
+.ponto-cor { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.barra-resumo-trilho {
+  grid-column: 1 / -1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--superficie-alt);
+  overflow: hidden;
+}
+.barra-resumo-preenchimento { height: 100%; border-radius: 3px; }
+
+.painel-grafico { background: var(--superficie); border: 1px solid var(--borda); border-radius: 8px; padding: 1rem 1.25rem; }
+.painel-grafico h2 { font-size: 14px; margin-bottom: 0.75rem; }
+.tooltip-grafico {
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
+  font-size: 12px;
+  box-shadow: 0 2px 8px rgba(20, 33, 61, 0.12);
+}
+
 /* -- painel de tabela -- */
 
 .painel-tabela { background: var(--superficie); border: 1px solid var(--borda); border-radius: 8px; overflow: hidden; }

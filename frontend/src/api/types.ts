@@ -59,6 +59,28 @@ export interface EmissaoLoteResultado {
   puladas: number;
 }
 
+export interface GrupoResumo {
+  chave: string | null;
+  quantidade: number;
+  valor: string;
+}
+
+export interface PontoSerieDiaria {
+  data: string;
+  quantidade: number;
+  valor: string;
+}
+
+export interface DashboardResumo {
+  competencia: string;
+  total_notas: number;
+  valor_total: string;
+  por_status: GrupoResumo[];
+  por_tipo_produto: GrupoResumo[];
+  por_bandeira: GrupoResumo[];
+  serie_diaria: PontoSerieDiaria[];
+}
+
 export interface ResultadoImportacaoCsv {
   total_notas: number;
   valor_total: string;

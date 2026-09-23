@@ -12,6 +12,7 @@ import EditarEmpresaPage from "./pages/EditarEmpresaPage";
 import ClientesPage from "./pages/ClientesPage";
 import ImportarCsvPage from "./pages/ImportarCsvPage";
 import EmissoesPage from "./pages/EmissoesPage";
+import PainelPage from "./pages/PainelPage";
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
             <Route path="/selecionar-empresa" element={<SelecionarEmpresaPage />} />
             <Route path="/admin-plataforma" element={<AdminPlataformaPage />} />
             <Route element={<Layout />}>
+              <Route path="/painel" element={<PainelPage />} />
               <Route path="/emissoes" element={<EmissoesPage />} />
               <Route path="/cadastro-empresa" element={<CadastroEmpresaPage />} />
               <Route path="/numeracao" element={<NumeracaoPage />} />
