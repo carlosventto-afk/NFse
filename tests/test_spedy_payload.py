@@ -109,3 +109,15 @@ def test_inclui_cnae_quando_presente():
     # preenchido.
     payload = montar_payload_spedy(_empresa(cnae="9601302"), _emissao())
     assert payload["cnaeCode"] == "9601302"
+
+
+def test_inclui_rps_number_e_series_quando_presentes():
+    payload = montar_payload_spedy(_empresa(), _emissao(serie="2", numero=42))
+    assert payload["rpsNumber"] == 42
+    assert payload["rpsSeries"] == "2"
+
+
+def test_nao_inclui_rps_number_e_series_quando_ausentes():
+    payload = montar_payload_spedy(_empresa(), _emissao(serie=None, numero=None))
+    assert "rpsNumber" not in payload
+    assert "rpsSeries" not in payload

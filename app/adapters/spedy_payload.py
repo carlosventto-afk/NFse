@@ -29,6 +29,10 @@ def montar_payload_spedy(empresa: Empresa, emissao: Emissao) -> dict:
         "federalServiceCode": empresa.codigo_tributacao,
         "issue": True,
     }
+    if emissao.numero is not None:
+        payload["rpsNumber"] = emissao.numero
+    if emissao.serie:
+        payload["rpsSeries"] = emissao.serie
     if empresa.codigo_tributacao_municipal:
         payload["cityServiceCode"] = empresa.codigo_tributacao_municipal
     if empresa.cnae:
