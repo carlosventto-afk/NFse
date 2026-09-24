@@ -26,10 +26,17 @@ def montar_payload_spedy(empresa: Empresa, emissao: Emissao) -> dict:
         payload["cityServiceCode"] = empresa.codigo_tributacao_municipal
     if empresa.cnae:
         payload["cnaeCode"] = empresa.cnae
+    # Sempre manda receiver, mesmo sem CPF/CNPJ do tomador (caso das notas
+    # importadas da planilha de vendas, cliente "nao identificado"): suspeita
+    # levantada ao vivo (23/09) de que a ausencia total do bloco e o que faz
+    # a SEFIN de Belem devolver SPD999 ("erro ao estabelecer comunicacao com
+    # o servico") em vez de autorizar. federalTaxNumber/email so entram
+    # quando existem -- nunca manda null explicito (mesmo padrao do resto
+    # deste payload, ver cityServiceCode/cnaeCode acima).
+    receiver: dict = {"name": emissao.tomador_nome or "Consumidor nao identificado"}
     if emissao.tomador_cpf_cnpj:
-        payload["receiver"] = {
-            "federalTaxNumber": emissao.tomador_cpf_cnpj,
-            "name": emissao.tomador_nome,
-            "email": emissao.tomador_email,
-        }
+        receiver["federalTaxNumber"] = emissao.tomador_cpf_cnpj
+    if emissao.tomador_email:
+        receiver["email"] = emissao.tomador_email
+    payload["receiver"] = receiver
     return payload
