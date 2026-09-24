@@ -4,7 +4,7 @@ import { editarEmpresa, obterMinhaEmpresa, type DadosEdicaoEmpresa } from "../ap
 const VAZIO: DadosEdicaoEmpresa = {
   cnpj: "", inscricao_municipal: "", municipio_ibge: "", local_prestacao_ibge: "",
   op_simp_nac: "3", regime_apuracao_sn: "", codigo_tributacao: "", codigo_tributacao_municipal: "",
-  cnae: "",
+  cnae: "", aliquota_iss: "",
   descricao_servico_padrao: "", ambiente: "homologacao",
   senha_certificado: "",
   provedor_emissao: "direto", razao_social: "", logradouro: "", numero: "", complemento: "", bairro: "", cep: "",
@@ -33,6 +33,7 @@ export default function EditarEmpresaPage() {
           codigo_tributacao: empresa.codigo_tributacao,
           codigo_tributacao_municipal: empresa.codigo_tributacao_municipal ?? "",
           cnae: empresa.cnae ?? "",
+          aliquota_iss: empresa.aliquota_iss != null ? String(empresa.aliquota_iss) : "",
           descricao_servico_padrao: empresa.descricao_servico_padrao,
           ambiente: empresa.ambiente,
           senha_certificado: "",
@@ -140,6 +141,13 @@ export default function EditarEmpresaPage() {
           </label>
           <input id="cnae" maxLength={10} value={dados.cnae}
             onChange={(e) => atualizar("cnae", e.target.value)} />
+        </div>
+        <div className="form-linha">
+          <label htmlFor="aliquota_iss">
+            Aliquota de ISS em % (opcional — usada no payload da Spedy)
+          </label>
+          <input id="aliquota_iss" inputMode="decimal" value={dados.aliquota_iss}
+            onChange={(e) => atualizar("aliquota_iss", e.target.value)} />
         </div>
         <div className="form-linha">
           <label htmlFor="descricao">Descricao padrao do servico</label>

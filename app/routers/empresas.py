@@ -1,6 +1,7 @@
 import base64
 import logging
 import uuid
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import func, select
@@ -147,6 +148,7 @@ async def editar_minha_empresa(
     codigo_tributacao: str = Form(...),
     codigo_tributacao_municipal: str | None = Form(None),
     cnae: str | None = Form(None),
+    aliquota_iss: str | None = Form(None),
     descricao_servico_padrao: str = Form(...),
     ambiente: str = Form(...),
     senha_certificado: str | None = Form(None),
@@ -173,6 +175,12 @@ async def editar_minha_empresa(
     codigo_tributacao_municipal = (codigo_tributacao_municipal or "").strip() or None
     cnae = (cnae or "").strip() or None
     regime_apuracao_sn_int = int(regime_apuracao_sn) if (regime_apuracao_sn or "").strip() else None
+    aliquota_iss_decimal = None
+    if (aliquota_iss or "").strip():
+        try:
+            aliquota_iss_decimal = Decimal(aliquota_iss.strip().replace(",", "."))
+        except InvalidOperation:
+            raise HTTPException(status_code=422, detail="aliquota_iss deve ser um numero (ex.: 2 ou 2.5)")
 
     empresa = await session.get(Empresa, contexto.empresa_id)
 
@@ -224,6 +232,7 @@ async def editar_minha_empresa(
     empresa.codigo_tributacao = codigo_tributacao
     empresa.codigo_tributacao_municipal = codigo_tributacao_municipal
     empresa.cnae = cnae
+    empresa.aliquota_iss = aliquota_iss_decimal
     empresa.descricao_servico_padrao = descricao_servico_padrao
     empresa.ambiente = ambiente
 

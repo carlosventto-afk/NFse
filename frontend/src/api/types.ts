@@ -133,6 +133,7 @@ export interface EmpresaDetalhe {
   codigo_tributacao: string;
   codigo_tributacao_municipal: string | null;
   cnae: string | null;
+  aliquota_iss: number | null;
   descricao_servico_padrao: string;
   ambiente: string;
   certificado_valido_ate: string;

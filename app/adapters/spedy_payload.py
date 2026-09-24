@@ -6,11 +6,11 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, time
 
-from app.models import Emissao, Empresa
+from app.models import Cliente, Emissao, Empresa
 from app.periodo import FUSO_BRT
 
 
-def montar_payload_spedy(empresa: Empresa, emissao: Emissao) -> dict:
+def montar_payload_spedy(empresa: Empresa, emissao: Emissao, cliente: Cliente | None = None) -> dict:
     cidade = empresa.local_prestacao_ibge or empresa.municipio_ibge
     payload: dict = {
         # UUID novo a cada chamada, de proposito -- NAO usar str(emissao.id).
@@ -33,6 +33,8 @@ def montar_payload_spedy(empresa: Empresa, emissao: Emissao) -> dict:
         payload["rpsNumber"] = emissao.numero
     if emissao.serie:
         payload["rpsSeries"] = emissao.serie
+    if empresa.aliquota_iss is not None:
+        payload["total"]["issRate"] = float(empresa.aliquota_iss)
     if empresa.codigo_tributacao_municipal:
         payload["cityServiceCode"] = empresa.codigo_tributacao_municipal
     if empresa.cnae:
@@ -49,5 +51,28 @@ def montar_payload_spedy(empresa: Empresa, emissao: Emissao) -> dict:
         receiver["federalTaxNumber"] = emissao.tomador_cpf_cnpj
     if emissao.tomador_email:
         receiver["email"] = emissao.tomador_email
+    # Telefone/endereco vem do cadastro do Cliente (nao da Emissao, que so
+    # denormaliza cpf_cnpj/nome/email) -- so existe quando a emissao esta
+    # linkada a um cliente cadastrado (emissao.cliente_id). Notas importadas
+    # da planilha de vendas/webhook, sem cliente vinculado, seguem sem esses
+    # campos (Spedy trata como opcionais).
+    if cliente is not None:
+        if cliente.telefone:
+            receiver["phoneNumber"] = cliente.telefone
+        endereco: dict = {}
+        if cliente.cep:
+            endereco["postalCode"] = cliente.cep
+        if cliente.logradouro:
+            endereco["street"] = cliente.logradouro
+        if cliente.numero:
+            endereco["number"] = cliente.numero
+        if cliente.complemento:
+            endereco["additionalInformation"] = cliente.complemento
+        if cliente.bairro:
+            endereco["district"] = cliente.bairro
+        if cliente.municipio_ibge:
+            endereco["city"] = {"code": cliente.municipio_ibge}
+        if endereco:
+            receiver["address"] = endereco
     payload["receiver"] = receiver
     return payload

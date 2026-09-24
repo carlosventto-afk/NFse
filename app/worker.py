@@ -13,7 +13,7 @@ from app.adapters.spedy_payload import montar_payload_spedy
 from app.adapters.spedy_resposta import chave_acesso_de, interpretar_status_cancelamento, interpretar_status_emissao
 from app.config import Settings, get_settings
 from app.crypto import decifrar
-from app.models import AmbienteEnum, Emissao, Empresa, ProvedorEmissao, StatusEmissao
+from app.models import AmbienteEnum, Cliente, Emissao, Empresa, ProvedorEmissao, StatusEmissao
 from nfse_core import (
     CertificateError,
     EventoCancelamentoData,
@@ -66,8 +66,9 @@ async def _processar_pendente_spedy(
         await _marcar_rejeitada(session, emissao, "SPEDY_NAO_PROVISIONADA", motivo)
         return True
 
+    tomador_cliente = await session.get(Cliente, emissao.cliente_id) if emissao.cliente_id else None
     try:
-        payload = montar_payload_spedy(empresa, emissao)
+        payload = montar_payload_spedy(empresa, emissao, tomador_cliente)
         cliente = SpedyClient(AmbienteEnum(empresa.ambiente).value, api_key)
     except (ValueError, KeyError, TypeError) as exc:
         await _marcar_rejeitada(session, emissao, "DADOS_INVALIDOS", str(exc))

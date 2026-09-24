@@ -11,6 +11,7 @@ export interface DadosEmpresaForm {
   codigo_tributacao: string;
   codigo_tributacao_municipal: string;
   cnae: string;
+  aliquota_iss: string;
   descricao_servico_padrao: string;
   ambiente: string;
   senha_certificado: string;

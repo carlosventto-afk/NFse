@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.adapters.spedy_payload import montar_payload_spedy
-from app.models import Emissao, Empresa, OrigemEmissao, StatusEmissao
+from app.models import Cliente, Emissao, Empresa, OrigemEmissao, StatusEmissao
 
 
 def _empresa(**overrides) -> Empresa:
@@ -121,3 +121,41 @@ def test_nao_inclui_rps_number_e_series_quando_ausentes():
     payload = montar_payload_spedy(_empresa(), _emissao(serie=None, numero=None))
     assert "rpsNumber" not in payload
     assert "rpsSeries" not in payload
+
+
+def test_inclui_iss_rate_quando_empresa_tem_aliquota():
+    payload = montar_payload_spedy(_empresa(aliquota_iss=Decimal("2.5")), _emissao())
+    assert payload["total"]["issRate"] == 2.5
+
+
+def test_nao_inclui_iss_rate_quando_empresa_sem_aliquota():
+    payload = montar_payload_spedy(_empresa(), _emissao())
+    assert "issRate" not in payload["total"]
+
+
+def test_inclui_telefone_e_endereco_do_cliente_vinculado():
+    cliente = Cliente(
+        empresa_id=uuid.uuid4(), nome="Cliente", telefone="11999999999",
+        cep="01310100", logradouro="Avenida Paulista", numero="1000",
+        complemento="Conjunto 101", bairro="Bela Vista", municipio_ibge="3550308",
+    )
+    payload = montar_payload_spedy(_empresa(), _emissao(), cliente)
+    assert payload["receiver"]["phoneNumber"] == "11999999999"
+    assert payload["receiver"]["address"] == {
+        "postalCode": "01310100", "street": "Avenida Paulista", "number": "1000",
+        "additionalInformation": "Conjunto 101", "district": "Bela Vista",
+        "city": {"code": "3550308"},
+    }
+
+
+def test_nao_inclui_telefone_nem_endereco_sem_cliente_vinculado():
+    payload = montar_payload_spedy(_empresa(), _emissao())
+    assert "phoneNumber" not in payload["receiver"]
+    assert "address" not in payload["receiver"]
+
+
+def test_nao_inclui_endereco_quando_cliente_sem_dados_de_endereco():
+    cliente = Cliente(empresa_id=uuid.uuid4(), nome="Cliente", telefone="11999999999")
+    payload = montar_payload_spedy(_empresa(), _emissao(), cliente)
+    assert payload["receiver"]["phoneNumber"] == "11999999999"
+    assert "address" not in payload["receiver"]
