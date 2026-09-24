@@ -193,6 +193,9 @@ export default function EmissoesPage() {
       <div className="totalizador">
         <span><strong>{totalNotas}</strong> nota{totalNotas === 1 ? "" : "s"}</span>
         <span>Total: <strong>R$ {valorTotal.toFixed(2)}</strong></span>
+        <button className="secundario" onClick={carregar} disabled={carregando}>
+          {carregando ? "Atualizando..." : "Atualizar"}
+        </button>
       </div>
       <div className="painel-filtros">
         <div className="form-linha">
