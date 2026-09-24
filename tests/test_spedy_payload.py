@@ -49,10 +49,16 @@ def test_effective_date_usa_fuso_de_brasilia_nao_utc():
     assert payload["effectiveDate"].startswith("2026-09-01T00:00:00")
 
 
-def test_integration_id_e_o_id_da_emissao():
+def test_integration_id_e_diferente_a_cada_chamada():
+    # Confirmado ao vivo (24/09): a Spedy usa integrationId como chave de
+    # idempotencia -- reaproveitar o id da emissao (estavel entre tentativas
+    # de "Reemitir") fazia ela devolver sempre o mesmo resultado rejeitado
+    # antigo, sem nunca tentar de novo com a prefeitura.
     emissao = _emissao()
-    payload = montar_payload_spedy(_empresa(), emissao)
-    assert payload["integrationId"] == str(emissao.id)
+    primeira = montar_payload_spedy(_empresa(), emissao)
+    segunda = montar_payload_spedy(_empresa(), emissao)
+    assert primeira["integrationId"] != segunda["integrationId"]
+    assert primeira["integrationId"] != str(emissao.id)
 
 
 def test_usa_local_de_prestacao_quando_diferente_do_municipio_emissor():

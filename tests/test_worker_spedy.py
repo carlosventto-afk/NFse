@@ -51,7 +51,11 @@ async def test_processar_uma_pendente_via_spedy_aceita_e_fica_aguardando_confirm
             pass
 
         async def emitir_nfse(self, payload):
-            assert payload["integrationId"] == str(emissao.id)
+            # NAO e str(emissao.id): a Spedy usa integrationId como chave de
+            # idempotencia, entao precisa ser um valor novo a cada tentativa
+            # de emissao (ver app/adapters/spedy_payload.py).
+            assert payload["integrationId"]
+            assert payload["integrationId"] != str(emissao.id)
             return {"_http_status": 200, "id": "nota-spedy-1", "status": "enqueued"}
 
         async def close(self):
@@ -121,7 +125,7 @@ async def test_processar_uma_pendente_via_spedy_grava_requisicao_bruta_ao_aceita
     assert processou is True
     await db_session.refresh(emissao)
     assert emissao.requisicao_bruta is not None
-    assert json.loads(emissao.requisicao_bruta)["integrationId"] == str(emissao.id)
+    assert json.loads(emissao.requisicao_bruta)["integrationId"]
 
 
 @pytest.mark.asyncio
@@ -145,7 +149,7 @@ async def test_processar_uma_pendente_via_spedy_grava_requisicao_bruta_ao_rejeit
     assert processou is True
     await db_session.refresh(emissao)
     assert emissao.requisicao_bruta is not None
-    assert json.loads(emissao.requisicao_bruta)["integrationId"] == str(emissao.id)
+    assert json.loads(emissao.requisicao_bruta)["integrationId"]
 
 
 @pytest.mark.asyncio
@@ -172,7 +176,7 @@ async def test_processar_uma_pendente_via_spedy_grava_requisicao_bruta_em_falha_
     assert processou is True
     await db_session.refresh(emissao)
     assert emissao.requisicao_bruta is not None
-    assert json.loads(emissao.requisicao_bruta)["integrationId"] == str(emissao.id)
+    assert json.loads(emissao.requisicao_bruta)["integrationId"]
 
 
 @pytest.mark.asyncio

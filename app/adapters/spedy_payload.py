@@ -3,6 +3,7 @@ Ao contrario do caminho direto (nfse_core/dps.py monta XML), aqui os dados
 vao inline no JSON -- a Spedy nao exige cliente/produto pre-cadastrados."""
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, time
 
 from app.models import Emissao, Empresa
@@ -12,7 +13,13 @@ from app.periodo import FUSO_BRT
 def montar_payload_spedy(empresa: Empresa, emissao: Emissao) -> dict:
     cidade = empresa.local_prestacao_ibge or empresa.municipio_ibge
     payload: dict = {
-        "integrationId": str(emissao.id),
+        # UUID novo a cada chamada, de proposito -- NAO usar str(emissao.id).
+        # Confirmado ao vivo (24/09): a Spedy trata integrationId como chave
+        # de idempotencia. Reaproveitar o id da emissao (estavel entre
+        # tentativas) fazia o "Reemitir" nunca reenviar de verdade -- a Spedy
+        # so devolvia o MESMO resultado (mesmo id/rps) da tentativa rejeitada
+        # original, sem nunca tentar de novo com a prefeitura.
+        "integrationId": str(uuid.uuid4()),
         "description": emissao.descricao,
         "effectiveDate": datetime.combine(emissao.competencia, time.min, tzinfo=FUSO_BRT).isoformat(),
         "total": {"invoiceAmount": float(emissao.valor)},
