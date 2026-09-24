@@ -33,9 +33,18 @@ def test_monta_campos_basicos():
     assert payload["total"]["invoiceAmount"] == 49.90
     assert payload["city"]["code"] == "1501402"
     assert payload["location"] == {"code": "1501402"}
-    assert payload["federalServiceCode"] == "140106"
+    assert payload["federalServiceCode"] == "14.01"
     assert payload["issue"] is True
     assert "cityServiceCode" not in payload
+
+
+def test_federal_service_code_usa_formato_lc116_com_ponto():
+    # Doc oficial da Spedy (24/09): federalServiceCode e o "Codigo do Item
+    # da Lista de Servico (LC 116/03)", formato com ponto -- nao o cTribNac
+    # nacional de 6 digitos que a empresa tem cadastrado (usado no XML do
+    # caminho direto). "141001" = item 14.10 (Tinturaria e lavanderia).
+    payload = montar_payload_spedy(_empresa(codigo_tributacao="141001"), _emissao())
+    assert payload["federalServiceCode"] == "14.10"
 
 
 def test_effective_date_usa_fuso_de_brasilia_nao_utc():

@@ -10,6 +10,27 @@ from app.models import Cliente, Emissao, Empresa
 from app.periodo import FUSO_BRT
 
 
+def _federal_service_code_lc116(codigo_tributacao: str) -> str:
+    """Deriva o codigo LC 116/03 (formato 'XX.XX', ex.: '14.10') a partir do
+    cTribNac nacional de 6 digitos ja cadastrado na empresa (ex.: '141001').
+
+    Confirmado na doc oficial da Spedy (24/09,
+    https://docs.spedy.com.br/api-reference/nfs-e/criar-nfs-e.md):
+    federalServiceCode e o "Codigo do Item da Lista de Servico (LC 116/03)",
+    formato com ponto -- NAO o cTribNac de 6 digitos que mandavamos antes
+    (mesmo valor usado no XML do caminho direto/SEFIN, onde cTribNac de 6
+    digitos e o formato certo). Suspeita de ser a causa do SPD999 ("erro ao
+    estabelecer comunicacao com o servico") recorrente em Belem: o valor
+    "existe" como string, so estava no formato errado, gerando um erro
+    generico do lado da Spedy/prefeitura em vez de uma rejeicao especifica
+    de campo.
+    """
+    digitos = codigo_tributacao.strip()
+    if len(digitos) < 4:
+        return digitos
+    return f"{int(digitos[:2])}.{digitos[2:4]}"
+
+
 def montar_payload_spedy(empresa: Empresa, emissao: Emissao, cliente: Cliente | None = None) -> dict:
     cidade = empresa.local_prestacao_ibge or empresa.municipio_ibge
     payload: dict = {
@@ -26,7 +47,7 @@ def montar_payload_spedy(empresa: Empresa, emissao: Emissao, cliente: Cliente | 
         "city": {"code": cidade},
         "location": {"code": cidade},
         "taxationType": "taxationInMunicipality",
-        "federalServiceCode": empresa.codigo_tributacao,
+        "federalServiceCode": _federal_service_code_lc116(empresa.codigo_tributacao),
         "issue": True,
     }
     if emissao.numero is not None:
