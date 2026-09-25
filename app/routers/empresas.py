@@ -168,8 +168,8 @@ async def editar_minha_empresa(
         raise HTTPException(status_code=422, detail="CNPJ deve ter 14 digitos")
     if ambiente not in ("homologacao", "producao"):
         raise HTTPException(status_code=422, detail="Ambiente deve ser homologacao ou producao")
-    if provedor_emissao is not None and provedor_emissao not in ("direto", "spedy"):
-        raise HTTPException(status_code=422, detail="provedor_emissao deve ser direto ou spedy")
+    if provedor_emissao is not None and provedor_emissao not in ("direto", "spedy", "nacional"):
+        raise HTTPException(status_code=422, detail="provedor_emissao deve ser direto, spedy ou nacional")
     inscricao_municipal = (inscricao_municipal or "").strip() or None
     local_prestacao_ibge = (local_prestacao_ibge or "").strip() or None
     codigo_tributacao_municipal = (codigo_tributacao_municipal or "").strip() or None

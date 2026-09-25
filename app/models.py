@@ -26,6 +26,13 @@ class AmbienteEnum(str, enum.Enum):
 class ProvedorEmissao(str, enum.Enum):
     direto = "direto"
     spedy = "spedy"
+    # Forca o endpoint NACIONAL generico (sefin.nfse.gov.br), ignorando
+    # qualquer endpoint proprio de municipio (ex.: Belem -- ver
+    # MUNICIPIO_DPS_URLS em nfse_core/client.py). "direto" auto-detecta o
+    # endpoint proprio quando existe; "nacional" pula essa deteccao de
+    # proposito, pra testar/usar o endpoint nacional puro mesmo em
+    # municipios com endpoint proprio mapeado.
+    nacional = "nacional"
 
 
 class StatusEmissao(str, enum.Enum):

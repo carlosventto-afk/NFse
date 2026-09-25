@@ -180,9 +180,16 @@ async def processar_uma_pendente(session: AsyncSession, settings: Settings | Non
         # SQLAlchemy devolve apos um session.get() (coluna e String, nao um
         # Enum do SQLAlchemy — .value direto em cima do valor recem-carregado
         # do banco quebra com AttributeError; ver Task 5).
+        # "nacional" forca o endpoint nacional generico (municipio_ibge=None
+        # pula a busca em MUNICIPIO_DPS_URLS dentro do SefinClient); "direto"
+        # mantem a auto-deteccao do endpoint proprio do municipio (ex.: Belem).
+        municipio_ibge_sefin = (
+            None if ProvedorEmissao(empresa.provedor_emissao) == ProvedorEmissao.nacional
+            else empresa.municipio_ibge
+        )
         cliente = SefinClient(
             AmbienteEnum(empresa.ambiente).value, pfx_base64, senha,
-            municipio_ibge=empresa.municipio_ibge,
+            municipio_ibge=municipio_ibge_sefin,
         )
         try:
             bruta = None
@@ -428,9 +435,13 @@ async def processar_um_cancelamento_pendente(session: AsyncSession, settings: Se
         xml_evento = build_evento_cancelamento_xml(evento_data)
         assinado = sign_evento(xml_evento, pfx_base64, senha)
 
+        municipio_ibge_sefin = (
+            None if ProvedorEmissao(empresa.provedor_emissao) == ProvedorEmissao.nacional
+            else empresa.municipio_ibge
+        )
         cliente = SefinClient(
             AmbienteEnum(empresa.ambiente).value, pfx_base64, senha,
-            municipio_ibge=empresa.municipio_ibge,
+            municipio_ibge=municipio_ibge_sefin,
         )
         try:
             bruta = await cliente.registrar_evento(emissao.chave_acesso, assinado)

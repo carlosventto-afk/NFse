@@ -11,7 +11,7 @@ from cryptography.fernet import Fernet
 
 from app.config import get_settings
 from app.crypto import cifrar, hash_senha
-from app.models import AmbienteEnum, Emissao, Empresa, OrigemEmissao, StatusEmissao, Usuario
+from app.models import AmbienteEnum, Emissao, Empresa, OrigemEmissao, ProvedorEmissao, StatusEmissao, Usuario
 from nfse_core import CertificateError, SefinError
 import app.worker as worker
 
@@ -90,6 +90,88 @@ async def test_processar_uma_pendente_marca_autorizada_em_sucesso(db_session, mo
     assert emissao.status == StatusEmissao.autorizada
     assert emissao.chave_acesso == "1" * 50
     assert emissao.xml_nfse == b"<NFSe>autorizada</NFSe>"
+
+
+@pytest.mark.asyncio
+async def test_provedor_nacional_forca_municipio_ibge_none_no_sefin_client(db_session, monkeypatch):
+    # "nacional" precisa pular a auto-deteccao de endpoint proprio de
+    # municipio (MUNICIPIO_DPS_URLS em nfse_core/client.py) -- passando
+    # municipio_ibge=None o SefinClient nunca encontra entrada la e cai no
+    # endpoint nacional generico, mesmo pra um municipio (Belem) que tem
+    # endpoint proprio mapeado.
+    fernet_key = get_settings().fernet_key
+    titular = Usuario(email=f"titular-worker-{uuid.uuid4()}@teste.com", senha_hash=hash_senha("senha-forte-123"))
+    db_session.add(titular)
+    await db_session.flush()
+    empresa = Empresa(
+        cnpj="12345678000199", inscricao_municipal="1", municipio_ibge="1501402",
+        op_simp_nac=3, codigo_tributacao="141001", descricao_servico_padrao="Lavagem",
+        ambiente=AmbienteEnum.homologacao, provedor_emissao=ProvedorEmissao.nacional,
+        certificado_pfx_cifrado=cifrar("pfx-fake-base64", fernet_key),
+        certificado_senha_cifrada=cifrar("senha-fake", fernet_key),
+        certificado_valido_ate=datetime.now(timezone.utc),
+        webhook_token_hash="x", titular_id=titular.id,
+    )
+    db_session.add(empresa)
+    await db_session.flush()
+    emissao = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.manual, status=StatusEmissao.pendente,
+        serie="1", numero=1, tomador_cpf_cnpj="98765432100", tomador_nome="Cliente",
+        descricao="Lavagem de roupa", valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    db_session.add(emissao)
+    await db_session.commit()
+
+    chamadas: list[dict] = []
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            chamadas.append(kwargs)
+
+        async def emitir_dps(self, xml_assinado: bytes) -> dict:
+            return {
+                "_http_status": 201, "chaveAcesso": "1" * 50,
+                "nfseXmlGZipB64": base64.b64encode(gzip.compress(b"<NFSe>autorizada</NFSe>")).decode(),
+            }
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(worker, "sign_dps", lambda xml, pfx, senha: b"<DPS assinada/>")
+    monkeypatch.setattr(worker, "SefinClient", ClienteFalso)
+
+    processou = await worker.processar_uma_pendente(db_session)
+
+    assert processou is True
+    assert chamadas[0]["municipio_ibge"] is None
+
+
+@pytest.mark.asyncio
+async def test_provedor_direto_mantem_municipio_ibge_no_sefin_client(db_session, monkeypatch):
+    await _empresa_e_emissao_pendente(db_session)
+
+    chamadas: list[dict] = []
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            chamadas.append(kwargs)
+
+        async def emitir_dps(self, xml_assinado: bytes) -> dict:
+            return {
+                "_http_status": 201, "chaveAcesso": "1" * 50,
+                "nfseXmlGZipB64": base64.b64encode(gzip.compress(b"<NFSe>autorizada</NFSe>")).decode(),
+            }
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(worker, "sign_dps", lambda xml, pfx, senha: b"<DPS assinada/>")
+    monkeypatch.setattr(worker, "SefinClient", ClienteFalso)
+
+    processou = await worker.processar_uma_pendente(db_session)
+
+    assert processou is True
+    assert chamadas[0]["municipio_ibge"] == "1501402"
 
 
 @pytest.mark.asyncio

@@ -167,7 +167,8 @@ export default function EditarEmpresaPage() {
           <label htmlFor="provedor_emissao">Provedor de emissao</label>
           <select id="provedor_emissao" value={dados.provedor_emissao}
             onChange={(e) => atualizar("provedor_emissao", e.target.value)}>
-            <option value="direto">Direto (SEFIN Nacional / municipio proprio)</option>
+            <option value="direto">Direto (auto -- usa endpoint proprio do municipio quando existir)</option>
+            <option value="nacional">NFS-e Nacional (forca o endpoint nacional generico)</option>
             <option value="spedy">Spedy</option>
           </select>
         </div>
