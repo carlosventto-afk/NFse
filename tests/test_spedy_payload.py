@@ -107,17 +107,14 @@ def test_inclui_codigo_tributacao_municipal_quando_presente():
     assert payload["cityServiceCode"] == "007"
 
 
-def test_nao_inclui_cnae_quando_ausente():
-    payload = montar_payload_spedy(_empresa(), _emissao())
-    assert "cnaeCode" not in payload
-
-
-def test_inclui_cnae_quando_presente():
-    # Confirmado ao vivo (17/09): Belem rejeita a emissao via Spedy sem esse
-    # campo (L999 "Atividade nao informada"), mesmo com federalServiceCode
-    # preenchido.
+def test_nunca_inclui_cnae_code():
+    # Removido de proposito em teste (25/09) -- uma nota autorizada de
+    # 21/09 nao tinha esse campo no XML SEFIN de saida (comparacao fraca,
+    # ver comentario em spedy_payload.py). Historico anterior (17/09) era
+    # o oposto (Belem rejeitava com L999 sem cnaeCode) -- se voltar a dar
+    # L999, restaurar este campo a partir do git blame.
     payload = montar_payload_spedy(_empresa(cnae="9601302"), _emissao())
-    assert payload["cnaeCode"] == "9601302"
+    assert "cnaeCode" not in payload
 
 
 def test_inclui_rps_number_e_series_quando_presentes():

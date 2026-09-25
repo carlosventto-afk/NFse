@@ -58,15 +58,20 @@ def montar_payload_spedy(empresa: Empresa, emissao: Emissao, cliente: Cliente | 
         payload["total"]["issRate"] = float(empresa.aliquota_iss)
     if empresa.codigo_tributacao_municipal:
         payload["cityServiceCode"] = empresa.codigo_tributacao_municipal
-    if empresa.cnae:
-        payload["cnaeCode"] = empresa.cnae
+    # cnaeCode removido de proposito em teste (25/09): uma nota AUTORIZADA
+    # de 21/09 nao tinha esse campo no XML final -- mas cuidado, essa
+    # comparacao e fraca (o XML e o documento SEFIN de saida, que nunca tem
+    # esse campo de qualquer forma; nao prova que a Spedy dispensa o campo
+    # na ENTRADA). Historico anterior (17/09, ver git blame/CHANGELOG) era
+    # o oposto: Belem rejeitava com L999 "Atividade nao informada" sem
+    # cnaeCode. Se voltar a dar L999, reverter este commit.
     # Sempre manda receiver, mesmo sem CPF/CNPJ do tomador (caso das notas
     # importadas da planilha de vendas, cliente "nao identificado"): suspeita
     # levantada ao vivo (23/09) de que a ausencia total do bloco e o que faz
     # a SEFIN de Belem devolver SPD999 ("erro ao estabelecer comunicacao com
     # o servico") em vez de autorizar. federalTaxNumber/email so entram
     # quando existem -- nunca manda null explicito (mesmo padrao do resto
-    # deste payload, ver cityServiceCode/cnaeCode acima).
+    # deste payload, ver cityServiceCode acima).
     receiver: dict = {"name": emissao.tomador_nome or "Consumidor nao identificado"}
     if emissao.tomador_cpf_cnpj:
         receiver["federalTaxNumber"] = emissao.tomador_cpf_cnpj
