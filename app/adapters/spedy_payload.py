@@ -65,40 +65,11 @@ def montar_payload_spedy(empresa: Empresa, emissao: Emissao, cliente: Cliente | 
     # na ENTRADA). Historico anterior (17/09, ver git blame/CHANGELOG) era
     # o oposto: Belem rejeitava com L999 "Atividade nao informada" sem
     # cnaeCode. Se voltar a dar L999, reverter este commit.
-    # Sempre manda receiver, mesmo sem CPF/CNPJ do tomador (caso das notas
-    # importadas da planilha de vendas, cliente "nao identificado"): suspeita
-    # levantada ao vivo (23/09) de que a ausencia total do bloco e o que faz
-    # a SEFIN de Belem devolver SPD999 ("erro ao estabelecer comunicacao com
-    # o servico") em vez de autorizar. federalTaxNumber/email so entram
-    # quando existem -- nunca manda null explicito (mesmo padrao do resto
-    # deste payload, ver cityServiceCode acima).
-    receiver: dict = {"name": emissao.tomador_nome or "Consumidor nao identificado"}
-    if emissao.tomador_cpf_cnpj:
-        receiver["federalTaxNumber"] = emissao.tomador_cpf_cnpj
-    if emissao.tomador_email:
-        receiver["email"] = emissao.tomador_email
-    # Telefone/endereco vem do cadastro do Cliente (nao da Emissao, que so
-    # denormaliza cpf_cnpj/nome/email) -- so existe quando a emissao esta
-    # linkada a um cliente cadastrado (emissao.cliente_id). Notas importadas
-    # da planilha de vendas/webhook, sem cliente vinculado, seguem sem esses
-    # campos (Spedy trata como opcionais).
-    if cliente is not None:
-        if cliente.telefone:
-            receiver["phoneNumber"] = cliente.telefone
-        endereco: dict = {}
-        if cliente.cep:
-            endereco["postalCode"] = cliente.cep
-        if cliente.logradouro:
-            endereco["street"] = cliente.logradouro
-        if cliente.numero:
-            endereco["number"] = cliente.numero
-        if cliente.complemento:
-            endereco["additionalInformation"] = cliente.complemento
-        if cliente.bairro:
-            endereco["district"] = cliente.bairro
-        if cliente.municipio_ibge:
-            endereco["city"] = {"code": cliente.municipio_ibge}
-        if endereco:
-            receiver["address"] = endereco
-    payload["receiver"] = receiver
+    #
+    # receiver removido inteiro de proposito em teste (25/09), a pedido
+    # explicito -- CUIDADO, isso contraria um achado ja confirmado: em
+    # 23/09, sem esse bloco a SEFIN de Belem devolvia o MESMO SPD999 que
+    # motivou este teste. `cliente` fica sem uso aqui por enquanto (usado
+    # soh se/quando o bloco voltar); ver historico deste arquivo (git log)
+    # pra restaurar receiver/telefone/endereco caso o SPD999 nao suma.
     return payload

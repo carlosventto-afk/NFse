@@ -76,30 +76,17 @@ def test_usa_local_de_prestacao_quando_diferente_do_municipio_emissor():
     assert payload["location"] == {"code": "3550308"}
 
 
-def test_inclui_receiver_quando_ha_documento_do_tomador():
+def test_nunca_inclui_receiver():
+    # Removido inteiro de proposito em teste (25/09), a pedido explicito --
+    # CUIDADO, contraria achado ja confirmado em 23/09 (sem receiver, Belem
+    # devolvia o mesmo SPD999 que motivou este teste). Se o SPD999 nao
+    # sumir, restaurar a partir do git log deste arquivo.
     emissao = _emissao(tomador_cpf_cnpj="98765432100", tomador_nome="Cliente", tomador_email="c@x.com")
     payload = montar_payload_spedy(_empresa(), emissao)
-    assert payload["receiver"] == {
-        "federalTaxNumber": "98765432100", "name": "Cliente", "email": "c@x.com",
-    }
+    assert "receiver" not in payload
 
-
-def test_inclui_receiver_generico_quando_tomador_nao_identificado():
-    # Suspeita (23/09): a SEFIN de Belem devolve SPD999 ("erro ao
-    # estabelecer comunicacao com o servico") pras notas importadas da
-    # planilha de vendas, que nao tem tomador -- ver
-    # .claude/challenges/2026-09-16-spedy-provisionamento-divergencias-reais.md
-    # pro historico de divergencias doc-vs-API ja confirmadas dessa empresa.
-    payload = montar_payload_spedy(_empresa(), _emissao())
-    assert payload["receiver"] == {"name": "Consumidor nao identificado"}
-    assert "federalTaxNumber" not in payload["receiver"]
-    assert "email" not in payload["receiver"]
-
-
-def test_inclui_receiver_com_nome_mas_sem_documento_do_tomador():
-    emissao = _emissao(tomador_nome="Cliente sem documento")
-    payload = montar_payload_spedy(_empresa(), emissao)
-    assert payload["receiver"] == {"name": "Cliente sem documento"}
+    payload_generico = montar_payload_spedy(_empresa(), _emissao())
+    assert "receiver" not in payload_generico
 
 
 def test_inclui_codigo_tributacao_municipal_quando_presente():
@@ -139,29 +126,13 @@ def test_nao_inclui_iss_rate_quando_empresa_sem_aliquota():
     assert "issRate" not in payload["total"]
 
 
-def test_inclui_telefone_e_endereco_do_cliente_vinculado():
+def test_cliente_vinculado_nao_afeta_payload_enquanto_receiver_esta_fora():
+    # receiver removido em teste (25/09, ver test_nunca_inclui_receiver) --
+    # o parametro cliente fica sem efeito ate o bloco voltar.
     cliente = Cliente(
         empresa_id=uuid.uuid4(), nome="Cliente", telefone="11999999999",
         cep="01310100", logradouro="Avenida Paulista", numero="1000",
         complemento="Conjunto 101", bairro="Bela Vista", municipio_ibge="3550308",
     )
     payload = montar_payload_spedy(_empresa(), _emissao(), cliente)
-    assert payload["receiver"]["phoneNumber"] == "11999999999"
-    assert payload["receiver"]["address"] == {
-        "postalCode": "01310100", "street": "Avenida Paulista", "number": "1000",
-        "additionalInformation": "Conjunto 101", "district": "Bela Vista",
-        "city": {"code": "3550308"},
-    }
-
-
-def test_nao_inclui_telefone_nem_endereco_sem_cliente_vinculado():
-    payload = montar_payload_spedy(_empresa(), _emissao())
-    assert "phoneNumber" not in payload["receiver"]
-    assert "address" not in payload["receiver"]
-
-
-def test_nao_inclui_endereco_quando_cliente_sem_dados_de_endereco():
-    cliente = Cliente(empresa_id=uuid.uuid4(), nome="Cliente", telefone="11999999999")
-    payload = montar_payload_spedy(_empresa(), _emissao(), cliente)
-    assert payload["receiver"]["phoneNumber"] == "11999999999"
-    assert "address" not in payload["receiver"]
+    assert "receiver" not in payload
