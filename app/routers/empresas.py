@@ -312,47 +312,37 @@ async def editar_minha_empresa(
         empresa.spedy_api_key_cifrada = cifrar(spedy_api_key, fernet_key)
     elif provedor_emissao_final == "spedy" and empresa.spedy_empresa_id:
         # Empresa ja provisionada, sem reprovisionar agora: taxRegime/
-        # specialTaxRegime sao campos do CADASTRO da empresa na Spedy (nao da
-        # nota) -- sincroniza a cada edicao pra nao deixar o cadastro la
-        # desatualizado indefinidamente (ver caso Belem, erro E188).
-        fernet_key = get_settings().fernet_key
-        api_key = decifrar(empresa.spedy_api_key_cifrada, fernet_key)
-        cliente = SpedyClient(AmbienteEnum(empresa.ambiente).value, api_key)
-        try:
-            await cliente.alterar_empresa(empresa.spedy_empresa_id, montar_dados_regime_tributario(empresa))
-        except SpedyError as exc:
-            logger.warning(
-                "falha ao sincronizar regime tributario da empresa %s na Spedy: %s | corpo bruto: %s",
-                empresa.id, exc, exc.body, exc_info=True,
-            )
-            raise HTTPException(status_code=502, detail=str(exc))
-        finally:
-            await cliente.close()
-
-        # habilitar_reforma_tributaria e PUT /companies/{id}/settings, o
-        # mesmo endpoint que configurar_nfse no provisionamento -- confirmado
-        # ao vivo (16/09) que esse endpoint so aceita a chave MESTRE, nao a
-        # da propria empresa (ao contrario do que a doc publica sugere).
-        # Repetido a cada edicao (idempotente) pra cobrir empresas
-        # provisionadas antes deste campo existir.
+        # specialTaxRegime e taxReformFieldsEnabled sao campos do CADASTRO
+        # da empresa na Spedy (nao da nota) -- sincroniza a cada edicao pra
+        # nao deixar o cadastro la desatualizado indefinidamente (ver caso
+        # Belem, erro E188). Confirmado ao vivo (28/09): alterar_empresa
+        # (PUT /companies/{id}) tambem so aceita a chave MESTRE -- usar a
+        # chave da propria empresa aqui (como o codigo fazia antes) da
+        # "Usuario nao autenticado". Mesmo padrao ja confirmado (16/09) pra
+        # adicionar_certificado/configurar_nfse/habilitar_reforma_tributaria:
+        # a chave da empresa so serve pras operacoes de emissao/consulta/
+        # cancelamento (ver app/worker.py), nunca pra cadastro.
         #
         # Best-effort de proposito (nunca levanta HTTPException aqui):
-        # confirmado ao vivo (28/09) que uma falha nesta etapa bloqueava o
-        # salvamento inteiro da empresa -- inclusive a troca de provedor,
-        # que nao tem nada a ver com isto -- porque a excecao interrompia a
-        # funcao antes do session.commit() mais abaixo. Se falhar, so loga;
-        # tenta de novo na proxima edicao.
+        # confirmado ao vivo (28/09) que uma falha nesta sincronizacao
+        # bloqueava o salvamento inteiro da empresa -- inclusive a troca de
+        # provedor, que nao tem nada a ver com isto -- porque a excecao
+        # interrompia a funcao antes do session.commit() mais abaixo. Se
+        # falhar, so loga; tenta de novo na proxima edicao (idempotente).
         try:
             cliente_mestre = SpedyClient(
                 AmbienteEnum(empresa.ambiente).value, chave_mestre_spedy(empresa.ambiente, get_settings()),
             )
             try:
+                await cliente_mestre.alterar_empresa(
+                    empresa.spedy_empresa_id, montar_dados_regime_tributario(empresa),
+                )
                 await cliente_mestre.habilitar_reforma_tributaria(empresa.spedy_empresa_id)
             finally:
                 await cliente_mestre.close()
         except SpedyError as exc:
             logger.warning(
-                "falha ao habilitar campos da reforma tributaria da empresa %s na Spedy: %s | corpo bruto: %s",
+                "falha ao sincronizar cadastro da empresa %s na Spedy: %s | corpo bruto: %s",
                 empresa.id, exc, getattr(exc, "body", None), exc_info=True,
             )
 
