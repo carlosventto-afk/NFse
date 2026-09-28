@@ -536,6 +536,79 @@ async def test_segunda_edicao_de_empresa_ja_na_spedy_sincroniza_regime_tributari
 
 
 @pytest.mark.asyncio
+async def test_falha_ao_habilitar_reforma_tributaria_nao_bloqueia_o_salvamento(db_session, monkeypatch):
+    from app.adapters.spedy_client import SpedyError
+
+    # Confirmado ao vivo (28/09): uma falha nessa chamada (best-effort,
+    # idempotente) estava impedindo o salvamento inteiro da empresa --
+    # inclusive a troca de provedor, que nao tem nada a ver com isto.
+    fernet_key = get_settings().fernet_key
+    empresa, titular = await criar_empresa_titular(
+        db_session, cnpj="99988877000155",
+        certificado_pfx_cifrado=cifrar("pfx-fake-base64", fernet_key),
+        certificado_senha_cifrada=cifrar("senha123", fernet_key),
+    )
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    import app.routers.empresas as empresas_router
+
+    async def _provisionar_falso(empresa_, pfx_base64, senha, settings):
+        return "spedy-empresa-1", "spedy-chave-1"
+
+    monkeypatch.setattr(empresas_router, "provisionar_empresa", _provisionar_falso)
+    monkeypatch.setattr(empresas_router, "chave_mestre_spedy", lambda ambiente, settings: "chave-mestre-fake")
+
+    class _ClienteSpedyFalso:
+        def __init__(self, ambiente, api_key):
+            pass
+
+        async def alterar_empresa(self, spedy_empresa_id, dados):
+            return {}
+
+        async def habilitar_reforma_tributaria(self, spedy_empresa_id):
+            raise SpedyError("Spedy fora do ar", 502, "corpo bruto")
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(empresas_router, "SpedyClient", _ClienteSpedyFalso)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            primeira = await client.put(
+                "/api/empresas/mim",
+                data={
+                    **_form_edicao(cnpj="99988877000155"),
+                    "provedor_emissao": "spedy", "razao_social": "EMPRESA TESTE LTDA",
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert primeira.status_code == 200
+
+            # Edicao seguinte: habilitar_reforma_tributaria falha, mas o
+            # resto (inclusive manter provedor_emissao="spedy") tem que
+            # salvar normalmente.
+            segunda = await client.put(
+                "/api/empresas/mim",
+                data={
+                    **_form_edicao(cnpj="99988877000155", descricao_servico_padrao="Lavagem e passagem"),
+                    "provedor_emissao": "spedy",
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert segunda.status_code == 200
+        assert segunda.json()["provedor_emissao"] == "spedy"
+    finally:
+        app.dependency_overrides.clear()
+
+    await db_session.refresh(empresa)
+    assert empresa.provedor_emissao == "spedy"
+    assert empresa.descricao_servico_padrao == "Lavagem e passagem"
+
+
+@pytest.mark.asyncio
 async def test_segunda_edicao_sem_endereco_mantem_valor_anterior(db_session):
     # Fix 1: razao_social/logradouro/numero/complemento/bairro/cep tambem
     # nao podem ser silenciosamente apagados quando um request posterior nao

@@ -335,19 +335,26 @@ async def editar_minha_empresa(
         # da propria empresa (ao contrario do que a doc publica sugere).
         # Repetido a cada edicao (idempotente) pra cobrir empresas
         # provisionadas antes deste campo existir.
-        cliente_mestre = SpedyClient(
-            AmbienteEnum(empresa.ambiente).value, chave_mestre_spedy(empresa.ambiente, get_settings()),
-        )
+        #
+        # Best-effort de proposito (nunca levanta HTTPException aqui):
+        # confirmado ao vivo (28/09) que uma falha nesta etapa bloqueava o
+        # salvamento inteiro da empresa -- inclusive a troca de provedor,
+        # que nao tem nada a ver com isto -- porque a excecao interrompia a
+        # funcao antes do session.commit() mais abaixo. Se falhar, so loga;
+        # tenta de novo na proxima edicao.
         try:
-            await cliente_mestre.habilitar_reforma_tributaria(empresa.spedy_empresa_id)
+            cliente_mestre = SpedyClient(
+                AmbienteEnum(empresa.ambiente).value, chave_mestre_spedy(empresa.ambiente, get_settings()),
+            )
+            try:
+                await cliente_mestre.habilitar_reforma_tributaria(empresa.spedy_empresa_id)
+            finally:
+                await cliente_mestre.close()
         except SpedyError as exc:
             logger.warning(
                 "falha ao habilitar campos da reforma tributaria da empresa %s na Spedy: %s | corpo bruto: %s",
-                empresa.id, exc, exc.body, exc_info=True,
+                empresa.id, exc, getattr(exc, "body", None), exc_info=True,
             )
-            raise HTTPException(status_code=502, detail=str(exc))
-        finally:
-            await cliente_mestre.close()
 
     try:
         await session.commit()
