@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.crypto import cifrar, decifrar
-from app.adapters.spedy_provisionamento import montar_dados_regime_tributario, provisionar_empresa
+from app.adapters.spedy_provisionamento import chave_mestre_spedy, montar_dados_regime_tributario, provisionar_empresa
 from app.adapters.spedy_client import SpedyClient, SpedyError
 from app.db import get_db
 from app.models import AmbienteEnum, Emissao, Empresa, PapelUsuario, Usuario, UsuarioEmpresa
@@ -149,6 +149,9 @@ async def editar_minha_empresa(
     codigo_tributacao_municipal: str | None = Form(None),
     cnae: str | None = Form(None),
     aliquota_iss: str | None = Form(None),
+    ibs_cbs_cst: str | None = Form(None),
+    ibs_cbs_classificacao: str | None = Form(None),
+    ibs_cbs_codigo_indicador_operacao: str | None = Form(None),
     descricao_servico_padrao: str = Form(...),
     ambiente: str = Form(...),
     senha_certificado: str | None = Form(None),
@@ -181,6 +184,19 @@ async def editar_minha_empresa(
             aliquota_iss_decimal = Decimal(aliquota_iss.strip().replace(",", "."))
         except InvalidOperation:
             raise HTTPException(status_code=422, detail="aliquota_iss deve ser um numero (ex.: 2 ou 2.5)")
+    ibs_cbs_cst_int = None
+    if (ibs_cbs_cst or "").strip():
+        try:
+            ibs_cbs_cst_int = int(ibs_cbs_cst.strip())
+        except ValueError:
+            raise HTTPException(status_code=422, detail="ibs_cbs_cst deve ser um numero inteiro")
+    ibs_cbs_classificacao_int = None
+    if (ibs_cbs_classificacao or "").strip():
+        try:
+            ibs_cbs_classificacao_int = int(ibs_cbs_classificacao.strip())
+        except ValueError:
+            raise HTTPException(status_code=422, detail="ibs_cbs_classificacao deve ser um numero inteiro")
+    ibs_cbs_codigo_indicador_operacao = (ibs_cbs_codigo_indicador_operacao or "").strip() or None
 
     empresa = await session.get(Empresa, contexto.empresa_id)
 
@@ -233,6 +249,9 @@ async def editar_minha_empresa(
     empresa.codigo_tributacao_municipal = codigo_tributacao_municipal
     empresa.cnae = cnae
     empresa.aliquota_iss = aliquota_iss_decimal
+    empresa.ibs_cbs_cst = ibs_cbs_cst_int
+    empresa.ibs_cbs_classificacao = ibs_cbs_classificacao_int
+    empresa.ibs_cbs_codigo_indicador_operacao = ibs_cbs_codigo_indicador_operacao
     empresa.descricao_servico_padrao = descricao_servico_padrao
     empresa.ambiente = ambiente
 
@@ -309,6 +328,26 @@ async def editar_minha_empresa(
             raise HTTPException(status_code=502, detail=str(exc))
         finally:
             await cliente.close()
+
+        # habilitar_reforma_tributaria e PUT /companies/{id}/settings, o
+        # mesmo endpoint que configurar_nfse no provisionamento -- confirmado
+        # ao vivo (16/09) que esse endpoint so aceita a chave MESTRE, nao a
+        # da propria empresa (ao contrario do que a doc publica sugere).
+        # Repetido a cada edicao (idempotente) pra cobrir empresas
+        # provisionadas antes deste campo existir.
+        cliente_mestre = SpedyClient(
+            AmbienteEnum(empresa.ambiente).value, chave_mestre_spedy(empresa.ambiente, get_settings()),
+        )
+        try:
+            await cliente_mestre.habilitar_reforma_tributaria(empresa.spedy_empresa_id)
+        except SpedyError as exc:
+            logger.warning(
+                "falha ao habilitar campos da reforma tributaria da empresa %s na Spedy: %s | corpo bruto: %s",
+                empresa.id, exc, exc.body, exc_info=True,
+            )
+            raise HTTPException(status_code=502, detail=str(exc))
+        finally:
+            await cliente_mestre.close()
 
     try:
         await session.commit()

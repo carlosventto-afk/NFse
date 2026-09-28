@@ -195,6 +195,9 @@ class EmpresaDetalheOut(BaseModel):
     codigo_tributacao_municipal: str | None
     cnae: str | None
     aliquota_iss: Decimal | None
+    ibs_cbs_cst: int | None
+    ibs_cbs_classificacao: int | None
+    ibs_cbs_codigo_indicador_operacao: str | None
     descricao_servico_padrao: str
     ambiente: str
     certificado_valido_ate: datetime

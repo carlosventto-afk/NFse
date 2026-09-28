@@ -126,6 +126,29 @@ def test_nao_inclui_iss_rate_quando_empresa_sem_aliquota():
     assert "issRate" not in payload["total"]
 
 
+def test_inclui_ibs_cbs_quando_os_3_campos_obrigatorios_estao_preenchidos():
+    payload = montar_payload_spedy(
+        _empresa(ibs_cbs_cst=200, ibs_cbs_classificacao=100001, ibs_cbs_codigo_indicador_operacao="1"),
+        _emissao(),
+    )
+    assert payload["ibsCbs"] == {"cst": 200, "classification": 100001, "operationIndicatorCode": "1"}
+
+
+def test_nao_inclui_ibs_cbs_quando_nenhum_campo_preenchido():
+    payload = montar_payload_spedy(_empresa(), _emissao())
+    assert "ibsCbs" not in payload
+
+
+def test_nao_inclui_ibs_cbs_quando_falta_um_dos_3_campos_obrigatorios():
+    # "Obrigatorios quando aplicavel" na doc da Spedy -- nunca manda o bloco
+    # pela metade (ex.: so CST, sem classificacao/indicador).
+    payload = montar_payload_spedy(
+        _empresa(ibs_cbs_cst=200, ibs_cbs_classificacao=100001, ibs_cbs_codigo_indicador_operacao=None),
+        _emissao(),
+    )
+    assert "ibsCbs" not in payload
+
+
 def test_cliente_vinculado_nao_afeta_payload_enquanto_receiver_esta_fora():
     # receiver removido em teste (25/09, ver test_nunca_inclui_receiver) --
     # o parametro cliente fica sem efeito ate o bloco voltar.

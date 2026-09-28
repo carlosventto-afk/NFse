@@ -101,6 +101,15 @@ class Empresa(Base):
     # total.issRate no payload da Spedy (ver app/adapters/spedy_payload.py);
     # nula = nao manda o campo (a Spedy trata como opcional).
     aliquota_iss: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    # Reforma tributaria (IBS/CBS, EC 132/2023) -- campos do bloco `ibsCbs`
+    # no payload de emissao da Spedy (POST /service-invoices). Os 3 juntos
+    # ficam "obrigatorios quando aplicavel" segundo a doc oficial (28/09);
+    # so mandamos o bloco quando os 3 estao preenchidos (ver
+    # app/adapters/spedy_payload.py). Precisam ser os valores REAIS que o
+    # contador da empresa fornecer -- nao ha default seguro aqui.
+    ibs_cbs_cst: Mapped[int | None] = mapped_column(nullable=True)
+    ibs_cbs_classificacao: Mapped[int | None] = mapped_column(nullable=True)
+    ibs_cbs_codigo_indicador_operacao: Mapped[str | None] = mapped_column(String(20), nullable=True)
     descricao_servico_padrao: Mapped[str] = mapped_column(String(2000), nullable=False)
     ambiente: Mapped[AmbienteEnum] = mapped_column(
         String(20), default=AmbienteEnum.homologacao, nullable=False

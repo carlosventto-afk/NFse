@@ -403,12 +403,19 @@ async def test_segunda_edicao_sem_provedor_emissao_mantem_spedy(db_session, monk
         return "spedy-empresa-1", "spedy-chave-1"
 
     monkeypatch.setattr(empresas_router, "provisionar_empresa", _provisionar_falso)
+    # Ramo de re-sync (empresa ja provisionada) chama habilitar_reforma_
+    # tributaria com a chave MESTRE -- sem chave real configurada no
+    # ambiente de teste, precisa ser destravado tambem.
+    monkeypatch.setattr(empresas_router, "chave_mestre_spedy", lambda ambiente, settings: "chave-mestre-fake")
 
     class _ClienteSpedyFalso:
         def __init__(self, ambiente, api_key):
             pass
 
         async def alterar_empresa(self, spedy_empresa_id, dados):
+            return {}
+
+        async def habilitar_reforma_tributaria(self, spedy_empresa_id):
             return {}
 
         async def close(self):
@@ -475,6 +482,7 @@ async def test_segunda_edicao_de_empresa_ja_na_spedy_sincroniza_regime_tributari
         return "spedy-empresa-1", "spedy-chave-1"
 
     monkeypatch.setattr(empresas_router, "provisionar_empresa", _provisionar_falso)
+    monkeypatch.setattr(empresas_router, "chave_mestre_spedy", lambda ambiente, settings: "chave-mestre-fake")
 
     chamadas = []
 
@@ -484,6 +492,9 @@ async def test_segunda_edicao_de_empresa_ja_na_spedy_sincroniza_regime_tributari
 
         async def alterar_empresa(self, spedy_empresa_id, dados):
             chamadas.append((spedy_empresa_id, dados))
+            return {}
+
+        async def habilitar_reforma_tributaria(self, spedy_empresa_id):
             return {}
 
         async def close(self):

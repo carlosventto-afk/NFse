@@ -201,6 +201,23 @@ async def test_configurar_nfse_envelopa_em_serviceinvoice():
 
 
 @pytest.mark.asyncio
+async def test_habilitar_reforma_tributaria_liga_o_flag_no_bloco_general():
+    cliente = SpedyClient("homologacao", "chave-mestre")
+    chamadas = []
+
+    async def _request_falso(method, path, **kwargs):
+        chamadas.append((method, path, kwargs))
+        return _RespostaFalsa(200, {"general": {"taxReformFieldsEnabled": True}})
+
+    cliente._request = _request_falso
+    await cliente.habilitar_reforma_tributaria("empresa-1")
+
+    metodo, caminho, kwargs = chamadas[0]
+    assert (metodo, caminho) == ("PUT", "/companies/empresa-1/settings")
+    assert kwargs["json"] == {"general": {"taxReformFieldsEnabled": True}}
+
+
+@pytest.mark.asyncio
 async def test_cancelar_nfse_envia_delete_com_motivo():
     cliente = SpedyClient("homologacao", "chave-empresa")
     chamadas = []

@@ -90,6 +90,19 @@ class SpedyClient:
         )
         return self._handle_estrito(resp)
 
+    async def habilitar_reforma_tributaria(self, spedy_empresa_id: str) -> dict:
+        """PUT /companies/{id}/settings, bloco `general.taxReformFieldsEnabled`.
+        Precisa estar ligado pra Spedy aceitar o bloco `ibsCbs` no payload de
+        emissao (ver montar_payload_spedy) -- confirmado na doc oficial
+        (28/09, guides/configuracao-inicial e api-reference/nfs-e/criar-nfs-e):
+        "Para habilitar o envio desses campos [...], acesse: Configuracoes >
+        Geral > Habilitar campos da Reforma Tributaria"."""
+        resp = await self._request(
+            "PUT", f"/companies/{spedy_empresa_id}/settings",
+            json={"general": {"taxReformFieldsEnabled": True}},
+        )
+        return self._handle_estrito(resp)
+
     # -- emissao/consulta/cancelamento (chamadas com a X-Api-Key da empresa) --
 
     async def emitir_nfse(self, payload: dict) -> dict:

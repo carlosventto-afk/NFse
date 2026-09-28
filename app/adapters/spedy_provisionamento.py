@@ -47,7 +47,7 @@ def montar_dados_regime_tributario(empresa: Empresa) -> dict:
     return dados
 
 
-def _chave_mestre(ambiente: str, settings: Settings) -> str:
+def chave_mestre_spedy(ambiente: str, settings: Settings) -> str:
     chave = (
         settings.spedy_api_key_master_producao if ambiente == "producao"
         else settings.spedy_api_key_master_homologacao
@@ -64,7 +64,7 @@ async def provisionar_empresa(
         raise SpedyError("razao_social e obrigatoria para provisionar a empresa na Spedy")
 
     ambiente = AmbienteEnum(empresa.ambiente).value
-    chave_mestre = _chave_mestre(ambiente, settings)
+    chave_mestre = chave_mestre_spedy(ambiente, settings)
     dados_empresa = {
         "name": empresa.razao_social,
         "legalName": empresa.razao_social,
@@ -129,6 +129,12 @@ async def provisionar_empresa(
             "environmentType": "production" if ambiente == "producao" else "simulation",
             "nextNumber": empresa.proximo_numero,
         })
+        # Sem isto, a Spedy recusa/ignora o bloco ibsCbs no payload de emissao
+        # (ver montar_payload_spedy) mesmo com os campos preenchidos --
+        # confirmado na doc oficial (28/09): "Configuracoes > Geral >
+        # Habilitar campos da Reforma Tributaria".
+        await asyncio.sleep(_INTERVALO_ENTRE_CHAMADAS_SEGUNDOS)
+        await cliente_mestre.habilitar_reforma_tributaria(spedy_empresa_id)
     finally:
         await cliente_mestre.close()
 

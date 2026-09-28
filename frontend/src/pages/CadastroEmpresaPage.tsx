@@ -5,7 +5,7 @@ import { criarEmpresa, type DadosEmpresaForm } from "../api/empresas";
 const VAZIO: DadosEmpresaForm = {
   cnpj: "", inscricao_municipal: "", municipio_ibge: "", local_prestacao_ibge: "",
   op_simp_nac: "3", regime_apuracao_sn: "", codigo_tributacao: "", codigo_tributacao_municipal: "",
-  cnae: "", aliquota_iss: "",
+  cnae: "", aliquota_iss: "", ibs_cbs_cst: "", ibs_cbs_classificacao: "", ibs_cbs_codigo_indicador_operacao: "",
   descricao_servico_padrao: "", ambiente: "homologacao",
   senha_certificado: "", titular_email: "",
   provedor_emissao: "direto", razao_social: "", logradouro: "", numero: "", complemento: "", bairro: "", cep: "",

@@ -41,7 +41,7 @@ def _empresa_para_provisionar(**overrides) -> Empresa:
 
 
 @pytest.mark.asyncio
-async def test_provisionar_empresa_chama_os_tres_passos_na_ordem(monkeypatch):
+async def test_provisionar_empresa_chama_os_quatro_passos_na_ordem(monkeypatch):
     _sem_pausas_reais(monkeypatch)
     settings = _settings_teste(spedy_api_key_master_homologacao="chave-mestre")
     empresa = _empresa_para_provisionar()
@@ -63,6 +63,10 @@ async def test_provisionar_empresa_chama_os_tres_passos_na_ordem(monkeypatch):
             chamadas.append(("configurar_nfse", spedy_empresa_id, dados))
             return {}
 
+        async def habilitar_reforma_tributaria(self, spedy_empresa_id):
+            chamadas.append(("habilitar_reforma_tributaria", spedy_empresa_id))
+            return {}
+
         async def close(self):
             pass
 
@@ -75,7 +79,9 @@ async def test_provisionar_empresa_chama_os_tres_passos_na_ordem(monkeypatch):
     assert spedy_empresa_id == "empresa-1"
     assert api_key == "chave-empresa"
     nomes_das_chamadas = [c[0] for c in chamadas if c[0] != "init"]
-    assert nomes_das_chamadas == ["criar_empresa", "adicionar_certificado", "configurar_nfse"]
+    assert nomes_das_chamadas == [
+        "criar_empresa", "adicionar_certificado", "configurar_nfse", "habilitar_reforma_tributaria",
+    ]
     # Confirmado ao vivo em producao (16/09): adicionar_certificado e
     # configurar_nfse devolvem 403 "Acesso nao autorizado" com a chave da
     # empresa -- os TRES passos usam a mesma chave MESTRE, um unico cliente.
@@ -127,6 +133,9 @@ async def test_provisionar_empresa_apaga_orfa_e_recria_quando_cnpj_ja_existe(mon
         async def configurar_nfse(self, spedy_empresa_id, dados):
             chamadas.append(("configurar_nfse", spedy_empresa_id, dados))
 
+        async def habilitar_reforma_tributaria(self, spedy_empresa_id):
+            chamadas.append(("habilitar_reforma_tributaria", spedy_empresa_id))
+
         async def close(self):
             pass
 
@@ -141,7 +150,7 @@ async def test_provisionar_empresa_apaga_orfa_e_recria_quando_cnpj_ja_existe(mon
     nomes_das_chamadas = [c[0] for c in chamadas if c[0] != "init"]
     assert nomes_das_chamadas == [
         "criar_empresa", "listar_empresas_por_cnpj", "excluir_empresa",
-        "criar_empresa", "adicionar_certificado", "configurar_nfse",
+        "criar_empresa", "adicionar_certificado", "configurar_nfse", "habilitar_reforma_tributaria",
     ]
 
 

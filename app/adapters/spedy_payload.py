@@ -56,6 +56,23 @@ def montar_payload_spedy(empresa: Empresa, emissao: Emissao, cliente: Cliente | 
         payload["rpsSeries"] = emissao.serie
     if empresa.aliquota_iss is not None:
         payload["total"]["issRate"] = float(empresa.aliquota_iss)
+    # Bloco da reforma tributaria (IBS/CBS, EC 132/2023). Doc oficial (28/09):
+    # cst/classification/operationIndicatorCode sao "obrigatorios quando
+    # aplicavel" -- so manda o bloco quando os 3 estao preenchidos (nunca
+    # manda so parte dele). Precisa de `general.taxReformFieldsEnabled=true`
+    # habilitado no cadastro da empresa na Spedy (ver
+    # SpedyClient.habilitar_reforma_tributaria), senao a Spedy ignora/recusa
+    # o campo mesmo enviado certo.
+    if (
+        empresa.ibs_cbs_cst is not None
+        and empresa.ibs_cbs_classificacao is not None
+        and empresa.ibs_cbs_codigo_indicador_operacao
+    ):
+        payload["ibsCbs"] = {
+            "cst": empresa.ibs_cbs_cst,
+            "classification": empresa.ibs_cbs_classificacao,
+            "operationIndicatorCode": empresa.ibs_cbs_codigo_indicador_operacao,
+        }
     if empresa.codigo_tributacao_municipal:
         payload["cityServiceCode"] = empresa.codigo_tributacao_municipal
     # cnaeCode removido de proposito em teste (25/09): uma nota AUTORIZADA

@@ -4,7 +4,7 @@ import { editarEmpresa, obterMinhaEmpresa, type DadosEdicaoEmpresa } from "../ap
 const VAZIO: DadosEdicaoEmpresa = {
   cnpj: "", inscricao_municipal: "", municipio_ibge: "", local_prestacao_ibge: "",
   op_simp_nac: "3", regime_apuracao_sn: "", codigo_tributacao: "", codigo_tributacao_municipal: "",
-  cnae: "", aliquota_iss: "",
+  cnae: "", aliquota_iss: "", ibs_cbs_cst: "", ibs_cbs_classificacao: "", ibs_cbs_codigo_indicador_operacao: "",
   descricao_servico_padrao: "", ambiente: "homologacao",
   senha_certificado: "",
   provedor_emissao: "direto", razao_social: "", logradouro: "", numero: "", complemento: "", bairro: "", cep: "",
@@ -34,6 +34,9 @@ export default function EditarEmpresaPage() {
           codigo_tributacao_municipal: empresa.codigo_tributacao_municipal ?? "",
           cnae: empresa.cnae ?? "",
           aliquota_iss: empresa.aliquota_iss != null ? String(empresa.aliquota_iss) : "",
+          ibs_cbs_cst: empresa.ibs_cbs_cst != null ? String(empresa.ibs_cbs_cst) : "",
+          ibs_cbs_classificacao: empresa.ibs_cbs_classificacao != null ? String(empresa.ibs_cbs_classificacao) : "",
+          ibs_cbs_codigo_indicador_operacao: empresa.ibs_cbs_codigo_indicador_operacao ?? "",
           descricao_servico_padrao: empresa.descricao_servico_padrao,
           ambiente: empresa.ambiente,
           senha_certificado: "",
@@ -148,6 +151,25 @@ export default function EditarEmpresaPage() {
           </label>
           <input id="aliquota_iss" inputMode="decimal" value={dados.aliquota_iss}
             onChange={(e) => atualizar("aliquota_iss", e.target.value)} />
+        </div>
+        <p className="ajuda">
+          Reforma tributaria (IBS/CBS) — opcional. Preencha com os valores que o contador da
+          empresa passar; sem os 3 campos abaixo, nada e enviado.
+        </p>
+        <div className="form-linha">
+          <label htmlFor="ibs_cbs_cst">CST do IBS/CBS</label>
+          <input id="ibs_cbs_cst" inputMode="numeric" value={dados.ibs_cbs_cst}
+            onChange={(e) => atualizar("ibs_cbs_cst", e.target.value)} />
+        </div>
+        <div className="form-linha">
+          <label htmlFor="ibs_cbs_classificacao">Codigo de classificacao tributaria do IBS/CBS</label>
+          <input id="ibs_cbs_classificacao" inputMode="numeric" value={dados.ibs_cbs_classificacao}
+            onChange={(e) => atualizar("ibs_cbs_classificacao", e.target.value)} />
+        </div>
+        <div className="form-linha">
+          <label htmlFor="ibs_cbs_codigo_indicador_operacao">Codigo indicador da operacao (IBS/CBS)</label>
+          <input id="ibs_cbs_codigo_indicador_operacao" value={dados.ibs_cbs_codigo_indicador_operacao}
+            onChange={(e) => atualizar("ibs_cbs_codigo_indicador_operacao", e.target.value)} />
         </div>
         <div className="form-linha">
           <label htmlFor="descricao">Descricao padrao do servico</label>
