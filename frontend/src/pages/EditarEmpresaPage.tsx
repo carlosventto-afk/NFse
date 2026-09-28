@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { editarEmpresa, obterMinhaEmpresa, type DadosEdicaoEmpresa } from "../api/empresas";
+import { CLASS_TRIB_IBS_CBS, CST_IBS_CBS, IND_OP_IBS_CBS } from "../lib/reformaTributaria";
 
 const VAZIO: DadosEdicaoEmpresa = {
   cnpj: "", inscricao_municipal: "", municipio_ibge: "", local_prestacao_ibge: "",
@@ -58,6 +59,14 @@ export default function EditarEmpresaPage() {
   function atualizar(campo: keyof DadosEdicaoEmpresa, valor: string) {
     setDados((atual) => ({ ...atual, [campo]: valor }));
   }
+
+  function atualizarCstIbsCbs(valor: string) {
+    // Troca de CST invalida a classificacao tributaria escolhida antes (os 6
+    // digitos de ibs_cbs_classificacao sempre comecam com o CST pai).
+    setDados((atual) => ({ ...atual, ibs_cbs_cst: valor, ibs_cbs_classificacao: "" }));
+  }
+
+  const classificacoesDoCst = CLASS_TRIB_IBS_CBS.filter((c) => c.cst === dados.ibs_cbs_cst);
 
   async function enviar(evento: FormEvent) {
     evento.preventDefault();
@@ -153,23 +162,39 @@ export default function EditarEmpresaPage() {
             onChange={(e) => atualizar("aliquota_iss", e.target.value)} />
         </div>
         <p className="ajuda">
-          Reforma tributaria (IBS/CBS) — opcional. Preencha com os valores que o contador da
-          empresa passar; sem os 3 campos abaixo, nada e enviado.
+          Reforma tributaria (IBS/CBS) — opcional. Tabela oficial (Portal Nacional da NFS-e,
+          Informe Tecnico 2025.002 e Anexo VII). A opcao certa depende do regime da empresa —
+          confirme com o contador antes de escolher; sem os 3 campos abaixo, nada e enviado.
         </p>
         <div className="form-linha">
           <label htmlFor="ibs_cbs_cst">CST do IBS/CBS</label>
-          <input id="ibs_cbs_cst" inputMode="numeric" value={dados.ibs_cbs_cst}
-            onChange={(e) => atualizar("ibs_cbs_cst", e.target.value)} />
+          <select id="ibs_cbs_cst" value={dados.ibs_cbs_cst}
+            onChange={(e) => atualizarCstIbsCbs(e.target.value)}>
+            <option value="">Nao informar</option>
+            {CST_IBS_CBS.map((c) => (
+              <option key={c.codigo} value={c.codigo}>{c.codigo} - {c.nome}</option>
+            ))}
+          </select>
         </div>
         <div className="form-linha">
           <label htmlFor="ibs_cbs_classificacao">Codigo de classificacao tributaria do IBS/CBS</label>
-          <input id="ibs_cbs_classificacao" inputMode="numeric" value={dados.ibs_cbs_classificacao}
-            onChange={(e) => atualizar("ibs_cbs_classificacao", e.target.value)} />
+          <select id="ibs_cbs_classificacao" value={dados.ibs_cbs_classificacao} disabled={!dados.ibs_cbs_cst}
+            onChange={(e) => atualizar("ibs_cbs_classificacao", e.target.value)}>
+            <option value="">{dados.ibs_cbs_cst ? "Nao informar" : "Escolha o CST primeiro"}</option>
+            {classificacoesDoCst.map((c) => (
+              <option key={c.codigo} value={c.codigo}>{c.codigo} - {c.nome}</option>
+            ))}
+          </select>
         </div>
         <div className="form-linha">
           <label htmlFor="ibs_cbs_codigo_indicador_operacao">Codigo indicador da operacao (IBS/CBS)</label>
-          <input id="ibs_cbs_codigo_indicador_operacao" value={dados.ibs_cbs_codigo_indicador_operacao}
-            onChange={(e) => atualizar("ibs_cbs_codigo_indicador_operacao", e.target.value)} />
+          <select id="ibs_cbs_codigo_indicador_operacao" value={dados.ibs_cbs_codigo_indicador_operacao}
+            onChange={(e) => atualizar("ibs_cbs_codigo_indicador_operacao", e.target.value)}>
+            <option value="">Nao informar</option>
+            {IND_OP_IBS_CBS.map((i) => (
+              <option key={i.codigo} value={i.codigo}>{i.codigo} - {i.caracteristica}</option>
+            ))}
+          </select>
         </div>
         <div className="form-linha">
           <label htmlFor="descricao">Descricao padrao do servico</label>
