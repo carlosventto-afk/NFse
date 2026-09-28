@@ -3,9 +3,14 @@
 Leiaute: NFS-e Nacional ANEXO I (SEFIN ADN-DPS/NFSe) v1.01 de 09/02/2026;
 schemas oficiais: NFSe-ESQUEMAS_XSD-v1.01 em
 https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/documentacao-atual
-Estrutura mínima do prestador de serviço educacional (ISSQN tributado no
-município do prestador, sem retenção). Campos da reforma (IBS/CBS) entram na
-fase 2 do módulo, quando obrigatórios para o regime da escola.
+Estrutura mínima do prestador (ISSQN tributado no município do prestador,
+sem retenção). Campos da reforma (IBS/CBS, grupo <IBSCBS>) são opcionais no
+XSD (minOccurs=0) e só são emitidos quando a empresa tem os 3 codigos
+obrigatorios-quando-aplicavel cadastrados (CST/classificacao/codigo
+indicador de operacao) -- sem eles, a DPS sai identica a antes, em
+versao="1.00". Confirmado contra o XSD oficial (28/09/2026,
+Schemas/1.01/tiposComplexos_v1.01.xsd) que o restante da estrutura da DPS
+(TCServ, TCInfoValores, TCInfoPrestador) nao mudou entre 1.00 e 1.01.
 
 Regra do Id da DPS (45 chars): "DPS" + cLocEmi(7) + tpInscricao(1: 1=CPF 2=CNPJ)
 + inscrição federal com zeros à esquerda(14) + série(5) + número(15).
@@ -21,9 +26,11 @@ from decimal import Decimal
 from lxml import etree
 
 NFSE_NS = "http://www.sped.fazenda.gov.br/nfse"
-# 1.00 = versão dos integradores homologados hoje; 1.01 (IBS/CBS) entra quando
-# a produção restrita estabilizar o validador do leiaute novo
-DPS_VERSAO = "1.00"
+# 1.00 = layout sem o grupo <IBSCBS>; 1.01 = com o grupo (emitido so quando
+# ibs_cbs_cst/ibs_cbs_class_trib/ibs_cbs_cod_ind_op estao todos presentes —
+# ver build_dps_xml).
+DPS_VERSAO_1_00 = "1.00"
+DPS_VERSAO_1_01 = "1.01"
 
 
 def _digits(value: str | None) -> str:
@@ -96,6 +103,14 @@ class DpsData:
     v_serv: Decimal = Decimal("0")
     p_aliq: Decimal | None = None  # alíquota ISS % (omitir quando o município fixa)
 
+    # Reforma tributaria (IBS/CBS, EC 132/2023) -- grupo <IBSCBS>, opcional
+    # no XSD (minOccurs=0). Só emitido quando os 3 estão presentes juntos
+    # (mesmo padrão "tudo ou nada" do bloco ibsCbs em spedy_payload.py).
+    # Valores REAIS vêm do contador da empresa -- não há default seguro.
+    ibs_cbs_cst: str | None = None
+    ibs_cbs_class_trib: str | None = None
+    ibs_cbs_cod_ind_op: str | None = None
+
     @property
     def tp_inscricao(self) -> str:
         return "1" if len(_digits(self.toma_cpf_cnpj)) == 11 else "2"
@@ -141,7 +156,13 @@ def build_dps_xml(data: DpsData) -> bytes:
     if data.v_serv <= 0:
         raise ValueError("Valor do serviço deve ser positivo")
 
-    root = etree.Element(f"{{{NFSE_NS}}}DPS", versao=DPS_VERSAO, nsmap={None: NFSE_NS})
+    ibs_cbs_completo = (
+        data.ibs_cbs_cst is not None
+        and data.ibs_cbs_class_trib is not None
+        and data.ibs_cbs_cod_ind_op is not None
+    )
+    versao = DPS_VERSAO_1_01 if ibs_cbs_completo else DPS_VERSAO_1_00
+    root = etree.Element(f"{{{NFSE_NS}}}DPS", versao=versao, nsmap={None: NFSE_NS})
     inf = etree.SubElement(root, f"{{{NFSE_NS}}}infDPS")
     inf.set("Id", data.dps_id)
 
@@ -220,5 +241,21 @@ def build_dps_xml(data: DpsData) -> bytes:
         _el(p_tot, "pTotTribMun", "0.00")
     else:
         _el(tot, "indTotTrib", "0")                            # 0 = não informa total de tributos
+
+    if ibs_cbs_completo:
+        # <IBSCBS> e irmao de <serv>/<valores> dentro de <infDPS> (confirmado
+        # no XSD, tiposComplexos_v1.01.xsd). finNFSe="0" (NFS-e regular) e
+        # indDest="0" (destinatario = o proprio tomador) sao os unicos
+        # valores validos/aplicaveis pra essa empresa hoje -- nao dependem
+        # do contador. cIndOp/CST/cClassTrib sim, vem de fora (empresa.*).
+        ibscbs = _el(inf, "IBSCBS")
+        _el(ibscbs, "finNFSe", "0")
+        _el(ibscbs, "cIndOp", _digits(data.ibs_cbs_cod_ind_op).zfill(6))
+        _el(ibscbs, "indDest", "0")
+        ibscbs_valores = _el(ibscbs, "valores")
+        ibscbs_trib = _el(ibscbs_valores, "trib")
+        gibscbs = _el(ibscbs_trib, "gIBSCBS")
+        _el(gibscbs, "CST", _digits(data.ibs_cbs_cst).zfill(3))
+        _el(gibscbs, "cClassTrib", _digits(data.ibs_cbs_class_trib).zfill(6))
 
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8")
