@@ -163,6 +163,7 @@ async def editar_minha_empresa(
     bairro: str | None = Form(None),
     cep: str | None = Form(None),
     provedor_emissao: str | None = Form(None),
+    forcar_reprovisionamento_spedy: str | None = Form(None),
     contexto: ContextoAutenticado = Depends(exigir_admin_empresa),
     session: AsyncSession = Depends(get_db),
 ) -> Empresa:
@@ -197,6 +198,7 @@ async def editar_minha_empresa(
         except ValueError:
             raise HTTPException(status_code=422, detail="ibs_cbs_classificacao deve ser um numero inteiro")
     ibs_cbs_codigo_indicador_operacao = (ibs_cbs_codigo_indicador_operacao or "").strip() or None
+    forcar_reprovisionamento = (forcar_reprovisionamento_spedy or "").strip().lower() in ("true", "on", "1")
 
     empresa = await session.get(Empresa, contexto.empresa_id)
 
@@ -278,8 +280,20 @@ async def editar_minha_empresa(
     # conta errada. `empresa.ambiente` ja foi sobrescrito ha pouco (linha
     # acima), entao provisionar_empresa abaixo ja usa a chave mestra do
     # ambiente NOVO.
+    #
+    # forcar_reprovisionamento_spedy: acionado manualmente pelo admin
+    # (checkbox em "Editar empresa") -- confirmado ao vivo (30/09) que a
+    # chave de uma empresa ja provisionada pode ficar invalida do lado da
+    # Spedy ("Usuario nao autenticado" na emissao, mesmo com a chave
+    # decifrando certo aqui) sem nenhuma mudanca do nosso lado. Reaproveita
+    # o certificado ja salvo (nao pede reenvio de .pfx); provisionar_empresa
+    # ja trata o caso de CNPJ duplicado (apaga a empresa orfa na Spedy e
+    # recria), entao forcar aqui sempre termina com uma empresa/chave nova
+    # e valida la, seja qual for o estado anterior.
     precisa_provisionar = provedor_emissao_final == "spedy" and (
-        empresa.spedy_empresa_id is None or (ja_provisionada_spedy and ambiente_mudou)
+        empresa.spedy_empresa_id is None
+        or (ja_provisionada_spedy and ambiente_mudou)
+        or (ja_provisionada_spedy and forcar_reprovisionamento)
     )
     empresa.provedor_emissao = provedor_emissao_final
 

@@ -762,6 +762,78 @@ async def test_trocar_ambiente_de_empresa_ja_na_spedy_reprovisiona(db_session, m
 
 
 @pytest.mark.asyncio
+async def test_forcar_reprovisionamento_spedy_reprovisiona_mesmo_sem_mudar_nada(db_session, monkeypatch):
+    # Confirmado ao vivo (30/09): a chave de uma empresa ja provisionada
+    # pode ficar invalida do lado da Spedy ("Usuario nao autenticado" na
+    # emissao) sem nenhuma mudanca visivel do nosso lado (ambiente/
+    # certificado iguais) -- o checkbox "Forcar reprovisionamento" existe
+    # pra esses casos, reaproveitando o certificado ja salvo.
+    fernet_key = get_settings().fernet_key
+    empresa, titular = await criar_empresa_titular(
+        db_session, cnpj="99988877000155",
+        certificado_pfx_cifrado=cifrar("pfx-fake-base64", fernet_key),
+        certificado_senha_cifrada=cifrar("senha123", fernet_key),
+    )
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    import app.routers.empresas as empresas_router
+
+    chamadas = []
+
+    async def _provisionar_falso(empresa_, pfx_base64, senha, settings):
+        chamadas.append(1)
+        return f"spedy-empresa-{len(chamadas)}", f"spedy-chave-{len(chamadas)}"
+
+    monkeypatch.setattr(empresas_router, "provisionar_empresa", _provisionar_falso)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            primeira = await client.put(
+                "/api/empresas/mim",
+                data={
+                    **_form_edicao(cnpj="99988877000155"),
+                    "provedor_emissao": "spedy", "razao_social": "EMPRESA TESTE LTDA",
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert primeira.status_code == 200
+            assert len(chamadas) == 1
+
+            # Edicao normal (sem forcar): nao reprovisiona de novo.
+            normal = await client.put(
+                "/api/empresas/mim",
+                data=_form_edicao(cnpj="99988877000155"),
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert normal.status_code == 200
+            assert len(chamadas) == 1
+
+            # Com o checkbox marcado: reprovisiona mesmo sem nenhuma outra
+            # mudanca, e pega uma chave nova.
+            forcada = await client.put(
+                "/api/empresas/mim",
+                data={
+                    **_form_edicao(cnpj="99988877000155"),
+                    "forcar_reprovisionamento_spedy": "true",
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert forcada.status_code == 200
+        corpo = forcada.json()
+        assert corpo["spedy_empresa_id"] == "spedy-empresa-2"
+        assert len(chamadas) == 2
+    finally:
+        app.dependency_overrides.clear()
+
+    await db_session.refresh(empresa)
+    settings = get_settings()
+    assert empresa.spedy_empresa_id == "spedy-empresa-2"
+    assert decifrar(empresa.spedy_api_key_cifrada, settings.fernet_key) == "spedy-chave-2"
+
+
+@pytest.mark.asyncio
 async def test_provedor_emissao_invalido_devolve_422(db_session):
     empresa, titular = await criar_empresa_titular(db_session)
     token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)

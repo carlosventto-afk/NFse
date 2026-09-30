@@ -50,12 +50,17 @@ export function vincularUsuarioAEmpresa(empresaId: string, email: string, papel:
   return apiFetchJson<void>(`/api/empresas/${empresaId}/vincular-usuario`, "POST", { email, papel });
 }
 
-export function editarEmpresa(dados: DadosEdicaoEmpresa, pfx: File | null): Promise<EmpresaDetalhe> {
+export function editarEmpresa(
+  dados: DadosEdicaoEmpresa, pfx: File | null, forcarReprovisionamentoSpedy = false,
+): Promise<EmpresaDetalhe> {
   const formulario = new FormData();
   const dadosLimpos = { ...dados, cnpj: dados.cnpj.replace(/\D/g, "") };
   Object.entries(dadosLimpos).forEach(([chave, valor]) => formulario.append(chave, valor));
   if (pfx) {
     formulario.append("pfx", pfx);
+  }
+  if (forcarReprovisionamentoSpedy) {
+    formulario.append("forcar_reprovisionamento_spedy", "true");
   }
   return apiFetch<EmpresaDetalhe>("/api/empresas/mim", { method: "PUT", body: formulario });
 }

@@ -14,6 +14,7 @@ const VAZIO: DadosEdicaoEmpresa = {
 export default function EditarEmpresaPage() {
   const [dados, setDados] = useState<DadosEdicaoEmpresa>(VAZIO);
   const [pfx, setPfx] = useState<File | null>(null);
+  const [forcarReprovisionamento, setForcarReprovisionamento] = useState(false);
   const [certificadoValidoAte, setCertificadoValidoAte] = useState<string | null>(null);
   const [spedyEmpresaId, setSpedyEmpresaId] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
@@ -74,11 +75,16 @@ export default function EditarEmpresaPage() {
     setSucesso(null);
     setEnviando(true);
     try {
-      const empresa = await editarEmpresa(dados, pfx);
+      const empresa = await editarEmpresa(dados, pfx, forcarReprovisionamento);
       setCertificadoValidoAte(empresa.certificado_valido_ate);
       setSpedyEmpresaId(empresa.spedy_empresa_id);
       setPfx(null);
-      setSucesso("Dados da empresa atualizados.");
+      setForcarReprovisionamento(false);
+      setSucesso(
+        forcarReprovisionamento
+          ? "Empresa reprovisionada na Spedy com uma chave nova."
+          : "Dados da empresa atualizados.",
+      );
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Nao foi possivel salvar as alteracoes");
     } finally {
@@ -227,6 +233,18 @@ export default function EditarEmpresaPage() {
                 : "Ainda nao provisionada — sera provisionada na Spedy ao salvar."}
               {" "}Trocar certificado ou ambiente depois de provisionada exige reconfigurar o provedor manualmente.
             </p>
+            {spedyEmpresaId && (
+              <div className="form-linha">
+                <label htmlFor="forcar_reprovisionamento">
+                  <input
+                    id="forcar_reprovisionamento" type="checkbox" checked={forcarReprovisionamento}
+                    onChange={(e) => setForcarReprovisionamento(e.target.checked)}
+                  />
+                  {" "}Forcar reprovisionamento na Spedy (reaproveita o certificado ja salvo, gera uma chave nova —
+                  use se a emissao comecar a dar "Usuario nao autenticado")
+                </label>
+              </div>
+            )}
             <div className="form-linha">
               <label htmlFor="razao_social">Razao social</label>
               <input id="razao_social" required value={dados.razao_social}
