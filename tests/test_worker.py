@@ -3,7 +3,7 @@ import base64
 import gzip
 import json
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -216,6 +216,93 @@ async def test_processar_uma_pendente_marca_rejeitada_com_erros(db_session, monk
     assert emissao.status == StatusEmissao.rejeitada
     assert emissao.erros is not None
     assert "E0714" in emissao.erros
+
+
+@pytest.mark.asyncio
+async def test_processar_uma_pendente_rejeitada_agenda_proxima_tentativa_automatica(db_session, monkeypatch):
+    emissao = await _empresa_e_emissao_pendente(db_session)
+
+    monkeypatch.setattr(worker, "sign_dps", lambda xml, pfx, senha: b"<DPS assinada/>")
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def emitir_dps(self, xml_assinado: bytes) -> dict:
+            return {"_http_status": 422, "erros": [{"codigo": "E0714", "mensagem": "Erro na assinatura"}]}
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(worker, "SefinClient", ClienteFalso)
+    antes = datetime.now(timezone.utc)
+
+    await worker.processar_uma_pendente(db_session)
+
+    await db_session.refresh(emissao)
+    assert emissao.tentativas_reemissao == 1
+    assert emissao.proxima_tentativa_em is not None
+    assert emissao.proxima_tentativa_em > antes
+    assert emissao.proxima_tentativa_em <= antes + timedelta(minutes=2, seconds=5)
+
+
+@pytest.mark.asyncio
+async def test_apos_esgotar_tentativas_automaticas_nao_agenda_mais(db_session, monkeypatch):
+    emissao = await _empresa_e_emissao_pendente(db_session)
+    emissao.tentativas_reemissao = worker.MAX_TENTATIVAS_REEMISSAO_AUTOMATICA
+    await db_session.commit()
+
+    monkeypatch.setattr(worker, "sign_dps", lambda xml, pfx, senha: b"<DPS assinada/>")
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def emitir_dps(self, xml_assinado: bytes) -> dict:
+            return {"_http_status": 422, "erros": [{"codigo": "E0714", "mensagem": "Erro na assinatura"}]}
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(worker, "SefinClient", ClienteFalso)
+
+    await worker.processar_uma_pendente(db_session)
+
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.rejeitada
+    assert emissao.tentativas_reemissao == worker.MAX_TENTATIVAS_REEMISSAO_AUTOMATICA
+    assert emissao.proxima_tentativa_em is None
+
+
+@pytest.mark.asyncio
+async def test_processar_reemissao_automatica_pendente_promove_quando_vencida(db_session):
+    emissao = await _empresa_e_emissao_pendente(db_session)
+    emissao.status = StatusEmissao.rejeitada
+    emissao.tentativas_reemissao = 1
+    emissao.proxima_tentativa_em = datetime.now(timezone.utc) - timedelta(seconds=1)
+    await db_session.commit()
+
+    processou = await worker.processar_reemissao_automatica_pendente(db_session)
+
+    assert processou is True
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.pendente
+    assert emissao.proxima_tentativa_em is None
+
+
+@pytest.mark.asyncio
+async def test_processar_reemissao_automatica_pendente_ignora_tentativa_futura(db_session):
+    emissao = await _empresa_e_emissao_pendente(db_session)
+    emissao.status = StatusEmissao.rejeitada
+    emissao.tentativas_reemissao = 1
+    emissao.proxima_tentativa_em = datetime.now(timezone.utc) + timedelta(minutes=5)
+    await db_session.commit()
+
+    processou = await worker.processar_reemissao_automatica_pendente(db_session)
+
+    assert processou is False
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.rejeitada
 
 
 @pytest.mark.asyncio
@@ -521,7 +608,16 @@ async def test_loop_worker_sobrevive_a_excecao_inesperada(monkeypatch, caplog):
         async def __aexit__(self, *args):
             return False
 
+    async def _reemissao_automatica_sem_efeito(session):
+        return False
+
     monkeypatch.setattr(worker, "processar_uma_pendente", _processar_explodindo)
+    # processar_reemissao_automatica_pendente roda ANTES de processar_uma_pendente
+    # a cada volta do loop (ver loop_worker) -- sem mockar aqui, ele bateria
+    # de verdade contra a sessao falsa (object() sem .execute) e explodiria
+    # antes mesmo do mock de processar_uma_pendente ser chamado, quebrando a
+    # contagem de chamadas que este teste depende.
+    monkeypatch.setattr(worker, "processar_reemissao_automatica_pendente", _reemissao_automatica_sem_efeito)
 
     with pytest.raises(asyncio.CancelledError):
         await worker.loop_worker(_FabricaFalsa(), intervalo_segundos=0)

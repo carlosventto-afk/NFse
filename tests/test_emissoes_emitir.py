@@ -1,6 +1,6 @@
 import functools
 import json
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -259,6 +259,34 @@ async def test_reemitir_nota_rejeitada_limpa_erro_da_tentativa_anterior(db_sessi
 
     await db_session.refresh(emissao)
     assert emissao.erros is None
+
+
+@pytest.mark.asyncio
+async def test_reemitir_nota_rejeitada_individual_reinicia_tentativas_automaticas(db_session):
+    # Reemissao manual nao pode "somar" com o contador de tentativas
+    # automaticas (ver app/worker.py) -- senao um clique manual logo depois
+    # de uma rejeicao automatica ja estouraria o limite sem o usuario saber.
+    empresa, titular, emissao = await _empresa_titular_e_emissao(db_session, StatusEmissao.rejeitada)
+    emissao.tentativas_reemissao = 2
+    emissao.proxima_tentativa_em = datetime.now(timezone.utc) + timedelta(minutes=10)
+    await db_session.commit()
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                f"/api/emissoes/{emissao.id}/emitir",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 200
+    finally:
+        app.dependency_overrides.clear()
+
+    await db_session.refresh(emissao)
+    assert emissao.tentativas_reemissao == 0
+    assert emissao.proxima_tentativa_em is None
 
 
 @pytest.mark.asyncio

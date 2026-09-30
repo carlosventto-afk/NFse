@@ -288,5 +288,7 @@ class EmissaoOut(BaseModel):
     bandeira: str | None
     codigo_autorizacao: str | None
     erros: str | None
+    tentativas_reemissao: int
+    proxima_tentativa_em: datetime | None
 
     model_config = {"from_attributes": True}

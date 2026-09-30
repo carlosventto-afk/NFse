@@ -522,6 +522,12 @@ async def emitir_emissao(
     # de reprocessar, parecendo que a nota ainda esta com problema.
     emissao.status = StatusEmissao.pendente
     emissao.erros = None
+    # Reemissao manual sempre reinicia o contador de tentativas automaticas
+    # (ver app/worker.py) -- nao faz sentido um clique manual "gastar" uma
+    # das 3 tentativas automaticas, nem deixar uma tentativa automatica
+    # agendada de uma rejeicao anterior disparar por cima disto.
+    emissao.tentativas_reemissao = 0
+    emissao.proxima_tentativa_em = None
     await session.commit()
     await session.refresh(emissao)
     return emissao
@@ -542,6 +548,8 @@ async def emitir_emissoes_em_lote(
             continue
         emissao.status = StatusEmissao.pendente
         emissao.erros = None
+        emissao.tentativas_reemissao = 0
+        emissao.proxima_tentativa_em = None
         emitidas += 1
     await session.commit()
     return EmissaoLoteOut(emitidas=emitidas, puladas=len(dados.ids) - emitidas)

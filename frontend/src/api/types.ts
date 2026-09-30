@@ -47,6 +47,8 @@ export interface Emissao {
   bandeira: string | null;
   codigo_autorizacao: string | null;
   erros: string | null;
+  tentativas_reemissao: number;
+  proxima_tentativa_em: string | null;
 }
 
 export interface ExclusaoLoteResultado {

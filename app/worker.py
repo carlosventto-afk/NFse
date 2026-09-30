@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from cryptography.fernet import InvalidToken
 from sqlalchemy import select
@@ -30,6 +30,38 @@ from nfse_core import (
 
 logger = logging.getLogger(__name__)
 
+# Reemissao automatica com backoff, pra fila grande (1300+ notas, 30/09) nao
+# depender de clicar "Reemitir" nota por nota. So 3 tentativas AUTOMATICAS
+# (indice 0, 1, 2 abaixo) -- depois disso fica rejeitada esperando acao
+# manual, igual antes. Sem harm em tentar de novo mesmo em erro de negocio
+# "permanente" (E0160 etc.): o pior caso e so gastar as 3 tentativas a toa,
+# nao ha risco de duplicar nem corromper nada (dps_id reutilizado consulta
+# antes de reenviar, ver `ja_submetida` em processar_uma_pendente). Intervalo
+# curto de proposito (nao horas) porque com 1300 notas um backoff longo
+# faria o lote inteiro levar dias pra terminar.
+MAX_TENTATIVAS_REEMISSAO_AUTOMATICA = 3
+_BACKOFF_REEMISSAO_AUTOMATICA = [timedelta(minutes=2), timedelta(minutes=10), timedelta(minutes=30)]
+
+# Pausa minima entre cada emissao processada pelo worker (nao so quando a
+# fila esta vazia) -- evita rajada contra a Spedy/SEFIN quando ha um backlog
+# grande (confirmado ao vivo: a Spedy tem limite de rajada por segundo em
+# outros endpoints; mais seguro pausar aqui tambem do que descobrir o limite
+# de emissao na marra com 1300 notas de uma vez).
+PACING_SEGUNDOS = 2.0
+
+
+def _agendar_proxima_tentativa(emissao: Emissao) -> None:
+    """Chamado toda vez que uma emissao e marcada como rejeitada: agenda a
+    proxima tentativa automatica (ver processar_reemissao_automatica_pendente)
+    se ainda nao estourou o limite. Nao mexe no status -- quem chama decide
+    se e StatusEmissao.rejeitada."""
+    if emissao.tentativas_reemissao < MAX_TENTATIVAS_REEMISSAO_AUTOMATICA:
+        atraso = _BACKOFF_REEMISSAO_AUTOMATICA[emissao.tentativas_reemissao]
+        emissao.tentativas_reemissao += 1
+        emissao.proxima_tentativa_em = datetime.now(timezone.utc) + atraso
+    else:
+        emissao.proxima_tentativa_em = None
+
 
 async def _marcar_rejeitada(session: AsyncSession, emissao: Emissao, codigo: str, titulo: str) -> None:
     """Marca a emissao como rejeitada com um erro de origem interna (nao veio
@@ -37,6 +69,7 @@ async def _marcar_rejeitada(session: AsyncSession, emissao: Emissao, codigo: str
     ou barras invertidas quebrando o JSON gravado na coluna `erros`."""
     emissao.status = StatusEmissao.rejeitada
     emissao.erros = json.dumps([{"codigo": codigo, "titulo": titulo}], ensure_ascii=False)
+    _agendar_proxima_tentativa(emissao)
     await session.commit()
 
 
@@ -97,6 +130,7 @@ async def _processar_pendente_spedy(
         emissao.status = StatusEmissao.rejeitada
         emissao.erros = json.dumps([{"codigo": "SPEDY", "titulo": detalhe}], ensure_ascii=False)
         emissao.resposta_bruta = json.dumps(bruta, ensure_ascii=False)
+        _agendar_proxima_tentativa(emissao)
     else:
         emissao.spedy_nota_id = bruta.get("id")
         emissao.status = StatusEmissao.aguardando_confirmacao
@@ -256,6 +290,7 @@ async def processar_uma_pendente(session: AsyncSession, settings: Settings | Non
         # evidencia junto a prefeitura.
         emissao.resposta_bruta = json.dumps(bruta, ensure_ascii=False)
         logger.warning("emissao %s rejeitada; resposta bruta: %s", emissao.id, bruta)
+        _agendar_proxima_tentativa(emissao)
 
     await session.commit()
     return True
@@ -337,6 +372,7 @@ async def processar_uma_aguardando_confirmacao_spedy(
             ensure_ascii=False,
         )
         emissao.resposta_bruta = json.dumps(bruta, ensure_ascii=False)
+        _agendar_proxima_tentativa(emissao)
         await session.commit()
         return True
 
@@ -554,9 +590,39 @@ async def processar_um_cancelamento_aguardando_confirmacao_spedy(
     return False
 
 
+async def processar_reemissao_automatica_pendente(session: AsyncSession) -> bool:
+    """Promove UMA emissao rejeitada com tentativa automatica vencida de
+    volta pra "pendente" -- processar_uma_pendente cuida do reenvio de
+    verdade no proximo tick (mesmo caminho de "Reemitir" manual, inclusive a
+    seguranca de consultar a SEFIN antes de reenviar quando ja tem dps_id).
+    So flipa o status; nao fala com SEFIN/Spedy aqui."""
+    agora = datetime.now(timezone.utc)
+    stmt = (
+        select(Emissao)
+        .where(
+            Emissao.status == StatusEmissao.rejeitada,
+            Emissao.proxima_tentativa_em.isnot(None),
+            Emissao.proxima_tentativa_em <= agora,
+        )
+        .order_by(Emissao.proxima_tentativa_em)
+        .limit(1)
+        .with_for_update(skip_locked=True)
+    )
+    emissao = (await session.execute(stmt)).scalar_one_or_none()
+    if emissao is None:
+        return False
+
+    emissao.status = StatusEmissao.pendente
+    emissao.proxima_tentativa_em = None
+    await session.commit()
+    return True
+
+
 async def loop_worker(session_factory: async_sessionmaker, intervalo_segundos: float = 5.0) -> None:
     while True:
         try:
+            async with session_factory() as session:
+                processou_reemissao_automatica = await processar_reemissao_automatica_pendente(session)
             async with session_factory() as session:
                 processou_emissao = await processar_uma_pendente(session)
             async with session_factory() as session:
@@ -573,12 +639,20 @@ async def loop_worker(session_factory: async_sessionmaker, intervalo_segundos: f
             # banco reiniciado, conexao derrubada, bug novo — mate o processo
             # e pare a emissao/cancelamento de todas as empresas.
             logger.exception("falha inesperada ao processar fila pendente; o loop continua")
+            processou_reemissao_automatica = False
             processou_emissao = False
             processou_cancelamento = False
             processou_confirmacao_spedy = False
             processou_confirmacao_cancel_spedy = False
-        if not any([
-            processou_emissao, processou_cancelamento,
+        processou_algo = any([
+            processou_reemissao_automatica, processou_emissao, processou_cancelamento,
             processou_confirmacao_spedy, processou_confirmacao_cancel_spedy,
-        ]):
+        ])
+        if not processou_algo:
             await asyncio.sleep(intervalo_segundos)
+        elif processou_emissao:
+            # So pausa apos emissao de verdade (nao apos so promover uma
+            # reemissao automatica de rejeitada->pendente, que nao fala com
+            # SEFIN/Spedy) -- evita rajada contra o provedor num backlog
+            # grande, sem atrasar artificialmente o resto do loop.
+            await asyncio.sleep(PACING_SEGUNDOS)

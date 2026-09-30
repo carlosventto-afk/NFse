@@ -284,5 +284,10 @@ class Emissao(Base):
     )
     motivo_cancelamento: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     cancelada_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Reemissao automatica com backoff (ver app/worker.py) -- conta so as
+    # tentativas AUTOMATICAS; "Reemitir" manual sempre zera os dois campos
+    # (reinicio limpo, nao soma com o contador automatico).
+    tentativas_reemissao: Mapped[int] = mapped_column(default=0, nullable=False)
+    proxima_tentativa_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     empresa: Mapped["Empresa"] = relationship(back_populates="emissoes")

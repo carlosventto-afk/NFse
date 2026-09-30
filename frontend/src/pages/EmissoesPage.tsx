@@ -270,7 +270,20 @@ export default function EmissoesPage() {
                     </td>
                     <td className="num">{emissao.serie}/{emissao.numero}</td>
                     <td>{emissao.origem}</td>
-                    <td><PilulaStatus status={emissao.status} /></td>
+                    <td>
+                      <PilulaStatus status={emissao.status} />
+                      {emissao.proxima_tentativa_em && (
+                        <div
+                          className="ajuda"
+                          title={`Tentativa automatica ${emissao.tentativas_reemissao}/3`}
+                        >
+                          Nova tentativa às{" "}
+                          {new Date(emissao.proxima_tentativa_em).toLocaleTimeString("pt-BR", {
+                            hour: "2-digit", minute: "2-digit",
+                          })}
+                        </div>
+                      )}
+                    </td>
                     <td className="col-valor num">R$ {emissao.valor}</td>
                     <td>{emissao.competencia}</td>
                     <td>{emissao.data_vencimento ?? "—"}</td>
