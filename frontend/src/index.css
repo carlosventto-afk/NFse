@@ -111,6 +111,7 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--acento);
   white-space: nowrap;
 }
 .sem-erro { color: var(--texto-suave); }
+.ambiente-producao { font-weight: 600; }
 
 .cartao { background: var(--superficie); border: 1px solid var(--borda); padding: 1.5rem; border-radius: 8px; max-width: 480px; margin: 2rem auto; }
 .form-linha { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.75rem; }

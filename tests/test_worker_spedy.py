@@ -69,6 +69,9 @@ async def test_processar_uma_pendente_via_spedy_aceita_e_fica_aguardando_confirm
     await db_session.refresh(emissao)
     assert emissao.status == StatusEmissao.aguardando_confirmacao
     assert emissao.spedy_nota_id == "nota-spedy-1"
+    # Ambiente de QUANDO essa tentativa de envio aconteceu (nao o ambiente
+    # atual da empresa, que pode mudar depois).
+    assert emissao.ambiente == AmbienteEnum.homologacao
 
 
 @pytest.mark.asyncio

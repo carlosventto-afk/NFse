@@ -290,5 +290,6 @@ class EmissaoOut(BaseModel):
     erros: str | None
     tentativas_reemissao: int
     proxima_tentativa_em: datetime | None
+    ambiente: str | None
 
     model_config = {"from_attributes": True}

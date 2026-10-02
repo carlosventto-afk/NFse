@@ -49,6 +49,7 @@ export interface Emissao {
   erros: string | null;
   tentativas_reemissao: number;
   proxima_tentativa_em: string | null;
+  ambiente: string | null;
 }
 
 export interface ExclusaoLoteResultado {

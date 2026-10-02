@@ -289,5 +289,13 @@ class Emissao(Base):
     # (reinicio limpo, nao soma com o contador automatico).
     tentativas_reemissao: Mapped[int] = mapped_column(default=0, nullable=False)
     proxima_tentativa_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Ambiente (homologacao/producao) de empresa.ambiente NO MOMENTO do
+    # envio real mais recente (ver app/worker.py) -- nao o ambiente atual
+    # da empresa, que pode ter mudado depois (confirmado necessario: essa
+    # mesma empresa foi alternada entre homologacao/producao varias vezes
+    # ao longo desta sessao pra testar a Spedy). Nulo pra notas emitidas
+    # antes deste campo existir -- nao da pra inferir com confianca qual
+    # era o ambiente na hora de cada uma.
+    ambiente: Mapped[AmbienteEnum | None] = mapped_column(String(20), nullable=True)
 
     empresa: Mapped["Empresa"] = relationship(back_populates="emissoes")

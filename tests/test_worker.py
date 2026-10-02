@@ -93,6 +93,21 @@ async def test_processar_uma_pendente_marca_autorizada_em_sucesso(db_session, mo
 
 
 @pytest.mark.asyncio
+async def test_processar_uma_pendente_grava_o_ambiente_no_momento_do_envio(db_session, monkeypatch):
+    # Nao e o ambiente ATUAL da empresa (que pode mudar depois) -- e o
+    # ambiente de quando essa tentativa de envio especifica aconteceu.
+    emissao = await _empresa_e_emissao_pendente(db_session)
+
+    monkeypatch.setattr(worker, "sign_dps", lambda xml, pfx, senha: b"<DPS assinada/>")
+    monkeypatch.setattr(worker, "SefinClient", _cliente_falso_autorizado())
+
+    await worker.processar_uma_pendente(db_session)
+
+    await db_session.refresh(emissao)
+    assert emissao.ambiente == AmbienteEnum.homologacao
+
+
+@pytest.mark.asyncio
 async def test_provedor_nacional_forca_municipio_ibge_none_no_sefin_client(db_session, monkeypatch):
     # "nacional" precisa pular a auto-deteccao de endpoint proprio de
     # municipio (MUNICIPIO_DPS_URLS em nfse_core/client.py) -- passando

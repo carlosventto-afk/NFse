@@ -255,7 +255,7 @@ export default function EmissoesPage() {
               <thead>
                 <tr>
                   <th className="col-check"><input type="checkbox" checked={todosSelecionados} onChange={alternarSelecaoTodos} /></th>
-                  <th>Número</th><th>Origem</th><th>Status</th><th className="col-valor">Valor</th><th>Competência</th><th>Data Venda</th><th>Produto</th><th>Tipo</th><th>Bandeira</th><th>Erro</th><th></th>
+                  <th>Número</th><th>Origem</th><th>Status</th><th>Ambiente</th><th className="col-valor">Valor</th><th>Competência</th><th>Data Venda</th><th>Produto</th><th>Tipo</th><th>Bandeira</th><th>Erro</th><th></th>
                 </tr>
               </thead>
               <tbody>
@@ -282,6 +282,15 @@ export default function EmissoesPage() {
                             hour: "2-digit", minute: "2-digit",
                           })}
                         </div>
+                      )}
+                    </td>
+                    <td>
+                      {emissao.ambiente === "producao" ? (
+                        <span className="ambiente-producao">Produção</span>
+                      ) : emissao.ambiente === "homologacao" ? (
+                        "Homologação"
+                      ) : (
+                        "—"
                       )}
                     </td>
                     <td className="col-valor num">R$ {emissao.valor}</td>

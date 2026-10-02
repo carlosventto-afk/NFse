@@ -115,6 +115,7 @@ async def _processar_pendente_spedy(
     # abaixo leva junto).
     payload_json = json.dumps(payload, ensure_ascii=False)
     emissao.requisicao_bruta = payload_json
+    emissao.ambiente = AmbienteEnum(empresa.ambiente)
     logger.info("emissao %s: payload enviado a Spedy: %s", emissao.id, payload_json)
     try:
         bruta = await cliente.emitir_nfse(payload)
@@ -197,6 +198,7 @@ async def processar_uma_pendente(session: AsyncSession, settings: Settings | Non
         xml = build_dps_xml(dps_data)
         assinado = sign_dps(xml, pfx_base64, senha)
         emissao.xml_dps = assinado
+        emissao.ambiente = AmbienteEnum(empresa.ambiente)
 
         # O dps_id e gravado ANTES da chamada a SEFIN, de proposito: se o
         # processo morrer (ou a conexao cair) entre a resposta da SEFIN e o
