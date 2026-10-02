@@ -8,6 +8,7 @@ import { obterToken } from "../api/client";
 import type { Emissao } from "../api/types";
 import MenuAcoes from "../components/MenuAcoes";
 import { CLASSES_PILULA, ROTULOS_STATUS } from "../lib/status";
+import { useAuth } from "../context/AuthContext";
 
 const STATUS = [
   "", "aguardando_emissao", "pendente", "autorizada", "rejeitada", "cancelada",
@@ -37,6 +38,7 @@ async function extrairDetalheErro(resposta: Response, generico: string): Promise
 }
 
 export default function EmissoesPage() {
+  const { payload } = useAuth();
   const [emissoes, setEmissoes] = useState<Emissao[]>([]);
   const [filtroStatus, setFiltroStatus] = useState("");
   const [filtroTipoData, setFiltroTipoData] = useState<TipoFiltroData>("competencia");
@@ -323,7 +325,16 @@ export default function EmissoesPage() {
                             itens={[
                               { rotulo: "XML", onClick: () => baixar(urlXml(emissao.id), `NFSe_${emissao.serie}_${emissao.numero}.xml`) },
                               { rotulo: "Cancelar", perigo: true, onClick: () => setCancelandoId(emissao.id) },
-                              { rotulo: "Excluir", perigo: true, onClick: () => excluir(emissao.id) },
+                              // Autorizada em producao so pode ser excluida pelo admin da
+                              // plataforma (ver _pode_excluir no backend) -- esconde o item
+                              // em vez de deixar clicar e tomar 409, pra quem nao e. Notas
+                              // antigas sem emissao.ambiente registrado (null) caem aqui como
+                              // "nao producao" -- se a empresa estiver em producao hoje, o
+                              // backend ainda pode recusar; e so uma aproximacao de UX, quem
+                              // decide de verdade e sempre o backend.
+                              ...(emissao.ambiente !== "producao" || payload?.eh_admin_plataforma
+                                ? [{ rotulo: "Excluir", perigo: true, onClick: () => excluir(emissao.id) }]
+                                : []),
                             ]}
                           />
                         </>

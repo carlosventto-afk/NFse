@@ -441,12 +441,28 @@ async def cancelar_emissao(
     return emissao
 
 
-def _pode_excluir(emissao: Emissao, empresa: Empresa) -> bool:
-    # Autorizada so pode ser excluida em homologacao — la e so nota de teste,
-    # sem efeito fiscal real. Em producao a nota autorizada e um documento
-    # fiscal de verdade: so pode ser cancelada (/cancelar), nunca apagada.
+def _ambiente_da_emissao(emissao: Emissao, empresa: Empresa) -> AmbienteEnum:
+    # emissao.ambiente e o ambiente de QUANDO essa nota foi de fato emitida
+    # (ver app/worker.py) -- preferido sobre empresa.ambiente (atual), senao
+    # uma empresa que troca de ambiente depois muda retroativamente o que
+    # pode ser excluido pras notas antigas. So cai pro ambiente atual da
+    # empresa em notas de antes desse campo existir (emissao.ambiente nulo).
+    return AmbienteEnum(emissao.ambiente) if emissao.ambiente else AmbienteEnum(empresa.ambiente)
+
+
+def _pode_excluir(emissao: Emissao, empresa: Empresa, eh_admin_plataforma: bool) -> bool:
+    # Autorizada em homologacao: so nota de teste, sem efeito fiscal real --
+    # qualquer admin da empresa pode excluir. Autorizada em PRODUCAO: e um
+    # documento fiscal de verdade -- excluir aqui NAO cancela a nota na
+    # prefeitura/Spedy (o registro continua existindo do lado de la, so sai
+    # do nosso sistema); por isso, a pedido explicito do usuario (02/10),
+    # restrito ao admin da PLATAFORMA (nao qualquer admin de empresa, que em
+    # um sistema multiempresa poderia ser outro titular). Prefira /cancelar
+    # sempre que possivel -- isto e pra quando cancelar nao e mais opcao.
     if emissao.status == StatusEmissao.autorizada:
-        return AmbienteEnum(empresa.ambiente) == AmbienteEnum.homologacao
+        if _ambiente_da_emissao(emissao, empresa) == AmbienteEnum.homologacao:
+            return True
+        return eh_admin_plataforma
     return emissao.status in (
         StatusEmissao.pendente, StatusEmissao.rejeitada, StatusEmissao.aguardando_emissao,
     )
@@ -463,10 +479,15 @@ async def excluir_emissao(
         raise HTTPException(status_code=404)
 
     empresa = await session.get(Empresa, emissao.empresa_id)
-    if not _pode_excluir(emissao, empresa):
+    if not _pode_excluir(emissao, empresa, contexto.eh_admin_plataforma):
+        producao_autorizada = (
+            emissao.status == StatusEmissao.autorizada
+            and _ambiente_da_emissao(emissao, empresa) == AmbienteEnum.producao
+        )
         detalhe = (
-            "Nota autorizada em producao so pode ser cancelada, nao excluida"
-            if emissao.status == StatusEmissao.autorizada
+            "Nota autorizada em producao so pode ser excluida pelo admin da plataforma "
+            "(use /cancelar para o fluxo normal)"
+            if producao_autorizada
             else (
                 "So e possivel excluir emissao aguardando emissao, pendente, rejeitada, ou "
                 f"autorizada em homologacao (status atual: {emissao.status})"
@@ -489,7 +510,7 @@ async def excluir_emissoes_em_lote(
 
     excluidas = 0
     for emissao in emissoes:
-        if not _pode_excluir(emissao, empresa):
+        if not _pode_excluir(emissao, empresa, contexto.eh_admin_plataforma):
             continue
         await session.delete(emissao)
         excluidas += 1

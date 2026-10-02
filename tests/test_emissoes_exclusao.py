@@ -126,6 +126,67 @@ async def test_excluir_emissao_autorizada_em_producao_devolve_409(db_session):
 
 
 @pytest.mark.asyncio
+async def test_admin_plataforma_exclui_emissao_autorizada_em_producao(db_session):
+    # Pedido explicito (02/10): nota autorizada em producao e documento
+    # fiscal real (excluir aqui NAO cancela na prefeitura/Spedy) -- so o
+    # admin da PLATAFORMA pode, nao qualquer admin de empresa.
+    empresa, titular, emissao = await _empresa_titular_e_emissao(
+        db_session, StatusEmissao.autorizada, ambiente=AmbienteEnum.producao,
+    )
+    titular.eh_admin_plataforma = True
+    await db_session.commit()
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.delete(
+                f"/api/emissoes/{emissao.id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 204
+    finally:
+        app.dependency_overrides.clear()
+
+    restante = (
+        await db_session.execute(select(Emissao).where(Emissao.id == emissao.id))
+    ).scalar_one_or_none()
+    assert restante is None
+
+
+@pytest.mark.asyncio
+async def test_exclusao_de_autorizada_usa_ambiente_da_emissao_nao_da_empresa_atual(db_session):
+    # emissao.ambiente (gravado no momento do envio real, ver app/worker.py)
+    # manda mais que empresa.ambiente (que pode ter mudado depois) -- essa
+    # nota foi emitida em homologacao (so teste), mesmo a empresa estando em
+    # producao HOJE; qualquer admin de empresa pode excluir, sem precisar
+    # ser admin da plataforma.
+    empresa, titular = await criar_empresa_titular(db_session, ambiente=AmbienteEnum.producao)
+    emissao = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.csv, status=StatusEmissao.autorizada,
+        ambiente=AmbienteEnum.homologacao, chave_acesso="chave-1",
+        serie="1", numero=1, descricao="Lavagem", valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    db_session.add(emissao)
+    await db_session.commit()
+    await db_session.refresh(emissao)
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.delete(
+                f"/api/emissoes/{emissao.id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 204
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
 async def test_operador_nao_pode_excluir(db_session):
     empresa, operador = await criar_empresa_titular(
         db_session, email_titular="operador-exclusao@teste.com", papel_vinculo=PapelUsuario.operador,
@@ -304,6 +365,44 @@ async def test_excluir_emissoes_em_lote_pula_autorizada_em_producao(db_session):
 
     restantes = (await db_session.execute(select(Emissao))).scalars().all()
     assert [e.id for e in restantes] == [autorizada.id]
+
+
+@pytest.mark.asyncio
+async def test_excluir_emissoes_em_lote_admin_plataforma_inclui_autorizada_em_producao(db_session):
+    empresa, titular = await criar_empresa_titular(db_session, ambiente=AmbienteEnum.producao)
+    titular.eh_admin_plataforma = True
+    await db_session.commit()
+    pendente = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.csv, status=StatusEmissao.pendente,
+        serie="1", numero=1, descricao="Lavagem", valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    autorizada = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.csv, status=StatusEmissao.autorizada,
+        serie="1", numero=2, chave_acesso="chave-1", descricao="Lavagem",
+        valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    db_session.add_all([pendente, autorizada])
+    await db_session.commit()
+    await db_session.refresh(pendente)
+    await db_session.refresh(autorizada)
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                "/api/emissoes/excluir-lote",
+                json={"ids": [str(pendente.id), str(autorizada.id)]},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 200
+        assert resposta.json() == {"excluidas": 2, "puladas": 0}
+    finally:
+        app.dependency_overrides.clear()
+
+    restantes = (await db_session.execute(select(Emissao))).scalars().all()
+    assert restantes == []
 
 
 @pytest.mark.asyncio
