@@ -1,22 +1,26 @@
 :root {
-  --bg: #f6f2ea;
+  /* Paleta da aplicacao: deliberadamente distinta da marca (hexagono
+     #14213d / check #f6f2ea / verde-agua #2fa98c), que fica reservada
+     a sidebar e ao LogoVTR. O restante da interface usa um sistema
+     neutro-frio (papel/grafite) com um unico acento proprio (petroleo). */
+  --bg: #eef1f0;
   --superficie: #ffffff;
-  --superficie-alt: #efe9dc;
-  --borda: #e1d9c8;
-  --texto: #14213d;
-  --texto-suave: #5b6b70;
+  --superficie-alt: #e6eae8;
+  --borda: #d7dedb;
+  --texto: #202b2e;
+  --texto-suave: #5c6b6e;
   --sidebar-bg: #14213d;
   --sidebar-bg-ativo: #223a63;
   --sidebar-texto: #c7d0dc;
   --sidebar-texto-ativo: #f6f2ea;
   --sidebar-rotulo: #7c8ca3;
-  --acento: #2fa98c;
-  --acento-hover: #25806b;
-  --acento-contraste: #f6f2ea;
+  --acento: #1f6f78;
+  --acento-hover: #185960;
+  --acento-contraste: #ffffff;
   --perigo: #b3261e;
   --perigo-hover: #8f1e18;
   --perigo-bg: #fbe7e6;
-  --foco: #2fa98c;
+  --foco: #1f6f78;
   --status-autorizada-bg: #e0f2ec;
   --status-autorizada-texto: #1f7a5e;
   --status-pendente-bg: #fbf0dd;
@@ -304,7 +308,7 @@ hr { border: none; border-top: 1px solid var(--borda); margin: 1.25rem 0; }
   border-radius: 6px;
   padding: 0.5rem 0.7rem;
   font-size: 12px;
-  box-shadow: 0 2px 8px rgba(20, 33, 61, 0.12);
+  box-shadow: 0 2px 8px rgba(32, 43, 46, 0.12);
 }
 
 /* -- painel de tabela -- */
