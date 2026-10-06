@@ -51,6 +51,26 @@ export function emitirEmissao(id: string): Promise<Emissao> {
   return apiFetchJson<Emissao>(`/api/emissoes/${id}/emitir`, "POST", {});
 }
 
+export interface DadosEmissaoManual {
+  cpf_cnpj: string;
+  nome: string;
+  email: string;
+  descricao: string;
+  valor: string;
+  competencia: string;
+}
+
+export function emitirManual(dados: DadosEmissaoManual): Promise<Emissao> {
+  return apiFetchJson<Emissao>("/api/emissoes/manual", "POST", {
+    cpf_cnpj: dados.cpf_cnpj.trim() || null,
+    nome: dados.nome.trim(),
+    email: dados.email.trim() || null,
+    descricao: dados.descricao.trim(),
+    valor: Number(dados.valor.replace(",", ".")),
+    competencia: dados.competencia,
+  });
+}
+
 export function emitirEmissoesLote(ids: string[]): Promise<EmissaoLoteResultado> {
   return apiFetchJson<EmissaoLoteResultado>("/api/emissoes/emitir-lote", "POST", { ids });
 }

@@ -12,6 +12,7 @@ import EditarEmpresaPage from "./pages/EditarEmpresaPage";
 import ClientesPage from "./pages/ClientesPage";
 import ImportarCsvPage from "./pages/ImportarCsvPage";
 import EmissoesPage from "./pages/EmissoesPage";
+import EmissaoAvulsaPage from "./pages/EmissaoAvulsaPage";
 import PainelPage from "./pages/PainelPage";
 
 export default function App() {
@@ -28,6 +29,7 @@ export default function App() {
             <Route element={<Layout />}>
               <Route path="/painel" element={<PainelPage />} />
               <Route path="/emissoes" element={<EmissoesPage />} />
+              <Route path="/emissao-avulsa" element={<EmissaoAvulsaPage />} />
               <Route path="/cadastro-empresa" element={<CadastroEmpresaPage />} />
               <Route path="/numeracao" element={<NumeracaoPage />} />
               <Route path="/editar-empresa" element={<EditarEmpresaPage />} />
