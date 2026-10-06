@@ -194,6 +194,7 @@ class EmpresaDetalheOut(BaseModel):
     codigo_tributacao: str
     codigo_tributacao_municipal: str | None
     cnae: str | None
+    nbs_code: str | None
     aliquota_iss: Decimal | None
     ibs_cbs_cst: int | None
     ibs_cbs_classificacao: int | None

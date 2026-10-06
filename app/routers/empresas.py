@@ -148,6 +148,7 @@ async def editar_minha_empresa(
     codigo_tributacao: str = Form(...),
     codigo_tributacao_municipal: str | None = Form(None),
     cnae: str | None = Form(None),
+    nbs_code: str | None = Form(None),
     aliquota_iss: str | None = Form(None),
     ibs_cbs_cst: str | None = Form(None),
     ibs_cbs_classificacao: str | None = Form(None),
@@ -178,6 +179,7 @@ async def editar_minha_empresa(
     local_prestacao_ibge = (local_prestacao_ibge or "").strip() or None
     codigo_tributacao_municipal = (codigo_tributacao_municipal or "").strip() or None
     cnae = (cnae or "").strip() or None
+    nbs_code = (nbs_code or "").strip() or None
     regime_apuracao_sn_int = int(regime_apuracao_sn) if (regime_apuracao_sn or "").strip() else None
     aliquota_iss_decimal = None
     if (aliquota_iss or "").strip():
@@ -250,6 +252,7 @@ async def editar_minha_empresa(
     empresa.codigo_tributacao = codigo_tributacao
     empresa.codigo_tributacao_municipal = codigo_tributacao_municipal
     empresa.cnae = cnae
+    empresa.nbs_code = nbs_code
     empresa.aliquota_iss = aliquota_iss_decimal
     empresa.ibs_cbs_cst = ibs_cbs_cst_int
     empresa.ibs_cbs_classificacao = ibs_cbs_classificacao_int

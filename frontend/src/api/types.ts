@@ -136,6 +136,7 @@ export interface EmpresaDetalhe {
   codigo_tributacao: string;
   codigo_tributacao_municipal: string | null;
   cnae: string | null;
+  nbs_code: string | null;
   aliquota_iss: number | null;
   ibs_cbs_cst: number | null;
   ibs_cbs_classificacao: number | null;

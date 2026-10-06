@@ -5,7 +5,7 @@ import { CLASS_TRIB_IBS_CBS, CST_IBS_CBS, IND_OP_IBS_CBS } from "../lib/reformaT
 const VAZIO: DadosEdicaoEmpresa = {
   cnpj: "", inscricao_municipal: "", municipio_ibge: "", local_prestacao_ibge: "",
   op_simp_nac: "3", regime_apuracao_sn: "", codigo_tributacao: "", codigo_tributacao_municipal: "",
-  cnae: "", aliquota_iss: "", ibs_cbs_cst: "", ibs_cbs_classificacao: "", ibs_cbs_codigo_indicador_operacao: "",
+  cnae: "", nbs_code: "", aliquota_iss: "", ibs_cbs_cst: "", ibs_cbs_classificacao: "", ibs_cbs_codigo_indicador_operacao: "",
   descricao_servico_padrao: "", ambiente: "homologacao",
   senha_certificado: "",
   provedor_emissao: "direto", razao_social: "", logradouro: "", numero: "", complemento: "", bairro: "", cep: "",
@@ -35,6 +35,7 @@ export default function EditarEmpresaPage() {
           codigo_tributacao: empresa.codigo_tributacao,
           codigo_tributacao_municipal: empresa.codigo_tributacao_municipal ?? "",
           cnae: empresa.cnae ?? "",
+          nbs_code: empresa.nbs_code ?? "",
           aliquota_iss: empresa.aliquota_iss != null ? String(empresa.aliquota_iss) : "",
           ibs_cbs_cst: empresa.ibs_cbs_cst != null ? String(empresa.ibs_cbs_cst) : "",
           ibs_cbs_classificacao: empresa.ibs_cbs_classificacao != null ? String(empresa.ibs_cbs_classificacao) : "",
@@ -159,6 +160,14 @@ export default function EditarEmpresaPage() {
           </label>
           <input id="cnae" maxLength={10} value={dados.cnae}
             onChange={(e) => atualizar("cnae", e.target.value)} />
+        </div>
+        <div className="form-linha">
+          <label htmlFor="nbs_code">
+            Codigo NBS (formato X.XXXX.XX.XX — usado no payload da Spedy, veja a tabela de
+            correlacao LC116/NBS oficial pra achar o da sua atividade)
+          </label>
+          <input id="nbs_code" maxLength={20} value={dados.nbs_code}
+            onChange={(e) => atualizar("nbs_code", e.target.value)} />
         </div>
         <div className="form-linha">
           <label htmlFor="aliquota_iss">

@@ -75,6 +75,15 @@ def montar_payload_spedy(empresa: Empresa, emissao: Emissao, cliente: Cliente | 
         }
     if empresa.codigo_tributacao_municipal:
         payload["cityServiceCode"] = empresa.codigo_tributacao_municipal
+    # Codigo NBS (Nomenclatura Brasileira de Servicos) -- campo novo do
+    # leiaute Nacional NFS-e, aceito pela Spedy mas nao derivado
+    # corretamente por ela sozinha: confirmado ao vivo em Belem (05/10,
+    # erro E0316 "Codigo da lista NBS informado inexistente tabela de NBS
+    # do sistema") sem mandar isto explicitamente. Valor certo por empresa
+    # vem da tabela oficial de correlacao LC116->NBS (Anexo VIII,
+    # gov.br/nfse) -- nao ha default seguro, cadastrado por empresa.
+    if empresa.nbs_code:
+        payload["nbsCode"] = empresa.nbs_code
     # cnaeCode removido de proposito em teste (25/09): uma nota AUTORIZADA
     # de 21/09 nao tinha esse campo no XML final -- mas cuidado, essa
     # comparacao e fraca (o XML e o documento SEFIN de saida, que nunca tem

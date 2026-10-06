@@ -94,6 +94,16 @@ def test_inclui_codigo_tributacao_municipal_quando_presente():
     assert payload["cityServiceCode"] == "007"
 
 
+def test_inclui_nbs_code_quando_presente():
+    payload = montar_payload_spedy(_empresa(nbs_code="1.2601.10.00"), _emissao())
+    assert payload["nbsCode"] == "1.2601.10.00"
+
+
+def test_nao_inclui_nbs_code_quando_ausente():
+    payload = montar_payload_spedy(_empresa(), _emissao())
+    assert "nbsCode" not in payload
+
+
 def test_nunca_inclui_cnae_code():
     # Removido de proposito em teste (25/09) -- uma nota autorizada de
     # 21/09 nao tinha esse campo no XML SEFIN de saida (comparacao fraca,
