@@ -63,7 +63,7 @@ export interface DadosEmissaoManual {
 export function emitirManual(dados: DadosEmissaoManual): Promise<Emissao> {
   return apiFetchJson<Emissao>("/api/emissoes/manual", "POST", {
     cpf_cnpj: dados.cpf_cnpj.trim() || null,
-    nome: dados.nome.trim(),
+    nome: dados.nome.trim() || null,
     email: dados.email.trim() || null,
     descricao: dados.descricao.trim(),
     valor: Number(dados.valor.replace(",", ".")),

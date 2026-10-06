@@ -45,8 +45,8 @@ export default function EmissaoAvulsaPage() {
       </p>
       <form onSubmit={enviar}>
         <div className="form-linha">
-          <label htmlFor="nome">Nome do tomador</label>
-          <input id="nome" required value={dados.nome} onChange={(e) => atualizar("nome", e.target.value)} />
+          <label htmlFor="nome">Nome do tomador (opcional)</label>
+          <input id="nome" value={dados.nome} onChange={(e) => atualizar("nome", e.target.value)} />
         </div>
         <div className="form-linha">
           <label htmlFor="cpf_cnpj">CPF/CNPJ do tomador (opcional)</label>

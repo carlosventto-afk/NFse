@@ -193,7 +193,11 @@ def build_dps_xml(data: DpsData) -> bytes:
     if toma_doc:
         toma = _el(inf, "toma")
         _el(toma, "CPF" if len(toma_doc) == 11 else "CNPJ", toma_doc)
-        _el(toma, "xNome", _sanitize_text(data.toma_nome)[:300])
+        # xNome e obrigatorio no XSD (nao aceita vazio) -- tomador com
+        # CPF/CNPJ mas sem nome preenchido (ex.: emissao avulsa, nome agora
+        # opcional) cai no mesmo fallback generico ja usado pra nota sem
+        # tomador nenhum identificado.
+        _el(toma, "xNome", _sanitize_text(data.toma_nome or "Consumidor nao identificado")[:300])
         if data.toma_email:
             _el(toma, "email", data.toma_email.strip()[:80])
         if data.toma_end_logradouro and data.toma_end_municipio_ibge:

@@ -135,6 +135,31 @@ async def test_emissao_manual_sem_documento_do_tomador_e_aceita(db_session):
 
 
 @pytest.mark.asyncio
+async def test_emissao_manual_sem_nome_do_tomador_e_aceita(db_session):
+    empresa, token = await _empresa_e_usuario(db_session)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                "/api/emissoes/manual",
+                json={
+                    "cpf_cnpj": "98765432100",
+                    "descricao": "Lavagem", "valor": "10.00", "competencia": "2026-08-01",
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 201
+        corpo = resposta.json()
+        assert corpo["numero"] == 1
+        assert corpo["tomador_cpf_cnpj"] == "98765432100"
+        assert corpo["tomador_nome"] is None
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
 async def test_listar_emissoes_sem_empresa_ativa_devolve_409(db_session):
     from app.crypto import hash_senha
     from app.models import Usuario

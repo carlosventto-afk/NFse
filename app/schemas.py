@@ -233,7 +233,10 @@ class CancelarEmissaoIn(BaseModel):
 
 class EmissaoManualIn(BaseModel):
     cpf_cnpj: str | None = Field(default=None, max_length=20)
-    nome: str = Field(max_length=TAMANHO_NOME)
+    # Opcional: CSV/webhook ja emitem sem tomador identificado (fallback
+    # "Consumidor nao identificado" aplicado em nfse_core/dps.py quando ha
+    # CPF/CNPJ mas falta o nome) -- emissao avulsa segue a mesma regra.
+    nome: str | None = Field(default=None, max_length=TAMANHO_NOME)
     email: str | None = Field(default=None, max_length=TAMANHO_EMAIL)
     descricao: str = Field(max_length=TAMANHO_DESCRICAO)
     valor: Decimal = Field(le=VALOR_MAXIMO)

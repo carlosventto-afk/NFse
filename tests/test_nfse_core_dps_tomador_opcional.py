@@ -42,6 +42,21 @@ def test_build_dps_xml_com_tomador_mantem_bloco_toma_como_antes():
     assert toma.find(f"{{{NFSE_NS}}}xNome").text == "Cliente Teste"
 
 
+def test_build_dps_xml_com_documento_mas_sem_nome_usa_fallback_generico():
+    # xNome e obrigatorio no XSD (nao aceita vazio) -- tomador com CPF/CNPJ
+    # mas sem nome preenchido (ex.: emissao avulsa, nome agora opcional)
+    # nao pode gerar <xNome></xNome> vazio.
+    dados = _dados_base(toma_nome="")
+
+    xml = build_dps_xml(dados)
+
+    root = etree.fromstring(xml)
+    inf = root.find(f"{{{NFSE_NS}}}infDPS")
+    toma = inf.find(f"{{{NFSE_NS}}}toma")
+    assert toma is not None
+    assert toma.find(f"{{{NFSE_NS}}}xNome").text == "Consumidor nao identificado"
+
+
 def test_build_dps_xml_com_documento_invalido_ainda_levanta_erro():
     dados = _dados_base(toma_cpf_cnpj="123")  # nem 11 nem 14 digitos
 
