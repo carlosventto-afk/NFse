@@ -116,6 +116,73 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--acento);
 .cartao { background: var(--superficie); border: 1px solid var(--borda); padding: 1.5rem; border-radius: 8px; max-width: 480px; margin: 2rem auto; }
 .form-linha { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.75rem; }
 
+/* -- pagina de configuracao em secoes (Editar empresa) -- */
+
+.pagina-config { max-width: 760px; }
+.pagina-config > p.ajuda { margin: -0.5rem 0 1.5rem; max-width: 62ch; }
+
+.secao-config {
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1rem;
+}
+.secao-config > h2 { margin-bottom: 0.2rem; }
+.secao-config > p.ajuda { margin: 0 0 1.1rem; max-width: 62ch; }
+
+details.secao-config summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+details.secao-config summary::-webkit-details-marker { display: none; }
+details.secao-config .resumo-secao { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+details.secao-config .resumo-secao h2 { margin: 0; }
+details.secao-config .resumo-secao span.ajuda { font-size: 13px; font-weight: 400; }
+details.secao-config .seta { color: var(--texto-suave); font-size: 12px; transition: transform 0.15s ease; flex-shrink: 0; }
+details.secao-config[open] .seta { transform: rotate(180deg); }
+details.secao-config[open] summary { margin-bottom: 1.1rem; }
+
+.grade-campos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.9rem 1.25rem;
+}
+.grade-campos .form-linha { margin-bottom: 0; }
+.grade-campos .campo-largo { grid-column: 1 / -1; }
+
+.subsecao-config {
+  margin-top: 1.25rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--borda);
+}
+.subsecao-config h3 { font-size: 12.5px; font-weight: 600; letter-spacing: 0.03em; color: var(--texto-suave); margin: 0 0 0.85rem; }
+
+.linha-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  font-size: 13.5px;
+  color: var(--texto);
+  grid-column: 1 / -1;
+}
+.linha-checkbox input[type="checkbox"] { margin-top: 2px; flex-shrink: 0; }
+
+.barra-salvar {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg);
+  padding: 1rem 0 0.25rem;
+  margin-top: -0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
 hr { border: none; border-top: 1px solid var(--borda); margin: 1.25rem 0; }
 .ajuda { color: var(--texto-suave); font-size: 13px; }
 

@@ -18,8 +18,7 @@ const GRUPOS_NAV = [
     rotulo: "Empresa",
     itens: [
       { to: "/cadastro-empresa", label: "Cadastrar empresa", icone: "🏢" },
-      { to: "/editar-empresa", label: "Editar empresa", icone: "⚙" },
-      { to: "/numeracao", label: "Numeração", icone: "#" },
+      { to: "/editar-empresa", label: "Configurações", icone: "⚙" },
     ],
   },
 ];

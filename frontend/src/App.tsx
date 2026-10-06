@@ -7,7 +7,6 @@ import SelecionarEmpresaPage from "./pages/SelecionarEmpresaPage";
 import AdminPlataformaPage from "./pages/AdminPlataformaPage";
 import AceitarConvitePage from "./pages/AceitarConvitePage";
 import CadastroEmpresaPage from "./pages/CadastroEmpresaPage";
-import NumeracaoPage from "./pages/NumeracaoPage";
 import EditarEmpresaPage from "./pages/EditarEmpresaPage";
 import ClientesPage from "./pages/ClientesPage";
 import ImportarCsvPage from "./pages/ImportarCsvPage";
@@ -31,8 +30,8 @@ export default function App() {
               <Route path="/emissoes" element={<EmissoesPage />} />
               <Route path="/emissao-avulsa" element={<EmissaoAvulsaPage />} />
               <Route path="/cadastro-empresa" element={<CadastroEmpresaPage />} />
-              <Route path="/numeracao" element={<NumeracaoPage />} />
               <Route path="/editar-empresa" element={<EditarEmpresaPage />} />
+              <Route path="/numeracao" element={<Navigate to="/editar-empresa" replace />} />
               <Route path="/clientes" element={<ClientesPage />} />
               <Route path="/importar-csv" element={<ImportarCsvPage />} />
             </Route>
