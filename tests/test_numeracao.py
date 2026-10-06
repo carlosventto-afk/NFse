@@ -38,7 +38,7 @@ async def test_reservar_proximo_numero_avanca_sequencialmente(db_session_factory
         serie2, numero2 = await reservar_proximo_numero(session, empresa_id)
         await session.commit()
 
-    assert serie1 == serie2 == "1"
+    assert serie1 == serie2 == "10001"
     assert numero2 == numero1 + 1
 
 

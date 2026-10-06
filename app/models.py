@@ -97,6 +97,16 @@ class Empresa(Base):
     # municipios exigem por fora -- confirmado ao vivo que Belem rejeita a
     # emissao sem ele (L999 "Atividade nao informada").
     cnae: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # Codigo NBS (Nomenclatura Brasileira de Servicos), formato "X.XXXX.XX.XX"
+    # -- campo novo do leiaute Nacional NFS-e (reforma tributaria), aceito
+    # pela Spedy em POST /service-invoices (nbsCode). Confirmado ao vivo em
+    # Belem (05/10, erro E0316 "Codigo da lista NBS informado inexistente
+    # tabela de NBS do sistema"): sem mandar isso explicitamente, o que a
+    # Spedy deriva sozinha do federalServiceCode nao bate com a tabela da
+    # prefeitura. Valor correto por empresa vem da tabela oficial de
+    # correlacao LC116->NBS (Anexo VIII, gov.br/nfse) -- nao ha default
+    # seguro aqui, depende do item de servico de cada empresa.
+    nbs_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # Aliquota de ISS em % (ex.: 2 = 2%) -- so usada hoje pra preencher
     # total.issRate no payload da Spedy (ver app/adapters/spedy_payload.py);
     # nula = nao manda o campo (a Spedy trata como opcional).
@@ -114,7 +124,13 @@ class Empresa(Base):
     ambiente: Mapped[AmbienteEnum] = mapped_column(
         String(20), default=AmbienteEnum.homologacao, nullable=False
     )
-    serie: Mapped[str] = mapped_column(String(5), default="1", nullable=False)
+    # "1" (serie 00001) e reservada ao sistema MUNICIPAL proprio de geracao
+    # de NFS-e -- confirmado ao vivo em Belem (05/10, erro L0022): quem
+    # emite por fora (API/integrador, nosso caso) precisa de serie entre
+    # 10001 e 49999. Esse e um padrao do leiaute Nacional NFS-e (nao so de
+    # Belem), entao o default de empresa nova ja comeca dentro da faixa
+    # certa -- evita a mesma rejeicao na primeira emissao de cada empresa.
+    serie: Mapped[str] = mapped_column(String(5), default="10001", nullable=False)
     proximo_numero: Mapped[int] = mapped_column(default=1, nullable=False)
     certificado_pfx_cifrado: Mapped[str] = mapped_column(Text, nullable=False)
     certificado_senha_cifrada: Mapped[str | None] = mapped_column(Text, nullable=True)

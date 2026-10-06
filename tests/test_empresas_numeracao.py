@@ -29,7 +29,7 @@ async def test_admin_le_numeracao_atual(db_session):
                 "/api/empresas/numeracao", headers={"Authorization": f"Bearer {token}"},
             )
         assert resposta.status_code == 200
-        assert resposta.json() == {"serie": "1", "proximo_numero": 1}
+        assert resposta.json() == {"serie": "10001", "proximo_numero": 1}
     finally:
         app.dependency_overrides.clear()
 
