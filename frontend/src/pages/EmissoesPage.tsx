@@ -67,7 +67,13 @@ export default function EmissoesPage() {
   }
 
   useEffect(() => {
-    carregar();
+    // input[type=date] dispara onChange a cada digito do dia/mes/ano
+    // preenchido -- sem debounce, cada digito recarregava e re-renderizava
+    // a tabela inteira (quase 3 mil linhas), travando a digitacao.
+    const temporizador = setTimeout(() => {
+      carregar();
+    }, 400);
+    return () => clearTimeout(temporizador);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtroStatus, filtroTipoData, filtroInicio, filtroFim]);
 
