@@ -3,6 +3,8 @@ import { AuthProvider } from "./context/AuthContext";
 import RotaProtegida from "./components/RotaProtegida";
 import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
+import EsqueciSenhaPage from "./pages/EsqueciSenhaPage";
+import RedefinirSenhaPage from "./pages/RedefinirSenhaPage";
 import SelecionarEmpresaPage from "./pages/SelecionarEmpresaPage";
 import AdminPlataformaPage from "./pages/AdminPlataformaPage";
 import AceitarConvitePage from "./pages/AceitarConvitePage";
@@ -20,6 +22,8 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/esqueci-senha" element={<EsqueciSenhaPage />} />
+          <Route path="/redefinir-senha" element={<RedefinirSenhaPage />} />
           <Route path="/aceitar-convite" element={<AceitarConvitePage />} />
           <Route element={<RotaProtegida />}>
             <Route path="/" element={<Navigate to="/selecionar-empresa" replace />} />

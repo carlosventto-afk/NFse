@@ -22,3 +22,11 @@ export function listarMinhasEmpresas(): Promise<EmpresaVinculada[]> {
 export function trocarEmpresaApi(empresaId: string): Promise<TokenOut> {
   return apiFetchJson<TokenOut>("/api/auth/trocar-empresa", "POST", { empresa_id: empresaId });
 }
+
+export function esqueciSenha(email: string): Promise<void> {
+  return apiFetchJson<void>("/api/auth/esqueci-senha", "POST", { email });
+}
+
+export function redefinirSenha(token: string, novaSenha: string): Promise<void> {
+  return apiFetchJson<void>("/api/auth/redefinir-senha", "POST", { token, nova_senha: novaSenha });
+}

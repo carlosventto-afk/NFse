@@ -24,3 +24,25 @@ async def enviar_convite(destinatario: str, link: str) -> None:
         password=settings.smtp_password,
         use_tls=True,
     )
+
+
+async def enviar_redefinicao_senha(destinatario: str, link: str) -> None:
+    settings = get_settings()
+    mensagem = EmailMessage()
+    mensagem["From"] = settings.smtp_user
+    mensagem["To"] = destinatario
+    mensagem["Subject"] = "Redefinir senha - NFS-e Automatizada"
+    mensagem.set_content(
+        "Recebemos um pedido para redefinir a senha da sua conta.\n\n"
+        f"Clique no link abaixo para escolher uma nova senha:\n{link}\n\n"
+        "Este link expira em 1 hora. Se voce nao pediu essa redefinicao, "
+        "pode ignorar este e-mail."
+    )
+    await aiosmtplib.send(
+        mensagem,
+        hostname=settings.smtp_host,
+        port=settings.smtp_port,
+        username=settings.smtp_user,
+        password=settings.smtp_password,
+        use_tls=True,
+    )

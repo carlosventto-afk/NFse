@@ -46,6 +46,7 @@ export default function LoginPage() {
           {erro && <p className="erro">{erro}</p>}
           <button type="submit" disabled={enviando}>{enviando ? "Entrando..." : "Entrar"}</button>
         </form>
+        <p><a href="/esqueci-senha">Esqueci minha senha</a></p>
         <p><a href="/aceitar-convite">Tenho um convite</a></p>
       </div>
     </div>

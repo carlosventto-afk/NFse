@@ -15,6 +15,8 @@ def test_todas_as_rotas_esperadas_estao_registradas():
         "/api/auth/login",
         "/api/auth/empresas",
         "/api/auth/trocar-empresa",
+        "/api/auth/esqueci-senha",
+        "/api/auth/redefinir-senha",
         "/api/convites",
         "/api/convites/aceitar",
         "/api/clientes",

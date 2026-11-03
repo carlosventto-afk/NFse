@@ -80,6 +80,24 @@ class ConviteAceitarIn(BaseModel):
         return v
 
 
+class EsqueciSenhaIn(BaseModel):
+    email: EmailStr = Field(max_length=TAMANHO_EMAIL_USUARIO)
+
+
+class RedefinirSenhaIn(BaseModel):
+    token: str
+    nova_senha: str = Field(max_length=TAMANHO_SENHA_MAX)
+
+    @field_validator("nova_senha")
+    @classmethod
+    def nova_senha_valida(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("senha precisa ter ao menos 8 caracteres")
+        if len(v.encode()) > TAMANHO_SENHA_MAX:
+            raise ValueError(f"senha nao pode passar de {TAMANHO_SENHA_MAX} bytes")
+        return v
+
+
 class UsuarioCriarIn(BaseModel):
     email: EmailStr = Field(max_length=TAMANHO_EMAIL_USUARIO)
     senha: str = Field(min_length=8, max_length=TAMANHO_SENHA_MAX)
