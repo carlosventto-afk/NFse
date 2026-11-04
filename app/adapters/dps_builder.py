@@ -35,6 +35,7 @@ def montar_dps_data(empresa: Empresa, serie: str, numero: int, dados: DadosEmiss
         toma_email=dados.tomador_email,
         c_trib_nac=empresa.codigo_tributacao,
         c_trib_mun=empresa.codigo_tributacao_municipal,
+        c_nbs=empresa.nbs_code,
         x_desc_serv=dados.descricao,
         v_serv=dados.valor,
         ibs_cbs_cst=str(empresa.ibs_cbs_cst) if empresa.ibs_cbs_cst is not None else None,

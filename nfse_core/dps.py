@@ -97,6 +97,9 @@ class DpsData:
                                     # obrigatório para municípios com tabela própria
                                     # de códigos (ex.: Belém, confirmado via L0017)
     x_desc_serv: str = ""
+    c_nbs: str | None = None       # código NBS (9 dígitos, Anexo B) -- opcional no XSD
+                                    # (minOccurs=0), mas exigido por alguns municípios
+                                    # (ex.: Belém, erro E0316 sem ele em certos cTribNac)
     c_loc_prestacao: str = ""      # IBGE do local da prestação (padrão: mesmo do emissor)
 
     # Valores
@@ -222,6 +225,8 @@ def build_dps_xml(data: DpsData) -> bytes:
     if data.c_trib_mun:
         _el(cserv, "cTribMun", _digits(data.c_trib_mun).zfill(3))
     _el(cserv, "xDescServ", _sanitize_text(data.x_desc_serv)[:2000] or "Servicos educacionais")
+    if data.c_nbs:
+        _el(cserv, "cNBS", _digits(data.c_nbs).zfill(9))
 
     valores = _el(inf, "valores")
     vsp = _el(valores, "vServPrest")
