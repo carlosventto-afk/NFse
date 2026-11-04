@@ -226,7 +226,18 @@ def build_dps_xml(data: DpsData) -> bytes:
         _el(cserv, "cTribMun", _digits(data.c_trib_mun).zfill(3))
     _el(cserv, "xDescServ", _sanitize_text(data.x_desc_serv)[:2000] or "Servicos educacionais")
     if data.c_nbs:
-        _el(cserv, "cNBS", _digits(data.c_nbs).zfill(9))
+        nbs_digitos = _digits(data.c_nbs)
+        # zfill(9) silenciosamente completaria um codigo incompleto com
+        # zeros a ESQUERDA, gerando um NBS diferente (e invalido) em vez de
+        # avisar -- caso real: "1.1506.9.00" (8 digitos, faltou um na 3a
+        # posicao) virou "011506900" e a SEFIN rejeitou com E0316 sem pista
+        # de que a causa era digito faltando. Erra alto e claro em vez disso.
+        if len(nbs_digitos) != 9:
+            raise ValueError(
+                f"codigo NBS invalido: '{data.c_nbs}' tem {len(nbs_digitos)} digitos, "
+                "precisa ter exatamente 9 (formato N.NNNN.NN.NN)"
+            )
+        _el(cserv, "cNBS", nbs_digitos)
 
     valores = _el(inf, "valores")
     vsp = _el(valores, "vServPrest")
