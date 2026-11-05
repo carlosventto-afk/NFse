@@ -15,6 +15,7 @@ from nfe_core.client import (
     AmbienteEnum, RespostaAutorizacao, RespostaConsulta, SefazClient, UF_ENDPOINTS,
 )
 from nfe_core.error_catalog import CATALOGO_CSTAT, eh_autorizado, eh_denegado, nao_encontrada
+from nfe_core.evento import EventoCancelamentoNfeData, build_evento_cancelamento_nfe_xml
 from nfe_core.nfe import NFE_NS, NfeData, NfeItemData, build_nfe_xml, chave_de_acesso
 from nfe_core.signer import CertificateError, sign_nfe
 
@@ -27,4 +28,6 @@ __all__ = [
     "CATALOGO_CSTAT", "eh_autorizado", "eh_denegado", "nao_encontrada",
     # assinatura
     "sign_nfe", "CertificateError",
+    # evento de cancelamento
+    "EventoCancelamentoNfeData", "build_evento_cancelamento_nfe_xml",
 ]
