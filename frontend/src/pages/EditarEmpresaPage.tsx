@@ -133,13 +133,9 @@ export default function EditarEmpresaPage() {
               <input id="cnpj" required value={dados.cnpj} onChange={(e) => atualizar("cnpj", e.target.value)} />
             </div>
             <div className="form-linha">
-              <label htmlFor="im">Inscrição municipal</label>
+              <label htmlFor="im">Inscrição municipal <span className="exemplo-campo">ex.: 4441501</span></label>
               <input id="im" placeholder="Deixe em branco se o município não exigir" value={dados.inscricao_municipal}
                 onChange={(e) => atualizar("inscricao_municipal", e.target.value)} />
-              <p className="ajuda">
-                Se a emissão usar o endpoint nacional genérico num município sem CNC Nacional configurado
-                (hoje: Belém), o sistema ignora este campo sozinho pra evitar rejeição (erro E0120).
-              </p>
             </div>
             <div className="form-linha">
               <label htmlFor="municipio">Código IBGE do município</label>
@@ -185,36 +181,27 @@ export default function EditarEmpresaPage() {
               </div>
             )}
             <div className="form-linha">
-              <label htmlFor="cod_trib">Código de tributação nacional</label>
+              <label htmlFor="cod_trib">Código de tributação nacional <span className="exemplo-campo">ex.: 141001</span></label>
               <input id="cod_trib" required value={dados.codigo_tributacao}
                 onChange={(e) => atualizar("codigo_tributacao", e.target.value)} />
-              <p className="ajuda">
-                6 dígitos: item + subitem + desdobro da lista de serviços nacional (LC 116). Ex.: 141001 =
-                item 14.10 (lavanderia), desdobro 1.
-              </p>
             </div>
             <div className="form-linha">
-              <label htmlFor="cod_trib_mun">Código de tributação municipal</label>
+              <label htmlFor="cod_trib_mun">Código de tributação municipal <span className="exemplo-campo">ex.: 002</span></label>
               <input id="cod_trib_mun" maxLength={3} placeholder="3 dígitos — só se o município exigir"
                 value={dados.codigo_tributacao_municipal}
                 onChange={(e) => atualizar("codigo_tributacao_municipal", e.target.value)} />
             </div>
             <div className="form-linha">
-              <label htmlFor="cnae">CNAE</label>
+              <label htmlFor="cnae">CNAE <span className="exemplo-campo">ex.: 9601701</span></label>
               <input id="cnae" maxLength={10} placeholder="Só dígitos — Belém, por exemplo, exige pra emitir"
                 value={dados.cnae}
                 onChange={(e) => atualizar("cnae", e.target.value)} />
             </div>
             <div className="form-linha">
-              <label htmlFor="nbs_code">Código NBS</label>
+              <label htmlFor="nbs_code">Código NBS <span className="exemplo-campo">ex.: 1.2601.10.00</span></label>
               <input id="nbs_code" maxLength={20} placeholder="Formato X.XXXX.XX.XX"
                 value={dados.nbs_code}
                 onChange={(e) => atualizar("nbs_code", e.target.value)} />
-              <p className="ajuda">
-                Vem do Anexo VIII (Correlação Item × NBS, gov.br/nfse) — o código certo depende do item de
-                tributação nacional acima, não é livre. 9 dígitos; incompleto ou errado é rejeitado na
-                emissão (erro E0316).
-              </p>
             </div>
             <div className="form-linha">
               <label htmlFor="aliquota_iss">Alíquota de ISS (%)</label>
@@ -308,11 +295,6 @@ export default function EditarEmpresaPage() {
                 <option value="nacional">NFS-e Nacional (força o endpoint nacional genérico)</option>
                 <option value="spedy">Spedy</option>
               </select>
-              <p className="ajuda">
-                Empresas do Simples Nacional (ME/EPP) em municípios com endpoint próprio (hoje: Belém)
-                precisam usar "NFS-e Nacional" a partir de 01/11/2026 (Resolução CGSN 191) — o endpoint
-                próprio do município passou a recusar essas empresas e pede o Emissor Nacional.
-              </p>
             </div>
           </div>
           {dados.provedor_emissao === "spedy" && (

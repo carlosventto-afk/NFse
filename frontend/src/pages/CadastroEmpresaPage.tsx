@@ -57,13 +57,12 @@ export default function CadastroEmpresaPage() {
           <input id="cnpj" required value={dados.cnpj} onChange={(e) => atualizar("cnpj", e.target.value)} />
         </div>
         <div className="form-linha">
-          <label htmlFor="im">Inscricao municipal (deixe em branco se o municipio nao exigir)</label>
+          <label htmlFor="im">
+            Inscricao municipal (deixe em branco se o municipio nao exigir)
+            {" "}<span className="exemplo-campo">ex.: 4441501</span>
+          </label>
           <input id="im" value={dados.inscricao_municipal}
             onChange={(e) => atualizar("inscricao_municipal", e.target.value)} />
-          <p className="ajuda">
-            Se depois a emissao usar o endpoint nacional generico num municipio sem CNC Nacional
-            configurado (hoje: Belem), o sistema ignora este campo sozinho pra evitar rejeicao (erro E0120).
-          </p>
         </div>
         <div className="form-linha">
           <label htmlFor="municipio">Codigo IBGE do municipio</label>
@@ -98,17 +97,14 @@ export default function CadastroEmpresaPage() {
           </div>
         )}
         <div className="form-linha">
-          <label htmlFor="cod_trib">Codigo de tributacao nacional</label>
+          <label htmlFor="cod_trib">Codigo de tributacao nacional <span className="exemplo-campo">ex.: 141001</span></label>
           <input id="cod_trib" required value={dados.codigo_tributacao}
             onChange={(e) => atualizar("codigo_tributacao", e.target.value)} />
-          <p className="ajuda">
-            6 digitos: item + subitem + desdobro da lista de servicos nacional (LC 116). Ex.: 141001 = item
-            14.10 (lavanderia), desdobro 1.
-          </p>
         </div>
         <div className="form-linha">
           <label htmlFor="cod_trib_mun">
             Codigo de tributacao municipal (3 digitos — so se o municipio exigir)
+            {" "}<span className="exemplo-campo">ex.: 002</span>
           </label>
           <input id="cod_trib_mun" maxLength={3} value={dados.codigo_tributacao_municipal}
             onChange={(e) => atualizar("codigo_tributacao_municipal", e.target.value)} />
@@ -116,6 +112,7 @@ export default function CadastroEmpresaPage() {
         <div className="form-linha">
           <label htmlFor="cnae">
             CNAE (so digitos — alguns municipios, como Belem, exigem pra emitir)
+            {" "}<span className="exemplo-campo">ex.: 9601701</span>
           </label>
           <input id="cnae" maxLength={10} value={dados.cnae}
             onChange={(e) => atualizar("cnae", e.target.value)} />
