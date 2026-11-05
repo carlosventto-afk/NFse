@@ -18,7 +18,7 @@ from app.crypto import decifrar
 from app.models import (
     AmbienteEnum, Cliente, Emissao, EmissaoNfe, Empresa, ItemEmissaoNfe, Produto, ProvedorEmissao, StatusEmissao,
 )
-from nfe_core import NFE_NS, SefazClient, build_nfe_xml, eh_autorizado, sign_nfe
+from nfe_core import NFE_NS, SefazClient, build_nfe_xml, eh_autorizado, eh_denegado, nao_encontrada, sign_nfe
 from nfe_core import AmbienteEnum as AmbienteNfe
 from nfse_core import (
     CertificateError,
@@ -690,7 +690,14 @@ async def processar_uma_pendente_nfe(session: AsyncSession, settings: Settings |
     envio) e e o que a SEFAZ autorizou; remontar com cadastro alterado
     guardaria um XML diferente do autorizado. Tambem nao depende do
     certificado/cadastro estar OK pra reconhecer uma autorizacao que ja
-    aconteceu. So se nao estiver autorizada remonta, confere a chave e envia.
+    aconteceu. Uso denegado (110/301/302) na consulta tambem e final: registra
+    a denegacao (com protocolo) sem remontar. So remonta, confere a chave e
+    envia quando a SEFAZ responde 217 (chave nao consta na base); qualquer
+    outra resposta e inconclusiva -- rejeita a linha com CONSULTA_INCONCLUSIVA
+    e deixa o backoff automatico consultar de novo, sem reenviar.
+
+    Rejeicao final: uso denegado e terminal (grava o protocolo da denegacao,
+    nao agenda retentativa); demais rejeicoes agendam retentativa automatica.
     """
     settings = settings or get_settings()
 
@@ -733,8 +740,26 @@ async def processar_uma_pendente_nfe(session: AsyncSession, settings: Settings |
                 f"ja foi autorizada: {exc}",
             )
             return True
-        if eh_autorizado(previa.c_stat):
+        if eh_autorizado(previa.c_stat) or eh_denegado(previa.c_stat):
+            # Resultado final ja registrado na SEFAZ para esta chave: usa a
+            # consulta como resposta, sem remontar nem reenviar. Denegacao
+            # cai no ramo terminal la embaixo (grava protocolo, sem retry).
             resposta = previa
+        elif not nao_encontrada(previa.c_stat):
+            # So 217 ("nao consta na base") garante que reenviar e seguro.
+            # Qualquer outra resposta (erro da SEFAZ, cStat que nao parseou
+            # -> None, codigo desconhecido) = estado real desconhecido:
+            # reenviar arriscaria duplicidade ou sobrescrever o xml_nfe com
+            # um XML diferente do que a SEFAZ tem. Nao chuta -- agenda nova
+            # consulta pelo backoff normal.
+            await _marcar_rejeitada(
+                session, emissao, "CONSULTA_INCONCLUSIVA",
+                f"a consulta da NF-e {emissao.chave_acesso} na SEFAZ nao confirmou "
+                f"autorizacao nem inexistencia (cStat {previa.c_stat}: {previa.x_motivo}); "
+                "reenvio suspenso ate nova consulta",
+            )
+            return True
+        # else: 217 -> SEFAZ nao tem a chave; segue para remontar e enviar.
 
     if resposta is None:
         try:
@@ -742,7 +767,7 @@ async def processar_uma_pendente_nfe(session: AsyncSession, settings: Settings |
         except (CertificateError, InvalidToken, ValueError, KeyError, TypeError, AttributeError) as exc:
             # Tudo aqui e montagem PURA desta linha (nada desta tentativa foi
             # enviado a SEFAZ; se havia tentativa anterior, a consulta acima
-            # ja confirmou que nao foi autorizada), entao recusar a linha e
+            # ja confirmou que a chave nao consta na SEFAZ -- 217), entao recusar a linha e
             # sempre seguro. Alem do trio da NFS-e (certificado / FERNET_KEY /
             # ValueError de validacao, que inclui AliquotaInterestadualInvalida),
             # cobre TypeError/AttributeError/KeyError de cadastro incompleto
@@ -805,8 +830,17 @@ async def processar_uma_pendente_nfe(session: AsyncSession, settings: Settings |
             [{"codigo": resposta.c_stat or "SEFAZ", "titulo": resposta.x_motivo or "NF-e rejeitada pela SEFAZ"}],
             ensure_ascii=False,
         )
-        logger.warning("emissao NF-e %s rejeitada; resposta bruta: %s", emissao.id, resposta.bruta)
-        _agendar_proxima_tentativa(emissao)
+        if eh_denegado(resposta.c_stat):
+            # Uso denegado e FINAL: o numero fica queimado na SEFAZ e o
+            # protocolo da denegacao e prova que precisa ser guardada.
+            # Retentar so repetiria a mesma denegacao -- sem agendamento,
+            # o promotor de reemissao automatica nunca repesca a linha.
+            emissao.protocolo_autorizacao = resposta.protocolo
+            emissao.proxima_tentativa_em = None
+            logger.warning("emissao NF-e %s com uso denegado; resposta bruta: %s", emissao.id, resposta.bruta)
+        else:
+            logger.warning("emissao NF-e %s rejeitada; resposta bruta: %s", emissao.id, resposta.bruta)
+            _agendar_proxima_tentativa(emissao)
 
     await session.commit()
     return True

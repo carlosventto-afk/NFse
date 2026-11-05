@@ -90,9 +90,11 @@ def _resposta_autorizada(protocolo: str = "115260000000001") -> RespostaAutoriza
     )
 
 
-def _resposta_rejeitada(c_stat: str) -> RespostaAutorizacao:
+def _resposta_rejeitada(
+    c_stat: str, x_motivo: str = "Rejeicao: erro no schema XML", protocolo: str | None = None,
+) -> RespostaAutorizacao:
     return RespostaAutorizacao(
-        autorizada=False, c_stat=c_stat, x_motivo="Uso denegado", protocolo=None, bruta={"cStat": c_stat},
+        autorizada=False, c_stat=c_stat, x_motivo=x_motivo, protocolo=protocolo, bruta={"cStat": c_stat},
     )
 
 
@@ -150,18 +152,61 @@ async def test_nao_reenvia_quando_ja_tem_protocolo_de_autorizacao(mock_client_cl
 
 @patch("app.worker.SefazClient")
 async def test_rejeicao_mantem_mesma_serie_numero_pra_reenvio(mock_client_cls, db_session):
-    mock_client_cls.return_value.autorizar = AsyncMock(return_value=_resposta_rejeitada("110"))
+    # Rejeicao de conteudo (corrigivel) -- nao denegacao, que e terminal.
+    mock_client_cls.return_value.autorizar = AsyncMock(
+        return_value=_resposta_rejeitada("233", "Rejeicao: IE do destinatario nao cadastrada"),
+    )
     emissao = await _criar_emissao_nfe_pendente(db_session, serie="1", numero=42)
     antes = datetime.now(timezone.utc)
     await processar_uma_pendente_nfe(db_session, get_settings())
     await db_session.refresh(emissao)
     assert emissao.status == StatusEmissao.rejeitada
     assert emissao.serie == "1" and emissao.numero == 42
-    assert json.loads(emissao.erros) == [{"codigo": "110", "titulo": "Uso denegado"}]
+    assert json.loads(emissao.erros) == [{"codigo": "233", "titulo": "Rejeicao: IE do destinatario nao cadastrada"}]
     assert emissao.resposta_bruta is not None
+    assert emissao.protocolo_autorizacao is None
     # Mesmo backoff da NFS-e: 1a rejeicao agenda reenvio em ~2 min.
     assert emissao.tentativas_reemissao == 1
     assert antes + timedelta(minutes=2) <= emissao.proxima_tentativa_em <= datetime.now(timezone.utc) + timedelta(minutes=2)
+
+
+@patch("app.worker.SefazClient")
+async def test_denegacao_e_terminal_grava_protocolo_e_nao_agenda_reenvio(mock_client_cls, db_session):
+    # Uso denegado (110/301/302): o numero fica queimado na SEFAZ com o
+    # protocolo da denegacao. Retentar nao resolve -- nao agenda nada.
+    mock_client_cls.return_value.autorizar = AsyncMock(
+        return_value=_resposta_rejeitada("110", "Uso Denegado", protocolo="115260000000099"),
+    )
+    emissao = await _criar_emissao_nfe_pendente(db_session)
+
+    assert await processar_uma_pendente_nfe(db_session, get_settings()) is True
+
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.rejeitada
+    assert emissao.proxima_tentativa_em is None
+    assert emissao.tentativas_reemissao == 0
+    assert emissao.protocolo_autorizacao == "115260000000099"
+    assert json.loads(emissao.erros)[0]["codigo"] == "110"
+    assert emissao.resposta_bruta is not None
+    # E o promotor de reemissao automatica nunca repesca a linha.
+    assert await processar_reemissao_automatica_pendente_nfe(db_session) is False
+
+
+@patch("app.worker.SefazClient")
+async def test_retentativa_com_consulta_denegada_registra_denegacao_sem_reenviar(mock_client_cls, db_session, monkeypatch):
+    mock_client_cls.return_value.consultar_protocolo = AsyncMock(return_value=_consulta(False, "301", "115260000000123"))
+    mock_client_cls.return_value.autorizar = AsyncMock()
+    monkeypatch.setattr(worker, "montar_nfe_data", _nao_deveria_recalcular)
+    emissao = await _criar_emissao_nfe_pendente(db_session, chave_acesso=_CHAVE_ANTERIOR, xml_nfe=_XML_ANTERIOR)
+
+    assert await processar_uma_pendente_nfe(db_session, get_settings()) is True
+
+    mock_client_cls.return_value.autorizar.assert_not_called()
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.rejeitada
+    assert emissao.proxima_tentativa_em is None
+    assert emissao.protocolo_autorizacao == "115260000000123"
+    assert emissao.xml_nfe == _XML_ANTERIOR
 
 
 # --- caminho feliz ----------------------------------------------------------
@@ -318,11 +363,38 @@ async def test_retentativa_com_falha_na_consulta_nao_reenvia(mock_client_cls, db
     assert emissao.chave_acesso == _CHAVE_ANTERIOR
 
 
+@pytest.mark.parametrize("c_stat", ["999", "225", None])
+@patch("app.worker.SefazClient")
+async def test_retentativa_com_consulta_inconclusiva_nao_remonta_nem_reenvia(
+    mock_client_cls, c_stat, db_session, monkeypatch,
+):
+    # So 217 ("nao consta na base") autoriza remontar e reenviar. Qualquer
+    # outra coisa (erro da SEFAZ, resposta que nao parseou -> None) = estado
+    # desconhecido: nao chuta, agenda nova consulta.
+    mock_client_cls.return_value.consultar_protocolo = AsyncMock(return_value=_consulta(False, c_stat))
+    mock_client_cls.return_value.autorizar = AsyncMock()
+    monkeypatch.setattr(worker, "montar_nfe_data", _nao_deveria_recalcular)
+    emissao = await _criar_emissao_nfe_pendente(db_session, chave_acesso=_CHAVE_ANTERIOR, xml_nfe=_XML_ANTERIOR)
+
+    assert await processar_uma_pendente_nfe(db_session, get_settings()) is True
+
+    mock_client_cls.return_value.autorizar.assert_not_called()
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.rejeitada
+    assert json.loads(emissao.erros)[0]["codigo"] == "CONSULTA_INCONCLUSIVA"
+    assert emissao.chave_acesso == _CHAVE_ANTERIOR
+    assert emissao.xml_nfe == _XML_ANTERIOR
+    assert emissao.protocolo_autorizacao is None
+    # Nao e beco sem saida: volta pra fila automatica e consulta de novo.
+    assert emissao.proxima_tentativa_em is not None
+
+
 def _nao_deveria_recalcular(*args, **kwargs):
     # Consulta ja confirmou a autorizacao: o xml_nfe gravado e o que a SEFAZ
     # autorizou. Remontar (com cadastro possivelmente alterado) e sobrescrever
     # guardaria um XML diferente do autorizado.
-    raise AssertionError("NF-e ja autorizada na consulta nao pode ser remontada")
+    # Idem para denegada (final) e consulta inconclusiva (estado desconhecido).
+    raise AssertionError("NF-e so pode ser remontada quando a consulta responde 217")
 
 
 # --- interestadual (aliquota persistida no item) ----------------------------
