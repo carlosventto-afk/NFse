@@ -372,6 +372,10 @@ class EmissaoNfe(Base):
     resposta_bruta: Mapped[str | None] = mapped_column(Text, nullable=True)
     requisicao_bruta: Mapped[str | None] = mapped_column(Text, nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_agora, nullable=False)
+    # Reemissao automatica com backoff (mesma mecanica de Emissao -- ver
+    # _agendar_proxima_tentativa em app/worker.py).
+    tentativas_reemissao: Mapped[int] = mapped_column(default=0, server_default="0", nullable=False)
+    proxima_tentativa_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ItemEmissaoNfe(Base):
@@ -391,3 +395,8 @@ class ItemEmissaoNfe(Base):
     valor_icms_uf_remetente: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     valor_icms_uf_destino: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     valor_fcp: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    # Aliquota interna do ICMS na UF de destino (%), informada por quem cria a
+    # emissao e consumida pelo worker (ItemPedido.aliquota_interna_destino).
+    # Obrigatoria so em venda interestadual -- sem ela o calculo do DIFAL
+    # levanta AliquotaInterestadualInvalida (app/adapters/icms.py).
+    aliquota_interna_destino: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)

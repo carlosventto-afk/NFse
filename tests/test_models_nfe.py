@@ -50,3 +50,32 @@ async def test_emissao_nfe_com_itens(db_session):
     db_session.add(item)
     await db_session.flush()
     assert item.valor_total == Decimal("99.80")
+
+
+@pytest.mark.asyncio
+async def test_emissao_nfe_tem_bookkeeping_de_reemissao_e_item_carrega_aliquota_destino(db_session):
+    # Colunas exigidas pelo worker (Task 8): backoff de reemissao automatica
+    # em EmissaoNfe e a aliquota interna do destino (venda interestadual)
+    # persistida no item entre a criacao da emissao e o processamento.
+    empresa, _usuario = await criar_empresa_titular(db_session)
+    cliente = Cliente(empresa_id=empresa.id, nome="Comprador", cpf_cnpj="12345678901", uf="SP")
+    produto = Produto(empresa_id=empresa.id, codigo_interno="P1", descricao="X",
+                      ncm="61091000", cfop_padrao="6102", unidade="UN")
+    db_session.add_all([cliente, produto])
+    await db_session.flush()
+
+    emissao = EmissaoNfe(empresa_id=empresa.id, cliente_id=cliente.id,
+                         serie="1", numero=1, status=StatusEmissao.aguardando_emissao)
+    db_session.add(emissao)
+    await db_session.flush()
+    assert emissao.tentativas_reemissao == 0
+    assert emissao.proxima_tentativa_em is None
+
+    item = ItemEmissaoNfe(emissao_nfe_id=emissao.id, produto_id=produto.id,
+                          quantidade=Decimal("1"), valor_unitario=Decimal("10"),
+                          valor_total=Decimal("10.00"), cfop="6102",
+                          aliquota_interna_destino=Decimal("18.00"))
+    db_session.add(item)
+    await db_session.commit()
+    await db_session.refresh(item)
+    assert item.aliquota_interna_destino == Decimal("18.00")
