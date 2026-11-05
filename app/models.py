@@ -352,3 +352,42 @@ class Produto(Base):
     eh_substituicao_tributaria: Mapped[bool] = mapped_column(default=False, nullable=False)
     ativo: Mapped[bool] = mapped_column(default=True, nullable=False)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_agora, nullable=False)
+
+
+class EmissaoNfe(Base):
+    __tablename__ = "emissoes_nfe"
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    empresa_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("empresas.id"), nullable=False)
+    # Destinatario (reaproveita Cliente, que ja guarda UF/endereco completo).
+    cliente_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("clientes.id"), nullable=False)
+    serie: Mapped[str] = mapped_column(String(3), nullable=False)
+    numero: Mapped[int] = mapped_column(nullable=False)
+    # Chave de acesso NF-e tem 44 digitos (diferente dos 50 da NFS-e).
+    chave_acesso: Mapped[str | None] = mapped_column(String(44), nullable=True)
+    status: Mapped[StatusEmissao] = mapped_column(String(40), nullable=False)
+    xml_nfe: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    protocolo_autorizacao: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    erros: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resposta_bruta: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requisicao_bruta: Mapped[str | None] = mapped_column(Text, nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_agora, nullable=False)
+
+
+class ItemEmissaoNfe(Base):
+    __tablename__ = "itens_emissao_nfe"
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    emissao_nfe_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("emissoes_nfe.id"), nullable=False)
+    produto_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("produtos.id"), nullable=False)
+    quantidade: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    valor_unitario: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    valor_total: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    # Pode sobrescrever Produto.cfop_padrao por emissao.
+    cfop: Mapped[str] = mapped_column(String(4), nullable=False)
+    base_icms: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    valor_icms: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    # Partilha do ICMS (EC 87/2015) -- so em venda interestadual; nulos na venda interna.
+    valor_icms_uf_remetente: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    valor_icms_uf_destino: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    valor_fcp: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
