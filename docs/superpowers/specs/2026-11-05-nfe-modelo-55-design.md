@@ -112,7 +112,10 @@ Nova tabela `itens_emissao_nfe`:
 - `emissao_nfe_id` (FK), `produto_id` (FK), `quantidade`,
   `valor_unitario`, `valor_total`, `cfop` (pode sobrescrever o padrão do
   produto por emissão), + campos de imposto calculados por item
-  (`valor_icms`, `base_icms`, etc.).
+  (`valor_icms`, `base_icms`). Venda interestadual (`Cliente.uf` !=
+  UF do emitente) soma `valor_icms_uf_remetente`, `valor_icms_uf_destino`
+  e `valor_fcp` (partilha ICMS, EC 87/2015) — nulos quando a venda é
+  dentro do mesmo estado.
 
 ## Arquitetura
 
@@ -145,9 +148,23 @@ despachando pra `nfe_core` em vez de `nfse_core` quando a linha é de
    justifica lote assíncrono), consulta de protocolo, inutilização.
 4. **Worker** — estender `app/worker.py` pra processar `emissoes_nfe`
    com o mesmo padrão de retentativa/backoff que já existe.
-5. **Cálculo de imposto** — motor mínimo de ICMS por item (CST/CSOSN +
-   CFOP + NCM informados manualmente no cadastro do produto; sem tabela
-   de alíquota automática por NCM no MVP — alíquota vem do cadastro).
+5. **Cálculo de imposto** — motor de ICMS por item (CST/CSOSN + CFOP +
+   NCM informados manualmente no cadastro do produto; sem tabela de
+   alíquota automática por NCM no MVP — alíquota interna vem do
+   cadastro). **Venda interestadual entra no MVP** (decisão do usuário,
+   05/11): quando `Cliente.uf` difere da UF do emitente, o item carrega
+   também DIFAL + FCP + partilha ICMS (EC 87/2015) — cálculo baseado na
+   alíquota interestadual (4%/7%/12%, conforme origem/destino) e na
+   alíquota interna do estado de destino, ambas informadas no cadastro
+   (tabela de alíquotas interestaduais por UF é fixa/pública, pode
+   nascer como constante no código; alíquota interna por UF de destino
+   seria cadastro manual por ora, não automático). Fica fora do MVP a
+   **Substituição Tributária (ICMS-ST)** — item sujeito a ST não é
+   tratado nesta primeira fase; empresa que só vende produto sem ST
+   funciona normalmente, produto com ST fica bloqueado/avisado até uma
+   fase futura (minha escolha, pra não estourar o escopo da Fase 5 —
+   ST tem tabela de MVA por NCM/UF própria, é um motor de cálculo
+   inteiro a parte).
 6. **DANFE** — `app/danfe_nfe.py`, gerado a partir do XML autorizado.
 7. **Cancelamento** — evento de cancelamento (dentro do prazo da SEFAZ).
 8. **Frontend** — cadastro de produto, tela de emissão (destinatário +
@@ -156,23 +173,13 @@ despachando pra `nfe_core` em vez de `nfse_core` quando a linha é de
 9. **Homologação ponta a ponta** com certificado de teste; depois piloto
    real com uma empresa.
 
-## Pontos abertos (precisam de decisão)
+## Decisões finais (sem ponto aberto restante)
 
-- **Venda interestadual entra no MVP?** Se o destinatário (`Cliente`,
-  que já guarda `uf`) puder ser de fora do Pará, o cálculo de imposto da
-  Fase 5 precisa de DIFAL + FCP + partilha ICMS (EC 87/2015), não só
-  CST/CFOP cadastrados manualmente no produto — isso muda o escopo da
-  Fase 5 e possivelmente o cadastro de produto/cliente. Se o MVP for só
-  venda dentro do Pará, a Fase 5 como descrita (alíquota vem do
-  cadastro, sem tabela automática) é suficiente. **Esta é a decisão que
-  mais pode estourar o escopo — preciso da sua resposta antes do plano
-  de implementação.**
-- Tabela `emissoes_nfe` separada vs. reaproveitar `emissoes` com uma
-  coluna `tipo_documento` — a proposta acima escolhe tabela separada
-  porque os campos de NF-e (itens, impostos) não têm equivalente em
-  NFS-e e forçar isso em `emissoes` incharia o modelo; mas é uma
-  escolha, não um fato.
-- Biblioteca SOAP em Python pro client SEFAZ (`zeep` é a opção padrão do
-  ecossistema; alternativa é montar o envelope SOAP manualmente como já
-  é feito hoje pra REST no `nfse_core`).
-- UF piloto: assumido Pará (onde as empresas atuais operam), a confirmar.
+- `emissoes_nfe` fica como tabela separada (não reaproveita `emissoes`)
+  — campos de NF-e (itens, impostos) não têm equivalente em NFS-e e
+  forçar isso em `emissoes` incharia o modelo.
+- Biblioteca SOAP: `zeep` (padrão do ecossistema Python pra SOAP),
+  em vez de montar o envelope manualmente.
+- UF piloto de homologação (lado emitente): Pará, onde as empresas
+  atuais já operam. Venda ao destinatário já nasce multi-UF (decisão
+  acima); o piloto é só sobre o endpoint SEFAZ do emitente.
