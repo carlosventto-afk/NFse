@@ -75,3 +75,9 @@ def test_build_nfe_xml_inclui_icms_uf_destino_quando_interestadual():
     xml = build_nfe_xml(data)
     assert b"vICMSUFDest" in xml
     assert b"vFCP" in xml
+
+
+def test_build_nfe_xml_inclui_dhemi():
+    data = _nfe_data_minima(dh_emi=datetime(2026, 11, 5, 10, 0, 0))
+    xml = build_nfe_xml(data)
+    assert b"<dhEmi>2026-11-05T10:00:00</dhEmi>" in xml

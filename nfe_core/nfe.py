@@ -243,6 +243,7 @@ def build_nfe_xml(data: NfeData) -> bytes:
     _el(ide, "mod", "55")
     _el(ide, "serie", str(int(_digits(data.serie) or "1")))
     _el(ide, "nNF", str(data.numero))
+    _el(ide, "dhEmi", data.dh_emi.isoformat(timespec="seconds"))
     _el(ide, "tpNF", "1")                      # 1 = saída
     _el(ide, "idDest", "2" if interestadual else "1")
     _el(ide, "tpImp", "1")                     # 1 = DANFE retrato
