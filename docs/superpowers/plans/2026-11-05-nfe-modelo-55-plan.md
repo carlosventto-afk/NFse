@@ -94,7 +94,7 @@ async def test_empresa_aceita_ie_crt_uf(db_session):
 
 ```python
 async def test_produto_normal_usa_cst_sn_usa_csosn(db_session):
-    empresa = await _empresa_minima(db_session)  # fixture existente de tests/apoio.py
+    empresa, _usuario = await criar_empresa_titular(db_session)  # tests/apoio.py, ja existente
     produto = Produto(
         empresa_id=empresa.id, codigo_interno="P1", descricao="Camiseta",
         ncm="61091000", cfop_padrao="5102", unidade="UN",
@@ -144,7 +144,7 @@ git commit -m "feat: adiciona IE/CRT/UF na empresa e cadastro de produto"
 
 ```python
 async def test_emissao_nfe_com_itens(db_session):
-    empresa = await _empresa_minima(db_session)
+    empresa, _usuario = await criar_empresa_titular(db_session)
     cliente = Cliente(empresa_id=empresa.id, nome="Comprador", cpf_cnpj="12345678901")
     produto = Produto(empresa_id=empresa.id, codigo_interno="P1", descricao="X",
                        ncm="61091000", cfop_padrao="5102", unidade="UN")
@@ -610,16 +610,29 @@ git commit -m "feat: adiciona geracao de DANFE on-demand"
 
 **Interfaces:**
 - Consumes: `app.security.ContextoAutenticado` (padrão já usado em todos os routers), `app.models.Produto`.
-- Produces: `POST /produtos`, `GET /produtos`, `GET /produtos/{id}`, `PUT /produtos/{id}`, `DELETE /produtos/{id}` (soft-delete via `ativo=False`, mesmo padrão de `Cliente`).
+- Produces: router com prefixo `/produtos` (montado sob `/api` em `app/main.py`, igual aos demais — caminho final `/api/produtos`): `POST`, `GET` (lista), `GET /{id}`, `PUT /{id}`, `DELETE /{id}` (soft-delete via `ativo=False`, mesmo padrão de `Cliente`).
+
+**Padrão de teste a seguir** (não inventar fixture nova): igual a `tests/test_clientes.py` — `empresa, token = await criar_empresa_e_token(db_session)` (de `tests/apoio.py`, já existente), `app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)`, requisição via `ASGITransport(app=app)` + `AsyncClient`, header `Authorization: Bearer {token}`, path com prefixo `/api/produtos`.
 
 - [ ] **Step 1: Escrever `tests/test_produtos_endpoint.py::test_criar_produto_com_substituicao_tributaria_e_aceito_mas_marcado`**
 
 ```python
-async def test_criar_produto_com_substituicao_tributaria_e_aceito_mas_marcado(cliente_api, token_titular):
-    resposta = await cliente_api.post("/produtos", json={..., "eh_substituicao_tributaria": True},
-                                       headers={"Authorization": f"Bearer {token_titular}"})
-    assert resposta.status_code == 201
-    assert resposta.json()["eh_substituicao_tributaria"] is True
+async def test_criar_produto_com_substituicao_tributaria_e_aceito_mas_marcado(db_session):
+    _empresa, token = await criar_empresa_e_token(db_session)
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                "/api/produtos",
+                json={"codigo_interno": "P1", "descricao": "Camiseta", "ncm": "61091000",
+                      "cfop_padrao": "5102", "unidade": "UN", "eh_substituicao_tributaria": True},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 201
+        assert resposta.json()["eh_substituicao_tributaria"] is True
+    finally:
+        app.dependency_overrides.clear()
 ```
 
 - [ ] **Step 2: Escrever `tests/test_produtos_endpoint.py::test_listar_produtos_so_da_propria_empresa`** (mesmo padrão de isolamento de `tests/test_tenant_isolation.py`)
@@ -654,15 +667,33 @@ git commit -m "feat: adiciona CRUD de produtos"
 
 **Interfaces:**
 - Consumes: `app.adapters.nfe_builder` (Task 5), `app.danfe_nfe.gerar_danfe_fallback` (Task 10), `nfe_core.evento.build_evento_cancelamento_nfe_xml` (Task 9), `app.models.EmissaoNfe`/`ItemEmissaoNfe`.
-- Produces: `POST /emissoes-nfe` (cria em `status=aguardando_emissao`, pro worker pegar), `GET /emissoes-nfe`, `GET /emissoes-nfe/{id}/xml`, `GET /emissoes-nfe/{id}/pdf`, `POST /emissoes-nfe/{id}/cancelar`.
+- Produces: router com prefixo `/emissoes-nfe` (montado sob `/api`, caminho final `/api/emissoes-nfe`): `POST` (cria em `status=aguardando_emissao`, pro worker pegar), `GET` (lista), `GET /{id}/xml`, `GET /{id}/pdf`, `POST /{id}/cancelar`.
+
+**Mesmo padrão de teste de endpoint do Task 11** (`criar_empresa_e_token`, `ASGITransport`/`AsyncClient`, `app.dependency_overrides[get_db]`, prefixo `/api/emissoes-nfe`) — não repetido em cada step abaixo por brevidade, mas obrigatório em todos.
 
 - [ ] **Step 1: Escrever `tests/test_emissoes_nfe_endpoint.py::test_criar_emissao_com_produto_de_outra_empresa_e_rejeitado`**
 
 ```python
-async def test_criar_emissao_com_produto_de_outra_empresa_e_rejeitado(cliente_api, token_titular, produto_de_outra_empresa):
-    resposta = await cliente_api.post("/emissoes-nfe", json={"itens": [{"produto_id": str(produto_de_outra_empresa.id), ...}]},
-                                       headers={"Authorization": f"Bearer {token_titular}"})
-    assert resposta.status_code in (400, 404)
+async def test_criar_emissao_com_produto_de_outra_empresa_e_rejeitado(db_session):
+    _empresa_a, token_a = await criar_empresa_e_token(db_session, cnpj="11111111000111", email="a@teste.com")
+    empresa_b, _token_b = await criar_empresa_e_token(db_session, cnpj="22222222000122", email="b@teste.com")
+    produto_de_outra_empresa = Produto(empresa_id=empresa_b.id, codigo_interno="PB", descricao="X",
+                                        ncm="61091000", cfop_padrao="5102", unidade="UN")
+    db_session.add(produto_de_outra_empresa)
+    await db_session.commit()
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                "/api/emissoes-nfe",
+                json={"itens": [{"produto_id": str(produto_de_outra_empresa.id), "quantidade": "1"}]},
+                headers={"Authorization": f"Bearer {token_a}"},
+            )
+        assert resposta.status_code in (400, 404)
+    finally:
+        app.dependency_overrides.clear()
 ```
 
 - [ ] **Step 2: Escrever `tests/test_emissoes_nfe_endpoint.py::test_criar_emissao_fica_aguardando_emissao_pro_worker`**
@@ -670,21 +701,49 @@ async def test_criar_emissao_com_produto_de_outra_empresa_e_rejeitado(cliente_ap
 - [ ] **Step 3: Escrever `tests/test_emissoes_nfe_endpoint.py::test_criar_emissao_com_quantidade_zero_e_rejeitado_pelo_schema`**
 
 ```python
-async def test_criar_emissao_com_quantidade_zero_e_rejeitado_pelo_schema(cliente_api, token_titular, produto):
-    resposta = await cliente_api.post("/emissoes-nfe",
-                                       json={"itens": [{"produto_id": str(produto.id), "quantidade": "0"}]},
-                                       headers={"Authorization": f"Bearer {token_titular}"})
-    assert resposta.status_code == 422
+async def test_criar_emissao_com_quantidade_zero_e_rejeitado_pelo_schema(db_session):
+    empresa, token = await criar_empresa_e_token(db_session)
+    produto = Produto(empresa_id=empresa.id, codigo_interno="P1", descricao="X",
+                       ncm="61091000", cfop_padrao="5102", unidade="UN")
+    db_session.add(produto)
+    await db_session.commit()
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                "/api/emissoes-nfe",
+                json={"itens": [{"produto_id": str(produto.id), "quantidade": "0"}]},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
 ```
 
 - [ ] **Step 4: Escrever `tests/test_emissoes_nfe_endpoint.py::test_cancelar_emissao_nao_autorizada_e_rejeitado`**
 
 ```python
-async def test_cancelar_emissao_nao_autorizada_e_rejeitado(cliente_api, token_titular, emissao_pendente):
-    resposta = await cliente_api.post(f"/emissoes-nfe/{emissao_pendente.id}/cancelar",
-                                       json={"justificativa": "Erro no pedido do cliente"},
-                                       headers={"Authorization": f"Bearer {token_titular}"})
-    assert resposta.status_code == 400
+async def test_cancelar_emissao_nao_autorizada_e_rejeitado(db_session):
+    empresa, token = await criar_empresa_e_token(db_session)
+    emissao_pendente = EmissaoNfe(empresa_id=empresa.id, serie="1", numero=1,
+                                   status=StatusEmissao.aguardando_emissao)
+    db_session.add(emissao_pendente)
+    await db_session.commit()
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.post(
+                f"/api/emissoes-nfe/{emissao_pendente.id}/cancelar",
+                json={"justificativa": "Erro no pedido do cliente"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 400
+    finally:
+        app.dependency_overrides.clear()
 ```
 
 - [ ] **Step 5: Rodar, confirmar falha**
