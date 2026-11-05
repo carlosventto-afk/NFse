@@ -189,6 +189,7 @@ details.secao-config[open] summary { margin-bottom: 1.1rem; }
 
 hr { border: none; border-top: 1px solid var(--borda); margin: 1.25rem 0; }
 .ajuda { color: var(--texto-suave); font-size: 13px; }
+.form-linha p.ajuda { margin: 0; }
 
 /* -- telas de autenticacao (fora do shell) -- */
 

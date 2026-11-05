@@ -60,6 +60,10 @@ export default function CadastroEmpresaPage() {
           <label htmlFor="im">Inscricao municipal (deixe em branco se o municipio nao exigir)</label>
           <input id="im" value={dados.inscricao_municipal}
             onChange={(e) => atualizar("inscricao_municipal", e.target.value)} />
+          <p className="ajuda">
+            Se depois a emissao usar o endpoint nacional generico num municipio sem CNC Nacional
+            configurado (hoje: Belem), o sistema ignora este campo sozinho pra evitar rejeicao (erro E0120).
+          </p>
         </div>
         <div className="form-linha">
           <label htmlFor="municipio">Codigo IBGE do municipio</label>
@@ -97,6 +101,10 @@ export default function CadastroEmpresaPage() {
           <label htmlFor="cod_trib">Codigo de tributacao nacional</label>
           <input id="cod_trib" required value={dados.codigo_tributacao}
             onChange={(e) => atualizar("codigo_tributacao", e.target.value)} />
+          <p className="ajuda">
+            6 digitos: item + subitem + desdobro da lista de servicos nacional (LC 116). Ex.: 141001 = item
+            14.10 (lavanderia), desdobro 1.
+          </p>
         </div>
         <div className="form-linha">
           <label htmlFor="cod_trib_mun">
@@ -117,6 +125,12 @@ export default function CadastroEmpresaPage() {
           <input id="descricao" required value={dados.descricao_servico_padrao}
             onChange={(e) => atualizar("descricao_servico_padrao", e.target.value)} />
         </div>
+        <p className="ajuda">
+          Codigo NBS e provedor de emissao (Direto / NFS-e Nacional / Spedy) nao ficam neste cadastro
+          inicial — configure em "Editar Empresa" logo depois de criar. Sem o NBS certo a emissao e
+          rejeitada (erro E0316); o provedor errado tambem pode rejeitar, dependendo do regime e do
+          municipio (ex.: Simples Nacional em Belem, ver aviso em Editar Empresa).
+        </p>
         <div className="form-linha">
           <label htmlFor="ambiente">Ambiente</label>
           <select id="ambiente" value={dados.ambiente} onChange={(e) => atualizar("ambiente", e.target.value)}>
