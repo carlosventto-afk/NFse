@@ -133,6 +133,48 @@ def test_monta_nfe_data_interestadual_sem_aliquota_interna_levanta_erro():
         )
 
 
+def test_monta_nfe_data_usa_cfop_override_do_item_quando_informado():
+    # Venda interestadual do mesmo produto usa 6xxx em vez do 5xxx padrao --
+    # o CFOP persistido no item da emissao precisa prevalecer.
+    produto = _produto()
+    data = montar_nfe_data(
+        empresa, cliente, "1", 1, {produto.id: produto},
+        [ItemPedido(produto_id=produto.id, quantidade=Decimal("1"), valor_unitario_override=None,
+                     cfop_override="6102")],
+    )
+    assert data.itens[0].cfop == "6102"
+
+
+def test_monta_nfe_data_sem_cfop_override_usa_cfop_padrao_do_produto():
+    produto = _produto()
+    data = montar_nfe_data(
+        empresa, cliente, "1", 1, {produto.id: produto},
+        [ItemPedido(produto_id=produto.id, quantidade=Decimal("1"), valor_unitario_override=None)],
+    )
+    assert data.itens[0].cfop == "5102"
+
+
+def test_monta_nfe_data_usa_dh_emi_informado():
+    produto = _produto()
+    dh_emi = datetime(2026, 9, 15, 13, 30, tzinfo=timezone.utc)
+    data = montar_nfe_data(
+        empresa, cliente, "1", 1, {produto.id: produto},
+        [ItemPedido(produto_id=produto.id, quantidade=Decimal("1"), valor_unitario_override=None)],
+        dh_emi=dh_emi,
+    )
+    assert data.dh_emi == dh_emi
+
+
+def test_monta_nfe_data_sem_dh_emi_usa_agora():
+    produto = _produto()
+    antes = datetime.now(timezone.utc)
+    data = montar_nfe_data(
+        empresa, cliente, "1", 1, {produto.id: produto},
+        [ItemPedido(produto_id=produto.id, quantidade=Decimal("1"), valor_unitario_override=None)],
+    )
+    assert antes <= data.dh_emi <= datetime.now(timezone.utc)
+
+
 def test_monta_nfe_data_sem_preco_disponivel_levanta_erro():
     produto = _produto()
     produto.valor_unitario_padrao = None

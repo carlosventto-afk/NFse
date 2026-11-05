@@ -37,6 +37,10 @@ class ItemPedido:
     # ignora este campo. Venda interestadual sem ele levanta
     # AliquotaInterestadualInvalida (ver calcular_icms_item).
     aliquota_interna_destino: Decimal | None = None
+    # CFOP desta emissao (ItemEmissaoNfe.cfop). Um unico Produto.cfop_padrao
+    # nao cobre venda interna (5xxx) e interestadual (6xxx) do mesmo produto;
+    # sem override cai no padrao do produto.
+    cfop_override: str | None = None
 
 
 def _arredondar(valor: Decimal) -> Decimal:
@@ -77,7 +81,7 @@ def _montar_item(n_item: int, produto: Produto, item: ItemPedido, empresa: Empre
         c_prod=produto.codigo_interno,
         descricao=produto.descricao,
         ncm=produto.ncm,
-        cfop=produto.cfop_padrao,
+        cfop=item.cfop_override or produto.cfop_padrao,
         unidade=produto.unidade,
         quantidade=item.quantidade,
         valor_unitario=valor_unitario,
@@ -99,7 +103,11 @@ def montar_nfe_data(
     numero: int,
     produtos_por_id: dict[uuid.UUID, Produto],
     itens: list[ItemPedido],
+    dh_emi: datetime | None = None,
 ) -> NfeData:
+    """`dh_emi` entra no AAMM da chave de acesso. O worker passa um instante
+    fixo (EmissaoNfe.criado_em) pra chave ser estavel entre retentativas;
+    sem ele, usa o agora."""
     itens_nfe = [
         _montar_item(n_item, produtos_por_id[item.produto_id], item, empresa, cliente)
         for n_item, item in enumerate(itens, start=1)
@@ -111,7 +119,7 @@ def montar_nfe_data(
         # municipio (padrao nacional) -- evita precisar de uma tabela
         # separada UF->codigo so pra isso.
         c_uf_emit=empresa.municipio_ibge[:2],
-        dh_emi=datetime.now(timezone.utc),
+        dh_emi=dh_emi or datetime.now(timezone.utc),
         serie=serie,
         numero=numero,
         emit_cnpj=empresa.cnpj,

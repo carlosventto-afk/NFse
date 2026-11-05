@@ -629,11 +629,14 @@ async def processar_reemissao_automatica_pendente(session: AsyncSession) -> bool
 async def _montar_e_assinar_nfe(
     session: AsyncSession, emissao: EmissaoNfe, empresa: Empresa, settings: Settings,
 ) -> tuple[str, bytes]:
-    """Monta e assina a NF-e a partir do cadastro. Devolve (chave, xml assinado).
+    """Monta e assina a NF-e a partir do cadastro ATUAL. Devolve (chave, xml assinado).
 
-    So roda na PRIMEIRA tentativa de uma linha (ver processar_uma_pendente_nfe).
-    A chave sai do Id do infNFe que o proprio build_nfe_xml gravou -- uma unica
-    fonte de verdade, sem recalcular chave_de_acesso() separadamente."""
+    Roda a cada tentativa que vai enviar (ver processar_uma_pendente_nfe).
+    dh_emi = emissao.criado_em (fixo desde a criacao da linha), entao a chave
+    -- cUF + AAMM + CNPJ + serie + numero + cNF(serie+numero) -- sai identica
+    em toda retentativa, mesmo cruzando a virada do mes. A chave sai do Id do
+    infNFe que o proprio build_nfe_xml gravou -- uma unica fonte de verdade,
+    sem recalcular chave_de_acesso() separadamente."""
     pfx_base64 = decifrar(empresa.certificado_pfx_cifrado, settings.fernet_key)
     senha = (
         decifrar(empresa.certificado_senha_cifrada, settings.fernet_key)
@@ -654,10 +657,13 @@ async def _montar_e_assinar_nfe(
             quantidade=item.quantidade,
             valor_unitario_override=item.valor_unitario,
             aliquota_interna_destino=item.aliquota_interna_destino,
+            cfop_override=item.cfop,
         )
         for item in itens_db
     ]
-    nfe_data = montar_nfe_data(empresa, cliente, emissao.serie, emissao.numero, produtos_por_id, itens)
+    nfe_data = montar_nfe_data(
+        empresa, cliente, emissao.serie, emissao.numero, produtos_por_id, itens, dh_emi=emissao.criado_em,
+    )
     assinado = sign_nfe(build_nfe_xml(nfe_data), pfx_base64, senha)
     inf = etree.fromstring(assinado).find(f"{{{NFE_NS}}}infNFe")
     return inf.get("Id")[len("NFe"):], assinado
@@ -670,13 +676,21 @@ async def processar_uma_pendente_nfe(session: AsyncSession, settings: Settings |
     chave gravada ANTES de falar com a SEFAZ, consulta antes de reenviar, erros
     isolados por linha (nunca derruba o loop_worker).
 
-    Diferenca deliberada em relacao a NFS-e: na retentativa NADA e
-    recalculado. O dps_id da NFS-e e puramente deterministico, mas a chave da
-    NF-e tem AAMM (ano/mes da emissao) -- recalcular numa retentativa que
-    cruza a virada do mes produziria uma chave DIFERENTE da que pode ja estar
-    autorizada na SEFAZ. Por isso a chave e o XML assinado sao calculados uma
-    unica vez, gravados juntos, e toda retentativa reenvia exatamente aquele
-    XML (e consulta aquela chave).
+    Mesmo principio da NFS-e: toda tentativa que vai ENVIAR remonta e
+    reassina o XML a partir do cadastro ATUAL (itens, precos, CFOP, ICMS,
+    certificado) -- assim uma rejeicao por dado corrigivel (NCM, CFOP, preco)
+    se resolve corrigindo o cadastro, sem XML congelado. So a chave fica
+    estavel, como o dps_id da NFS-e: ela tem AAMM, entao o dh_emi e preso em
+    emissao.criado_em (nunca o relogio) e a chave recalculada e identica a de
+    qualquer tentativa anterior, mesmo cruzando a virada do mes.
+
+    Ordem numa retentativa (linha ja tem chave): consulta a SEFAZ PRIMEIRO,
+    com a chave gravada. Se ja esta autorizada, registra e NAO remonta -- o
+    xml_nfe gravado e exatamente o que foi enviado (gravado antes de cada
+    envio) e e o que a SEFAZ autorizou; remontar com cadastro alterado
+    guardaria um XML diferente do autorizado. Tambem nao depende do
+    certificado/cadastro estar OK pra reconhecer uma autorizacao que ja
+    aconteceu. So se nao estiver autorizada remonta, confere a chave e envia.
     """
     settings = settings or get_settings()
 
@@ -697,44 +711,6 @@ async def processar_uma_pendente_nfe(session: AsyncSession, settings: Settings |
     # (e talvez a submeter) esta NF-e. Nao se reenvia as cegas: pergunta-se
     # primeiro a SEFAZ (mesmo principio do ja_submetida da NFS-e).
     ja_submetida = emissao.chave_acesso is not None
-
-    if not ja_submetida:
-        try:
-            chave, assinado = await _montar_e_assinar_nfe(session, emissao, empresa, settings)
-        except (CertificateError, InvalidToken, ValueError, KeyError, TypeError, AttributeError) as exc:
-            # Tudo aqui e montagem PURA desta linha (nada foi enviado a SEFAZ
-            # ainda), entao recusar a linha e sempre seguro. Alem do trio da
-            # NFS-e (certificado / FERNET_KEY / ValueError de validacao, que
-            # inclui AliquotaInterestadualInvalida), cobre TypeError/
-            # AttributeError/KeyError de cadastro incompleto (ex.: Cliente.uf
-            # ou Empresa.uf nulos -> None.strip() no calculo de ICMS). Sem
-            # isso, a excecao escapa pro loop_worker, a linha volta a
-            # aguardando_emissao no rollback e, sendo a mais antiga, e
-            # repescada a cada volta pra sempre -- travando a fila de NF-e de
-            # todas as empresas atras dela.
-            detalhe = str(exc) or (
-                "certificado cifrado desta empresa nao pode ser decifrado com a "
-                "FERNET_KEY atual (recadastre o certificado)"
-            )
-            await _marcar_rejeitada(session, emissao, "CERTIFICADO_OU_DADOS", detalhe)
-            return True
-
-        emissao.chave_acesso = chave
-        emissao.xml_nfe = assinado
-        await session.commit()
-        # O commit acima solta a trava do SELECT ... FOR UPDATE; readquire
-        # para o resto do processamento continuar exclusivo desta linha.
-        await session.execute(select(EmissaoNfe).where(EmissaoNfe.id == emissao.id).with_for_update())
-    elif emissao.xml_nfe is None:
-        # Nunca deveria acontecer (chave e XML sao gravados no mesmo commit).
-        # Sem o XML original nao ha o que reenviar com seguranca -- recalcular
-        # poderia gerar outra chave (ver docstring). Fica para analise manual.
-        await _marcar_rejeitada(
-            session, emissao, "XML_AUSENTE",
-            f"NF-e {emissao.chave_acesso} tem chave gravada mas nao tem o XML assinado; "
-            "reenvio automatico bloqueado para nao gerar chave diferente",
-        )
-        return True
 
     ambiente = AmbienteNfe(AmbienteEnum(empresa.ambiente).value)
     cliente_sefaz = SefazClient()
@@ -762,7 +738,56 @@ async def processar_uma_pendente_nfe(session: AsyncSession, settings: Settings |
 
     if resposta is None:
         try:
-            resposta = await cliente_sefaz.autorizar(emissao.xml_nfe, empresa.uf, ambiente)
+            chave, assinado = await _montar_e_assinar_nfe(session, emissao, empresa, settings)
+        except (CertificateError, InvalidToken, ValueError, KeyError, TypeError, AttributeError) as exc:
+            # Tudo aqui e montagem PURA desta linha (nada desta tentativa foi
+            # enviado a SEFAZ; se havia tentativa anterior, a consulta acima
+            # ja confirmou que nao foi autorizada), entao recusar a linha e
+            # sempre seguro. Alem do trio da NFS-e (certificado / FERNET_KEY /
+            # ValueError de validacao, que inclui AliquotaInterestadualInvalida),
+            # cobre TypeError/AttributeError/KeyError de cadastro incompleto
+            # (ex.: Cliente.uf ou Empresa.uf nulos -> None.strip() no calculo
+            # de ICMS). Sem isso, a excecao escapa pro loop_worker, a linha
+            # volta a aguardando_emissao no rollback e, sendo a mais antiga, e
+            # repescada a cada volta pra sempre -- travando a fila de NF-e de
+            # todas as empresas atras dela.
+            detalhe = str(exc) or (
+                "certificado cifrado desta empresa nao pode ser decifrado com a "
+                "FERNET_KEY atual (recadastre o certificado)"
+            )
+            await _marcar_rejeitada(session, emissao, "CERTIFICADO_OU_DADOS", detalhe)
+            return True
+
+        if ja_submetida and chave != emissao.chave_acesso:
+            # Nunca deveria acontecer: a chave so depende de criado_em, CNPJ,
+            # UF, serie e numero, que nao mudam depois da criacao da linha.
+            # Se mudou, enviar criaria uma NF-e com OUTRA chave pra mesma
+            # serie/numero enquanto a gravada pode estar em processamento --
+            # bloqueia e deixa para analise manual.
+            logger.error(
+                "emissao NF-e %s: chave recalculada %s diverge da gravada %s; envio bloqueado",
+                emissao.id, chave, emissao.chave_acesso,
+            )
+            await _marcar_rejeitada(
+                session, emissao, "CHAVE_DIVERGENTE",
+                f"chave recalculada {chave} diverge da chave ja gravada {emissao.chave_acesso} "
+                "(CNPJ/UF/serie/numero/criado_em mudaram?); envio bloqueado",
+            )
+            return True
+
+        # Chave e XML gravados ANTES do envio, de proposito: se o processo
+        # morrer entre o envio e o commit final, a proxima tentativa ja sabe
+        # a chave (consulta em vez de reenviar as cegas) e o xml_nfe e
+        # exatamente o que foi enviado.
+        emissao.chave_acesso = chave
+        emissao.xml_nfe = assinado
+        await session.commit()
+        # O commit acima solta a trava do SELECT ... FOR UPDATE; readquire
+        # para o resto do processamento continuar exclusivo desta linha.
+        await session.execute(select(EmissaoNfe).where(EmissaoNfe.id == emissao.id).with_for_update())
+
+        try:
+            resposta = await cliente_sefaz.autorizar(assinado, empresa.uf, ambiente)
         except Exception as exc:
             await _marcar_rejeitada(session, emissao, "TRANSPORTE", str(exc))
             return True
