@@ -7,11 +7,17 @@ com a SEFAZ, leitura de respostas, cancelamento) e acrescentam seus
 próprios exports a este mesmo `__init__.py`.
 
     nfe.py    monta o XML da NF-e e calcula a chave de acesso
+    client.py conversa com a SEFAZ (SOAP/zeep): autorização e consulta de protocolo
 """
 
+from nfe_core.client import (
+    AmbienteEnum, RespostaAutorizacao, RespostaConsulta, SefazClient, UF_ENDPOINTS,
+)
 from nfe_core.nfe import NFE_NS, NfeData, NfeItemData, build_nfe_xml, chave_de_acesso
 
 __all__ = [
     # montagem
     "NfeData", "NfeItemData", "build_nfe_xml", "chave_de_acesso", "NFE_NS",
+    # comunicação
+    "AmbienteEnum", "SefazClient", "RespostaAutorizacao", "RespostaConsulta", "UF_ENDPOINTS",
 ]
