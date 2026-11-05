@@ -96,3 +96,21 @@ async def test_consultar_protocolo_nfe_inexistente_cai_no_cstat_do_topo(mock_zee
     assert resposta.autorizada is False
     assert resposta.c_stat == "217"
     assert resposta.protocolo is None
+
+
+@patch("nfe_core.client.zeep.Client")
+async def test_autorizar_cria_zeep_client_com_timeout(mock_zeep_client):
+    # Sem timeout, uma SEFAZ travada prende o loop_worker compartilhado
+    # (inclusive a fila da NFS-e). Mesmo valor do cliente SEFIN (nfse_core).
+    await SefazClient().autorizar(b"<xml/>", uf="PA", ambiente=AmbienteEnum.homologacao)
+    transport = mock_zeep_client.call_args.kwargs["transport"]
+    assert transport.load_timeout == 60
+    assert transport.operation_timeout == 60
+
+
+@patch("nfe_core.client.zeep.Client")
+async def test_consultar_protocolo_cria_zeep_client_com_timeout(mock_zeep_client):
+    await SefazClient().consultar_protocolo("4321" * 11, uf="PA", ambiente=AmbienteEnum.homologacao)
+    transport = mock_zeep_client.call_args.kwargs["transport"]
+    assert transport.load_timeout == 60
+    assert transport.operation_timeout == 60

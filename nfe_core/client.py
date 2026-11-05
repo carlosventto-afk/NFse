@@ -26,10 +26,10 @@ WSDL próprio. Este módulo usa `zeep` como cliente SOAP.
   WSDL real de homologação antes de qualquer emissão real.
 
   Este módulo também NÃO implementa o transporte mTLS (certificado A1 do
-  emitente) que a SEFAZ exige na conexão SOAP real -- `zeep.Client` é
-  chamado aqui sem `Transport` customizado. Isso é suficiente pros testes
-  (que mockeiam `zeep.Client` inteiramente) mas precisa ser adicionado antes
-  de qualquer chamada real.
+  emitente) que a SEFAZ exige na conexão SOAP real -- o `Transport` usado
+  aqui só define timeouts (ver `_TIMEOUT_SEGUNDOS`), sem certificado. Isso é
+  suficiente pros testes (que mockeiam `zeep.Client` inteiramente) mas o
+  mTLS precisa ser adicionado antes de qualquer chamada real.
 """
 from __future__ import annotations
 
@@ -75,6 +75,18 @@ def _gerar_uf_endpoints() -> dict[str, dict[str, str]]:
 
 
 UF_ENDPOINTS: dict[str, dict[str, str]] = _gerar_uf_endpoints()
+
+# Timeout (s) do carregamento do WSDL e de cada operação SOAP. Sem ele o zeep
+# espera 300s pelo WSDL e indefinidamente pela operação -- uma SEFAZ travada
+# prenderia o loop_worker compartilhado (que aguarda cada chamada em
+# sequência, inclusive a fila da NFS-e). Mesmo valor do cliente SEFIN da
+# NFS-e (nfse_core/client.py).
+_TIMEOUT_SEGUNDOS = 60
+
+
+def _novo_cliente_zeep(url: str) -> zeep.Client:
+    transport = zeep.Transport(timeout=_TIMEOUT_SEGUNDOS, operation_timeout=_TIMEOUT_SEGUNDOS)
+    return zeep.Client(url, transport=transport)
 
 
 @dataclass
@@ -175,7 +187,7 @@ class SefazClient:
         return await asyncio.to_thread(self._autorizar_sync, url, xml_assinado)
 
     def _autorizar_sync(self, url: str, xml_assinado: bytes) -> RespostaAutorizacao:
-        cliente = zeep.Client(url)
+        cliente = _novo_cliente_zeep(url)
         resposta = cliente.service.nfeAutorizacaoLote(nfeDadosMsg=xml_assinado.decode("utf-8"))
         return _ler_resposta_autorizacao(resposta)
 
@@ -184,6 +196,6 @@ class SefazClient:
         return await asyncio.to_thread(self._consultar_protocolo_sync, url, chave_acesso)
 
     def _consultar_protocolo_sync(self, url: str, chave_acesso: str) -> RespostaConsulta:
-        cliente = zeep.Client(url)
+        cliente = _novo_cliente_zeep(url)
         resposta = cliente.service.nfeConsultaNF(nfeDadosMsg=chave_acesso)
         return _ler_resposta_consulta(resposta)
