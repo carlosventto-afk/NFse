@@ -18,8 +18,9 @@ WSDL próprio. Este módulo usa `zeep` como cliente SOAP.
   homologação da Fase 1 do plano, não deste módulo.
 
   Da mesma forma, os nomes de operação SOAP usados aqui (`nfeAutorizacaoLote`,
-  `nfeConsultaNF`) e os nomes dos campos lidos da resposta (`cStat`,
-  `xMotivo`, `protNFe.infProt.nProt`) seguem o leiaute publicamente
+  `nfeConsultaNF`) e os nomes dos campos lidos da resposta
+  (`protNFe.infProt.cStat/xMotivo/nProt`, com fallback pro `cStat`/`xMotivo`
+  do topo) seguem o leiaute publicamente
   documentado da NF-e 4.00, mas -- assim como os nomes de tag não
   confirmados em `nfe_core/nfe.py` -- precisam ser reconfirmados contra o
   WSDL real de homologação antes de qualquer emissão real.
@@ -118,23 +119,47 @@ def _protocolo_de(resposta) -> str | None:
         return None
 
 
+def _campo_efetivo(resposta, campo: str) -> str | None:
+    """Lê `campo` (cStat/xMotivo) da NF-e em si, não do envelope.
+
+    No retorno síncrono de `nfeAutorizacaoLote`, o cStat/xMotivo do TOPO são
+    do LOTE (ex.: 104 "Lote processado") -- o status da NF-e (100
+    "Autorizado o uso", ou a rejeição dela) fica em `protNFe.infProt`. Ler
+    só o topo faria toda autorização real virar "rejeitada" (104 != 100).
+    Sem `protNFe` (lote assíncrono 103/105, erro de lote, NF-e inexistente
+    na consulta -- 217) cai no topo, que aí é o único status que existe.
+    Mesmo padrão de `_protocolo_de`: zeep devolve elemento opcional ausente
+    como None, então `None.infProt` cai no AttributeError."""
+    try:
+        valor = _texto(getattr(resposta.protNFe.infProt, campo))
+    except AttributeError:
+        valor = None
+    if valor is not None:
+        return valor
+    return _texto(getattr(resposta, campo, None))
+
+
 def _ler_resposta_autorizacao(resposta) -> RespostaAutorizacao:
-    c_stat = _texto(getattr(resposta, "cStat", None))
+    c_stat = _campo_efetivo(resposta, "cStat")
     return RespostaAutorizacao(
         autorizada=c_stat == "100",
         c_stat=c_stat,
-        x_motivo=_texto(getattr(resposta, "xMotivo", None)),
+        x_motivo=_campo_efetivo(resposta, "xMotivo"),
         protocolo=_protocolo_de(resposta),
         bruta=resposta,
     )
 
 
 def _ler_resposta_consulta(resposta) -> RespostaConsulta:
-    c_stat = _texto(getattr(resposta, "cStat", None))
+    # Na consulta (retConsSitNFe) de uma NF-e CANCELADA, o topo vem 101 e
+    # protNFe.infProt continua com o 100 da autorizacao original -- aqui isso
+    # le como autorizada, o que e o correto pro uso do worker (a nota EXISTE
+    # na SEFAZ com aquela chave; reenviar so daria duplicidade).
+    c_stat = _campo_efetivo(resposta, "cStat")
     return RespostaConsulta(
         autorizada=c_stat == "100",
         c_stat=c_stat,
-        x_motivo=_texto(getattr(resposta, "xMotivo", None)),
+        x_motivo=_campo_efetivo(resposta, "xMotivo"),
         protocolo=_protocolo_de(resposta),
         bruta=resposta,
     )
