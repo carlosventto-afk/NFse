@@ -45,6 +45,8 @@ def test_todas_as_rotas_esperadas_estao_registradas():
         "/api/emissoes/csv/confirmar",
         "/api/dashboard",
         "/api/dashboard/resumo",
+        "/api/produtos",
+        "/api/produtos/{produto_id}",
     }
     faltando = esperadas - caminhos
     assert not faltando, f"rotas nao registradas: {faltando}"

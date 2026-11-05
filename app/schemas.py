@@ -315,3 +315,35 @@ class EmissaoOut(BaseModel):
     ambiente: str | None
 
     model_config = {"from_attributes": True}
+
+
+class ProdutoCriarIn(BaseModel):
+    codigo_interno: str = Field(max_length=60)
+    descricao: str = Field(max_length=120)
+    ncm: str = Field(max_length=8)
+    cfop_padrao: str = Field(max_length=4)
+    unidade: str = Field(max_length=6)
+    cst_icms: str | None = Field(default=None, max_length=3)
+    csosn_icms: str | None = Field(default=None, max_length=3)
+    valor_unitario_padrao: Decimal | None = Field(default=None)
+    eh_substituicao_tributaria: bool = False
+
+
+class ProdutoAtualizarIn(ProdutoCriarIn):
+    ativo: bool = True
+
+
+class ProdutoOut(BaseModel):
+    id: uuid.UUID
+    codigo_interno: str
+    descricao: str
+    ncm: str
+    cfop_padrao: str
+    unidade: str
+    cst_icms: str | None
+    csosn_icms: str | None
+    valor_unitario_padrao: Decimal | None
+    eh_substituicao_tributaria: bool
+    ativo: bool
+
+    model_config = {"from_attributes": True}
