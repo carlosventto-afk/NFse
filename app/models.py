@@ -342,6 +342,9 @@ class Emissao(Base):
 
 class Produto(Base):
     __tablename__ = "produtos"
+    __table_args__ = (
+        UniqueConstraint("empresa_id", "codigo_interno", name="uq_produto_empresa_codigo_interno"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     empresa_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("empresas.id"), nullable=False)
@@ -363,6 +366,9 @@ class Produto(Base):
 
 class EmissaoNfe(Base):
     __tablename__ = "emissoes_nfe"
+    __table_args__ = (
+        UniqueConstraint("empresa_id", "serie", "numero", name="uq_emissao_nfe_empresa_serie_numero"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     empresa_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("empresas.id"), nullable=False)

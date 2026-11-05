@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from app.models import Cliente, Empresa, EmissaoNfe, ItemEmissaoNfe, Produto, StatusEmissao
 from tests.apoio import criar_empresa_titular
@@ -79,3 +80,32 @@ async def test_emissao_nfe_tem_bookkeeping_de_reemissao_e_item_carrega_aliquota_
     await db_session.commit()
     await db_session.refresh(item)
     assert item.aliquota_interna_destino == Decimal("18.00")
+
+
+@pytest.mark.asyncio
+async def test_emissao_nfe_serie_numero_e_unico_por_empresa(db_session):
+    empresa, _usuario = await criar_empresa_titular(db_session)
+    cliente = Cliente(empresa_id=empresa.id, nome="Comprador", cpf_cnpj="12345678901")
+    db_session.add(cliente)
+    await db_session.flush()
+    db_session.add(EmissaoNfe(empresa_id=empresa.id, cliente_id=cliente.id,
+                              serie="1", numero=1, status=StatusEmissao.pendente))
+    await db_session.commit()
+
+    db_session.add(EmissaoNfe(empresa_id=empresa.id, cliente_id=cliente.id,
+                              serie="1", numero=1, status=StatusEmissao.pendente))
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_produto_codigo_interno_e_unico_por_empresa(db_session):
+    empresa, _usuario = await criar_empresa_titular(db_session)
+    db_session.add(Produto(empresa_id=empresa.id, codigo_interno="P1", descricao="X",
+                           ncm="61091000", cfop_padrao="5102", unidade="UN"))
+    await db_session.commit()
+
+    db_session.add(Produto(empresa_id=empresa.id, codigo_interno="P1", descricao="Y",
+                           ncm="61091000", cfop_padrao="5102", unidade="UN"))
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
