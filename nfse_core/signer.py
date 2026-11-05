@@ -141,3 +141,20 @@ def sign_evento(evento_xml: bytes, pfx_base64: str, password: str | None) -> byt
 
     body = etree.tostring(root, encoding="unicode").encode("utf-8")
     return b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' + body
+
+
+def sign_root_element(xml: bytes, inf_qname: str, pfx_base64: str, password: str | None) -> bytes:
+    """Assina um elemento generico identificado por seu nome qualificado
+    (ex.: "{http://www.portalfiscal.inf.br/nfe}infNFe"), reaproveitando a
+    mesma receita de sign_dps/sign_evento. Existe para o nfe_core (NF-e)
+    nao precisar duplicar a logica de assinatura XML-DSig -- sign_dps e
+    sign_evento sao mantidos intactos, isto e so uma generalizacao do
+    mesmo codigo que ja existia dentro deles."""
+    key, cert, _chain = load_pfx(pfx_base64, password)
+    root = etree.fromstring(xml)
+    inf = root.find(inf_qname)
+    if inf is None:
+        raise ValueError(f"elemento '{inf_qname}' nao encontrado -- nada para assinar")
+    _sign_inner_element(root, inf, key, cert)
+    body = etree.tostring(root, encoding="unicode").encode("utf-8")
+    return b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' + body

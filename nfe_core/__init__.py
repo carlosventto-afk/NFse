@@ -8,6 +8,7 @@ próprios exports a este mesmo `__init__.py`.
 
     nfe.py    monta o XML da NF-e e calcula a chave de acesso
     client.py conversa com a SEFAZ (SOAP/zeep): autorização e consulta de protocolo
+    signer.py assina o infNFe (reaproveita nfse_core.signer.sign_root_element)
 """
 
 from nfe_core.client import (
@@ -15,6 +16,7 @@ from nfe_core.client import (
 )
 from nfe_core.error_catalog import CATALOGO_CSTAT, eh_autorizado
 from nfe_core.nfe import NFE_NS, NfeData, NfeItemData, build_nfe_xml, chave_de_acesso
+from nfe_core.signer import CertificateError, sign_nfe
 
 __all__ = [
     # montagem
@@ -23,4 +25,6 @@ __all__ = [
     "AmbienteEnum", "SefazClient", "RespostaAutorizacao", "RespostaConsulta", "UF_ENDPOINTS",
     # catálogo de cStat
     "CATALOGO_CSTAT", "eh_autorizado",
+    # assinatura
+    "sign_nfe", "CertificateError",
 ]
