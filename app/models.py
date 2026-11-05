@@ -142,6 +142,11 @@ class Empresa(Base):
     complemento: Mapped[str | None] = mapped_column(String(100), nullable=True)
     bairro: Mapped[str | None] = mapped_column(String(100), nullable=True)
     cep: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    # Dados fiscais para NF-e modelo 55 (mercadorias). crt: 1=Simples Nacional,
+    # 2=Simples Nacional excesso de sublimite, 3=Regime Normal.
+    inscricao_estadual: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    crt: Mapped[int | None] = mapped_column(nullable=True)
+    uf: Mapped[str | None] = mapped_column(String(2), nullable=True)
     # Provedor usado para TODAS as operacoes fiscais desta empresa (emissao,
     # cancelamento, consulta, PDF) -- "spedy" exige spedy_empresa_id e
     # spedy_api_key_cifrada preenchidos (provisionamento em PUT /empresas/mim).
@@ -326,3 +331,24 @@ class Emissao(Base):
     ambiente: Mapped[AmbienteEnum | None] = mapped_column(String(20), nullable=True)
 
     empresa: Mapped["Empresa"] = relationship(back_populates="emissoes")
+
+
+class Produto(Base):
+    __tablename__ = "produtos"
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    empresa_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("empresas.id"), nullable=False)
+    codigo_interno: Mapped[str] = mapped_column(String(60), nullable=False)
+    descricao: Mapped[str] = mapped_column(String(120), nullable=False)
+    ncm: Mapped[str] = mapped_column(String(8), nullable=False)
+    cfop_padrao: Mapped[str] = mapped_column(String(4), nullable=False)
+    unidade: Mapped[str] = mapped_column(String(6), nullable=False)
+    # Exatamente um dos dois e preenchido: cst_icms no regime normal, csosn_icms
+    # no Simples Nacional (CRT 1/2) -- a validacao cruzada fica para a camada de
+    # servico, nao no banco.
+    cst_icms: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    csosn_icms: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    valor_unitario_padrao: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    eh_substituicao_tributaria: Mapped[bool] = mapped_column(default=False, nullable=False)
+    ativo: Mapped[bool] = mapped_column(default=True, nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_agora, nullable=False)
