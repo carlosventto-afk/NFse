@@ -132,6 +132,13 @@ class Empresa(Base):
     # certa -- evita a mesma rejeicao na primeira emissao de cada empresa.
     serie: Mapped[str] = mapped_column(String(5), default="10001", nullable=False)
     proximo_numero: Mapped[int] = mapped_column(default=1, nullable=False)
+    # Numeracao PROPRIA da NF-e modelo 55 -- documento fiscal distinto da
+    # NFS-e, nao pode compartilhar serie/proximo_numero acima (ver
+    # app/numeracao.py:reservar_proximo_numero_nfe). Sem regra conhecida de
+    # faixa reservada como a da NFS-e, entao "1"; confirmar no spike de
+    # homologacao da Fase 1, como todo detalhe de leiaute deste projeto.
+    serie_nfe: Mapped[str] = mapped_column(String(3), default="1", server_default="1", nullable=False)
+    proximo_numero_nfe: Mapped[int] = mapped_column(default=1, server_default="1", nullable=False)
     certificado_pfx_cifrado: Mapped[str] = mapped_column(Text, nullable=False)
     certificado_senha_cifrada: Mapped[str | None] = mapped_column(Text, nullable=True)
     certificado_valido_ate: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -376,6 +383,10 @@ class EmissaoNfe(Base):
     # _agendar_proxima_tentativa em app/worker.py).
     tentativas_reemissao: Mapped[int] = mapped_column(default=0, server_default="0", nullable=False)
     proxima_tentativa_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Justificativa (xJust, 15-255 caracteres) do pedido de cancelamento --
+    # gravada por POST /emissoes-nfe/{id}/cancelar; o envio do evento a SEFAZ
+    # (nfe_core.evento) ainda nao existe, a linha fica em cancelamento_pendente.
+    justificativa_cancelamento: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class ItemEmissaoNfe(Base):
