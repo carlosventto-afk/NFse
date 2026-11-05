@@ -24,6 +24,7 @@ def test_todas_as_rotas_esperadas_estao_registradas():
         "/api/empresas",
         "/api/empresas/mim",
         "/api/empresas/numeracao",
+        "/api/empresas/numeracao-nfe",
         "/api/planos",
         "/api/usuarios",
         "/api/empresas/{empresa_id}/vincular-usuario",

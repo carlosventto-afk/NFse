@@ -228,12 +228,29 @@ class EmpresaDetalheOut(BaseModel):
     cep: str | None
     provedor_emissao: str
     spedy_empresa_id: str | None
+    uf: str | None
+    crt: int | None
+    inscricao_estadual: str | None
 
     model_config = {"from_attributes": True}
 
 
 class NumeracaoIn(BaseModel):
     serie: str = Field(min_length=1, max_length=5)
+    proximo_numero: int = Field(ge=1)
+
+
+class NumeracaoNfeOut(BaseModel):
+    """Mesma forma de NumeracaoOut, mas lida de Empresa.serie_nfe/
+    proximo_numero_nfe (sequencia propria da NF-e)."""
+    serie: str
+    proximo_numero: int
+
+
+class NumeracaoNfeIn(BaseModel):
+    # max_length=3 (nao 5 como NumeracaoIn): Empresa.serie_nfe e
+    # EmissaoNfe.serie sao String(3).
+    serie: str = Field(min_length=1, max_length=3)
     proximo_numero: int = Field(ge=1)
 
 

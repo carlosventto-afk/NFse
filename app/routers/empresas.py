@@ -13,8 +13,11 @@ from app.crypto import cifrar, decifrar
 from app.adapters.spedy_provisionamento import chave_mestre_spedy, montar_dados_regime_tributario, provisionar_empresa
 from app.adapters.spedy_client import SpedyClient, SpedyError
 from app.db import get_db
-from app.models import AmbienteEnum, Emissao, Empresa, PapelUsuario, Usuario, UsuarioEmpresa
-from app.schemas import EmpresaDetalheOut, EmpresaResumoOut, NumeracaoIn, NumeracaoOut, VincularUsuarioIn
+from app.models import AmbienteEnum, Emissao, EmissaoNfe, Empresa, PapelUsuario, Usuario, UsuarioEmpresa
+from app.schemas import (
+    EmpresaDetalheOut, EmpresaResumoOut, NumeracaoIn, NumeracaoNfeIn, NumeracaoNfeOut, NumeracaoOut,
+    VincularUsuarioIn,
+)
 from app.security import (
     ContextoAutenticado, exigir_admin_empresa, exigir_admin_plataforma, get_contexto_autenticado,
 )
@@ -165,6 +168,9 @@ async def editar_minha_empresa(
     cep: str | None = Form(None),
     provedor_emissao: str | None = Form(None),
     forcar_reprovisionamento_spedy: str | None = Form(None),
+    uf: str | None = Form(None),
+    crt: int | None = Form(None),
+    inscricao_estadual: str | None = Form(None),
     contexto: ContextoAutenticado = Depends(exigir_admin_empresa),
     session: AsyncSession = Depends(get_db),
 ) -> Empresa:
@@ -180,6 +186,11 @@ async def editar_minha_empresa(
     codigo_tributacao_municipal = (codigo_tributacao_municipal or "").strip() or None
     cnae = (cnae or "").strip() or None
     nbs_code = (nbs_code or "").strip() or None
+    uf_normalizada = (uf or "").strip().upper() or None
+    if uf_normalizada is not None and not (
+        len(uf_normalizada) == 2 and uf_normalizada.isascii() and uf_normalizada.isalpha()
+    ):
+        raise HTTPException(status_code=422, detail="uf deve ter exatamente 2 letras (ex.: PA)")
     regime_apuracao_sn_int = int(regime_apuracao_sn) if (regime_apuracao_sn or "").strip() else None
     aliquota_iss_decimal = None
     if (aliquota_iss or "").strip():
@@ -275,6 +286,14 @@ async def editar_minha_empresa(
         empresa.bairro = bairro.strip() or None
     if cep is not None:
         empresa.cep = cep.strip() or None
+    # Dados fiscais da NF-e: mesma regra (a tela atual de "Editar empresa"
+    # ainda nao conhece esses campos -- salvar por ela nao pode apaga-los).
+    if uf is not None:
+        empresa.uf = uf_normalizada
+    if crt is not None:
+        empresa.crt = crt
+    if inscricao_estadual is not None:
+        empresa.inscricao_estadual = inscricao_estadual.strip() or None
 
     # Reprovisiona do zero quando o ambiente muda numa empresa ja provisionada
     # na Spedy: homologacao e producao sao contas/chaves mestras separadas la
@@ -409,3 +428,35 @@ async def definir_numeracao(
     await session.commit()
     await session.refresh(empresa)
     return empresa
+
+
+@router.put("/numeracao-nfe", response_model=NumeracaoNfeOut)
+async def definir_numeracao_nfe(
+    dados: NumeracaoNfeIn,
+    contexto: ContextoAutenticado = Depends(exigir_admin_empresa),
+    session: AsyncSession = Depends(get_db),
+) -> NumeracaoNfeOut:
+    """Espelha definir_numeracao, na sequencia PROPRIA da NF-e
+    (Empresa.serie_nfe/proximo_numero_nfe, validada contra EmissaoNfe)."""
+    maior_numero_usado = (
+        await session.execute(
+            select(func.max(EmissaoNfe.numero)).where(
+                EmissaoNfe.empresa_id == contexto.empresa_id, EmissaoNfe.serie == dados.serie,
+            )
+        )
+    ).scalar_one_or_none()
+    if maior_numero_usado is not None and dados.proximo_numero <= maior_numero_usado:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Ja existe NF-e com numero {maior_numero_usado} na serie {dados.serie}; "
+                f"o proximo numero precisa ser maior que isso"
+            ),
+        )
+
+    empresa = await session.get(Empresa, contexto.empresa_id)
+    empresa.serie_nfe = dados.serie
+    empresa.proximo_numero_nfe = dados.proximo_numero
+    await session.commit()
+    await session.refresh(empresa)
+    return NumeracaoNfeOut(serie=empresa.serie_nfe, proximo_numero=empresa.proximo_numero_nfe)
