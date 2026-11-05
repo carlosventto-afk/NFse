@@ -13,6 +13,7 @@ próprios exports a este mesmo `__init__.py`.
 from nfe_core.client import (
     AmbienteEnum, RespostaAutorizacao, RespostaConsulta, SefazClient, UF_ENDPOINTS,
 )
+from nfe_core.error_catalog import CATALOGO_CSTAT, eh_autorizado
 from nfe_core.nfe import NFE_NS, NfeData, NfeItemData, build_nfe_xml, chave_de_acesso
 
 __all__ = [
@@ -20,4 +21,6 @@ __all__ = [
     "NfeData", "NfeItemData", "build_nfe_xml", "chave_de_acesso", "NFE_NS",
     # comunicação
     "AmbienteEnum", "SefazClient", "RespostaAutorizacao", "RespostaConsulta", "UF_ENDPOINTS",
+    # catálogo de cStat
+    "CATALOGO_CSTAT", "eh_autorizado",
 ]
