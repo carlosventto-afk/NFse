@@ -14,6 +14,8 @@ CATALOGO_CSTAT: dict[str, str] = {
     "103": "Lote recebido com sucesso",
     "104": "Lote processado",
     "105": "Lote em processamento",
+    # Consulta
+    "217": "NF-e não consta na base de dados da SEFAZ",
     # Rejeições de conteúdo e schema
     "202": "Rejeição: falha no preenchimento da NF-e",
     "204": "Rejeição: duplicidade de NF-e",
@@ -27,8 +29,24 @@ CATALOGO_CSTAT: dict[str, str] = {
 }
 
 _C_STAT_AUTORIZADO = "100"
+_C_STAT_NAO_ENCONTRADA = "217"
+_C_STATS_DENEGADO = frozenset({"110", "301", "302"})
 
 
-def eh_autorizado(c_stat: str) -> bool:
+def eh_autorizado(c_stat: str | None) -> bool:
     """True somente para cStat 100 (NF-e autorizada)."""
     return c_stat == _C_STAT_AUTORIZADO
+
+
+def nao_encontrada(c_stat: str | None) -> bool:
+    """True somente para cStat 217 (NF-e não consta na base da SEFAZ).
+
+    Na consulta de protocolo, é o ÚNICO status que garante que reenviar a
+    chave é seguro: a SEFAZ não tem registro algum dela."""
+    return c_stat == _C_STAT_NAO_ENCONTRADA
+
+
+def eh_denegado(c_stat: str | None) -> bool:
+    """True para uso denegado (110/301/302): resultado FINAL -- o número fica
+    queimado na SEFAZ com protocolo de denegação; retentar não resolve."""
+    return c_stat in _C_STATS_DENEGADO
