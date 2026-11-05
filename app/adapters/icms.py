@@ -30,12 +30,16 @@ da UF de origem hoje é zero".
 A TABELA ABAIXO (`ALIQUOTA_INTERESTADUAL_SIMPLIFICADA`) É UMA SIMPLIFICAÇÃO,
 NÃO A TABELA OFICIAL COMPLETA: a regra real tem exceções e casos por produto
 (ex.: Resolução do Senado 13/2012 pra importados) que não cabem no escopo
-desta tarefa. Usamos 7% quando a UF de origem é SP/MG/RJ/RS (Sul/Sudeste,
+desta tarefa. Usamos 7% quando a UF de origem é SP/MG/RJ/PR/SC/RS (Sul/Sudeste,
 exceto ES) vendendo para UF de destino do Norte/Nordeste/Centro-Oeste/ES, e
 12% como alíquota interestadual geral nos demais pares -- isso PRECISA ser
 validado contra a tabela oficial completa da SEFAZ no spike fiscal de
 homologação da Fase 1, antes de qualquer emissão real (mesmo aviso dado em
 `nfe_core/nfe.py` sobre o leiaute).
+
+`valor_icms_uf_destino` é calculado de forma simplificada, como
+`base_icms × (alíquota interna do destino − alíquota interestadual) / 100`,
+sem a técnica de "base dupla" (gross-up) da apuração oficial do DIFAL.
 
 FCP (Fundo de Combate à Pobreza): calcular o FCP realmente devido exige saber
 se/quanto a UF de destino cobra de adicional e se esse adicional já está
@@ -57,7 +61,7 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
 # UFs do Sul/Sudeste consideradas "origem" na regra simplificada de 7%.
-_UF_SUL_SUDESTE_7PCT_ORIGEM = frozenset({"SP", "MG", "RJ", "RS"})
+_UF_SUL_SUDESTE_7PCT_ORIGEM = frozenset({"SP", "MG", "RJ", "PR", "SC", "RS"})
 
 # UFs do Norte, Nordeste, Centro-Oeste e Espírito Santo -- destino que, saindo
 # de SP/MG/RJ/RS, paga alíquota interestadual de 7% em vez de 12%.
@@ -144,7 +148,7 @@ def calcular_icms_item(
         # Cronograma da EC 87/2015 terminou em 2019: hoje a diferença integral
         # vai pro destino, a parcela da UF de origem é zero (não None -- ver
         # docstring do módulo).
-        valor_icms_uf_remetente=Decimal("0"),
+        valor_icms_uf_remetente=_arredondar(Decimal("0")),
         valor_icms_uf_destino=valor_icms_uf_destino,
-        valor_fcp=Decimal("0"),
+        valor_fcp=_arredondar(Decimal("0")),
     )
