@@ -30,7 +30,7 @@ async def _criar_emissao_nfe_pendente(
     *,
     serie: str = "1",
     numero: int = 1,
-    status: StatusEmissao = StatusEmissao.aguardando_emissao,
+    status: StatusEmissao = StatusEmissao.pendente,
     protocolo_autorizacao: str | None = None,
     chave_acesso: str | None = None,
     xml_nfe: bytes | None = None,
@@ -145,6 +145,16 @@ async def test_grava_chave_de_acesso_antes_de_chamar_sefaz(mock_client_cls, db_s
 @patch("app.worker.SefazClient")
 async def test_nao_reenvia_quando_ja_tem_protocolo_de_autorizacao(mock_client_cls, db_session):
     await _criar_emissao_nfe_pendente(db_session, protocolo_autorizacao="123", status=StatusEmissao.autorizada)
+    processou = await processar_uma_pendente_nfe(db_session, get_settings())
+    assert processou is False
+    mock_client_cls.return_value.autorizar.assert_not_called()
+
+
+@patch("app.worker.SefazClient")
+async def test_worker_ignora_nfe_aguardando_emissao(mock_client_cls, db_session):
+    # Mesma semantica da NFS-e: aguardando_emissao e rascunho que o worker
+    # NAO pega sozinho; a fila automatica da NF-e e `pendente`.
+    await _criar_emissao_nfe_pendente(db_session, status=StatusEmissao.aguardando_emissao)
     processou = await processar_uma_pendente_nfe(db_session, get_settings())
     assert processou is False
     mock_client_cls.return_value.autorizar.assert_not_called()
@@ -298,7 +308,7 @@ async def test_retentativa_remonta_com_cadastro_atual_mantendo_a_mesma_chave(moc
     produto = await db_session.get(Produto, item.produto_id)
     produto.descricao = "Camiseta Corrigida"
     item.valor_unitario = Decimal("55.00")
-    emissao.status = StatusEmissao.aguardando_emissao
+    emissao.status = StatusEmissao.pendente
     await db_session.commit()
 
     mock_client_cls.return_value.autorizar = AsyncMock(return_value=_resposta_autorizada("777"))
@@ -449,7 +459,7 @@ async def test_certificado_cifrado_com_outra_fernet_key_rejeita_sem_derrubar(moc
 @patch("app.worker.SefazClient")
 async def test_cliente_sem_uf_rejeita_sem_derrubar(mock_client_cls, db_session):
     # Cliente.uf e nullable: sem este tratamento um AttributeError escaparia
-    # pro loop_worker e a linha ficaria em aguardando_emissao pra sempre,
+    # pro loop_worker e a linha ficaria em pendente pra sempre,
     # na frente da fila, travando todas as outras NF-e.
     mock_client_cls.return_value.autorizar = AsyncMock()
     emissao = await _criar_emissao_nfe_pendente(db_session, cliente_uf=None)
@@ -478,7 +488,7 @@ async def test_backoff_esgotado_nao_agenda_nova_tentativa(mock_client_cls, db_se
 # --- promocao de reemissao automatica ---------------------------------------
 
 
-async def test_reemissao_automatica_promove_rejeitada_vencida_para_aguardando_emissao(db_session):
+async def test_reemissao_automatica_promove_rejeitada_vencida_para_pendente(db_session):
     emissao = await _criar_emissao_nfe_pendente(db_session, status=StatusEmissao.rejeitada)
     emissao.proxima_tentativa_em = datetime.now(timezone.utc) - timedelta(seconds=1)
     await db_session.commit()
@@ -486,7 +496,7 @@ async def test_reemissao_automatica_promove_rejeitada_vencida_para_aguardando_em
     assert await processar_reemissao_automatica_pendente_nfe(db_session) is True
 
     await db_session.refresh(emissao)
-    assert emissao.status == StatusEmissao.aguardando_emissao
+    assert emissao.status == StatusEmissao.pendente
     assert emissao.proxima_tentativa_em is None
 
 

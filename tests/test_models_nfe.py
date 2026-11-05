@@ -41,7 +41,7 @@ async def test_emissao_nfe_com_itens(db_session):
     await db_session.flush()
 
     emissao = EmissaoNfe(empresa_id=empresa.id, cliente_id=cliente.id,
-                         serie="1", numero=1, status=StatusEmissao.aguardando_emissao)
+                         serie="1", numero=1, status=StatusEmissao.pendente)
     db_session.add(emissao)
     await db_session.flush()
     item = ItemEmissaoNfe(emissao_nfe_id=emissao.id, produto_id=produto.id,
@@ -65,7 +65,7 @@ async def test_emissao_nfe_tem_bookkeeping_de_reemissao_e_item_carrega_aliquota_
     await db_session.flush()
 
     emissao = EmissaoNfe(empresa_id=empresa.id, cliente_id=cliente.id,
-                         serie="1", numero=1, status=StatusEmissao.aguardando_emissao)
+                         serie="1", numero=1, status=StatusEmissao.pendente)
     db_session.add(emissao)
     await db_session.flush()
     assert emissao.tentativas_reemissao == 0

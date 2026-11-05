@@ -1,8 +1,10 @@
 """Endpoints da NF-e modelo 55 (mercadorias).
 
 Espelha app/routers/emissoes.py (NFS-e): a criacao so grava a linha em
-`aguardando_emissao` -- quem monta, assina e envia a SEFAZ e o worker
+`pendente` -- quem monta, assina e envia a SEFAZ e o worker
 (processar_uma_pendente_nfe em app/worker.py), do mesmo jeito que a NFS-e.
+Mesma semantica de status da NFS-e: `pendente` e a fila automatica do
+worker; `aguardando_emissao` (rascunho que o worker ignora) nao e usado aqui.
 """
 import uuid
 from collections import defaultdict
@@ -118,7 +120,7 @@ async def criar_emissao_nfe(
         cliente_id=cliente.id,
         serie=serie,
         numero=numero,
-        status=StatusEmissao.aguardando_emissao,
+        status=StatusEmissao.pendente,
     )
     session.add(emissao)
     await session.flush()

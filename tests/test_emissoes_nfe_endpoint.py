@@ -41,7 +41,7 @@ async def _criar_produto(db_session, empresa, **overrides) -> Produto:
 async def _criar_emissao(db_session, empresa, cliente, **overrides) -> EmissaoNfe:
     dados = dict(
         empresa_id=empresa.id, cliente_id=cliente.id, serie="1", numero=1,
-        status=StatusEmissao.aguardando_emissao,
+        status=StatusEmissao.pendente,
     )
     dados.update(overrides)
     emissao = EmissaoNfe(**dados)
@@ -103,7 +103,7 @@ async def test_criar_emissao_com_cliente_de_outra_empresa_e_rejeitado(db_session
 
 
 @pytest.mark.asyncio
-async def test_criar_emissao_fica_aguardando_emissao_pro_worker(db_session):
+async def test_criar_emissao_fica_pendente_pro_worker(db_session):
     empresa, token = await criar_empresa_e_token(db_session)
     cliente = await _criar_cliente(db_session, empresa)
     produto_padrao = await _criar_produto(
@@ -130,7 +130,7 @@ async def test_criar_emissao_fica_aguardando_emissao_pro_worker(db_session):
 
     assert resposta.status_code == 201, resposta.text
     corpo = resposta.json()
-    assert corpo["status"] == "aguardando_emissao"
+    assert corpo["status"] == "pendente"
     assert corpo["cliente_id"] == str(cliente.id)
     # Sequencia PROPRIA da NF-e (serie_nfe/proximo_numero_nfe), nao a da NFS-e.
     assert corpo["serie"] == "1"
@@ -139,7 +139,7 @@ async def test_criar_emissao_fica_aguardando_emissao_pro_worker(db_session):
 
     emissao = await db_session.get(EmissaoNfe, corpo["id"])
     assert emissao.empresa_id == empresa.id
-    assert emissao.status == StatusEmissao.aguardando_emissao
+    assert emissao.status == StatusEmissao.pendente
     itens = (await db_session.execute(
         select(ItemEmissaoNfe).where(ItemEmissaoNfe.emissao_nfe_id == emissao.id).order_by(ItemEmissaoNfe.id)
     )).scalars().all()
@@ -358,7 +358,7 @@ async def test_cancelar_emissao_nao_autorizada_e_rejeitado(db_session):
     # 409 (estado errado pra operacao), mesma convencao do cancelar da NFS-e.
     assert resposta.status_code == 409
     await db_session.refresh(emissao_pendente)
-    assert emissao_pendente.status == StatusEmissao.aguardando_emissao
+    assert emissao_pendente.status == StatusEmissao.pendente
 
 
 @pytest.mark.asyncio

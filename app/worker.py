@@ -670,7 +670,10 @@ async def _montar_e_assinar_nfe(
 
 
 async def processar_uma_pendente_nfe(session: AsyncSession, settings: Settings | None = None) -> bool:
-    """Processa uma NF-e 'aguardando_emissao' (se houver). Retorna True se processou.
+    """Processa uma NF-e 'pendente' (se houver). Retorna True se processou.
+
+    Mesma semantica de status da NFS-e: `pendente` = fila automatica do
+    worker; `aguardando_emissao` = rascunho que o worker ignora.
 
     Espelha processar_uma_pendente (NFS-e): SELECT ... FOR UPDATE SKIP LOCKED,
     chave gravada ANTES de falar com a SEFAZ, consulta antes de reenviar, erros
@@ -703,7 +706,7 @@ async def processar_uma_pendente_nfe(session: AsyncSession, settings: Settings |
 
     stmt = (
         select(EmissaoNfe)
-        .where(EmissaoNfe.status == StatusEmissao.aguardando_emissao)
+        .where(EmissaoNfe.status == StatusEmissao.pendente)
         .order_by(EmissaoNfe.criado_em)
         .limit(1)
         .with_for_update(skip_locked=True)
@@ -773,7 +776,7 @@ async def processar_uma_pendente_nfe(session: AsyncSession, settings: Settings |
             # cobre TypeError/AttributeError/KeyError de cadastro incompleto
             # (ex.: Cliente.uf ou Empresa.uf nulos -> None.strip() no calculo
             # de ICMS). Sem isso, a excecao escapa pro loop_worker, a linha
-            # volta a aguardando_emissao no rollback e, sendo a mais antiga, e
+            # volta a pendente no rollback e, sendo a mais antiga, e
             # repescada a cada volta pra sempre -- travando a fila de NF-e de
             # todas as empresas atras dela.
             detalhe = str(exc) or (
@@ -849,7 +852,7 @@ async def processar_uma_pendente_nfe(session: AsyncSession, settings: Settings |
 async def processar_reemissao_automatica_pendente_nfe(session: AsyncSession) -> bool:
     """Espelha processar_reemissao_automatica_pendente para NF-e: promove UMA
     emissao rejeitada com tentativa automatica vencida de volta pra
-    "aguardando_emissao" (estado inicial da NF-e). processar_uma_pendente_nfe
+    "pendente" (estado inicial da NF-e). processar_uma_pendente_nfe
     cuida do reenvio -- consultando a SEFAZ antes, ja que a linha tem chave."""
     agora = datetime.now(timezone.utc)
     stmt = (
@@ -867,7 +870,7 @@ async def processar_reemissao_automatica_pendente_nfe(session: AsyncSession) -> 
     if emissao is None:
         return False
 
-    emissao.status = StatusEmissao.aguardando_emissao
+    emissao.status = StatusEmissao.pendente
     emissao.proxima_tentativa_em = None
     await session.commit()
     return True
