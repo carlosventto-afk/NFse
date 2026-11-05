@@ -227,6 +227,9 @@ def build_nfe_xml(data: NfeData) -> bytes:
         )
     if not data.itens:
         raise ValueError("NF-e precisa de ao menos um item")
+    if data.dh_emi.tzinfo is None:
+        # dhEmi exige offset UTC (ex.: -03:00); naive geraria a tag sem fuso.
+        raise ValueError("dh_emi precisa ter timezone (nao pode ser naive)")
 
     c_nf = _gerar_c_nf(data)
     chave = chave_de_acesso(data, c_nf=c_nf)

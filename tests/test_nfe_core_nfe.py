@@ -1,5 +1,5 @@
 """Testes de nfe_core.nfe: NfeData, chave de acesso e build_nfe_xml."""
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -39,7 +39,7 @@ def _nfe_data_minima(**overrides) -> NfeData:
     data_kwargs = {
         "tp_amb": 2,
         "c_uf_emit": "15",
-        "dh_emi": datetime(2026, 11, 5, 10, 0, 0),
+        "dh_emi": datetime(2026, 11, 5, 10, 0, 0, tzinfo=timezone.utc),
         "serie": "1",
         "numero": 1,
         "emit_cnpj": "12345678000195",
@@ -78,6 +78,14 @@ def test_build_nfe_xml_inclui_icms_uf_destino_quando_interestadual():
 
 
 def test_build_nfe_xml_inclui_dhemi():
-    data = _nfe_data_minima(dh_emi=datetime(2026, 11, 5, 10, 0, 0))
+    data = _nfe_data_minima(dh_emi=datetime(2026, 11, 5, 10, 0, 0, tzinfo=timezone.utc))
     xml = build_nfe_xml(data)
-    assert b"<dhEmi>2026-11-05T10:00:00</dhEmi>" in xml
+    assert b"<dhEmi>2026-11-05T10:00:00+00:00</dhEmi>" in xml
+
+
+def test_build_nfe_xml_recusa_dh_emi_naive():
+    # dhEmi sem offset UTC e invalido no leiaute -- erra alto em vez de
+    # gerar a tag sem fuso.
+    data = _nfe_data_minima(dh_emi=datetime(2026, 11, 5, 10, 0, 0))
+    with pytest.raises(ValueError, match="timezone"):
+        build_nfe_xml(data)
