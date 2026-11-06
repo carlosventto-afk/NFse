@@ -23,7 +23,8 @@ não recebem um flag "importado"). O que muda é o DESTINATÁRIO (`dest_ie`):
 - Destinatário NÃO CONTRIBUINTE / consumidor final (`dest_ie is None`): é o
   ÚNICO caso de DIFAL (EC 87/2015), descrito abaixo.
 
-SIMPLIFICAÇÃO: "tem IE" (`dest_ie is not None`) é o único sinal de
+SIMPLIFICAÇÃO: "tem IE" (`dest_ie` não vazio -- `None`, `""` e só espaços
+contam como sem IE, aqui e em `nfe_core/nfe.py`) é o único sinal de
 contribuinte que este módulo tem. A regra real usa o indicador de consumidor
 final (indFinal) + indIEDest: um contribuinte comprando para uso/consumo
 próprio também gera DIFAL (devido pelo próprio destinatário, sem
@@ -148,6 +149,10 @@ def calcular_icms_item(
     """
     uf_emitente = uf_emitente.strip().upper()
     uf_destino = uf_destino.strip().upper()
+    # IE em branco/só espaços = sem IE (não contribuinte), independente de o
+    # chamador já ter normalizado -- mesmo critério de nfe_core/nfe.py
+    # (build_nfe_xml), pra cálculo e XML nunca divergirem.
+    dest_ie = (dest_ie or "").strip() or None
     base_icms = valor_total
 
     if uf_emitente == uf_destino:

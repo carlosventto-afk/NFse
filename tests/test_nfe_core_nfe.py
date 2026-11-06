@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 from lxml import etree
 
+from app.adapters.icms import calcular_icms_item
 from nfe_core.nfe import NFE_NS, NfeData, NfeItemData, build_nfe_xml, chave_de_acesso
 
 _ITEM_FIELDS = {
@@ -189,6 +190,40 @@ def test_build_nfe_xml_csosn_900_mantem_vbc_e_vicms():
     assert _filhos(grupo) == ["orig", "CSOSN", "vBC", "vICMS"]
     assert grupo.find(f"{{{NFE_NS}}}vBC").text == "10.00"
     assert grupo.find(f"{{{NFE_NS}}}vICMS").text == "1.20"
+
+
+def test_build_nfe_xml_recusa_difal_sem_valores_de_partilha():
+    # Gate diz DIFAL (interestadual + nao contribuinte), mas o item nao traz
+    # partilha nenhuma: calcular_icms_item nao foi chamado (ou foi chamado
+    # com outro criterio de contribuinte) -- erra alto em vez de omitir ICMSUFDest.
+    data = _nfe_data_minima(emit_uf="PA", dest_uf="SP", dest_ie=None)
+    with pytest.raises(ValueError, match="partilha"):
+        build_nfe_xml(data)
+
+
+def _dest_text(xml: bytes, tag: str) -> str | None:
+    node = etree.fromstring(xml).find(f".//{{{NFE_NS}}}dest/{{{NFE_NS}}}{tag}")
+    return None if node is None else node.text
+
+
+@pytest.mark.parametrize("dest_ie", ["", "   "])
+def test_ie_vazia_e_nao_contribuinte_tanto_no_calculo_quanto_no_xml(dest_ie):
+    # calcular_icms_item e build_nfe_xml chamados direto (sem o nfe_builder,
+    # que ja normaliza IE em branco) precisam concordar: IE vazia = sem IE.
+    icms = calcular_icms_item(Decimal("10.00"), "PA", "SP", Decimal("18.00"), "00", dest_ie=dest_ie)
+    assert icms.valor_icms_uf_destino == Decimal("0.60")
+
+    data = _nfe_data_minima(
+        emit_uf="PA", dest_uf="SP", dest_ie=dest_ie,
+        base_icms=icms.base_icms, valor_icms=icms.valor_icms,
+        valor_icms_uf_remetente=icms.valor_icms_uf_remetente,
+        valor_icms_uf_destino=icms.valor_icms_uf_destino, valor_fcp=icms.valor_fcp,
+    )
+    xml = build_nfe_xml(data)
+    assert _ide_text(xml, "indFinal") == "1"
+    assert _dest_text(xml, "indIEDest") == "9"
+    assert _dest_text(xml, "IE") is None
+    assert b"<vICMSUFDest>0.60</vICMSUFDest>" in xml
 
 
 def test_build_nfe_xml_inclui_dhemi():

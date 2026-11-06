@@ -241,6 +241,16 @@ def _add_det(inf: etree._Element, item: NfeItemData, difal: bool) -> None:
             "operacao nao e interestadual para nao contribuinte -- partilha so se aplica a "
             "destinatario sem IE em venda interestadual"
         )
+    if difal and not tem_partilha:
+        # Direção oposta da checagem acima: o gate diz DIFAL, mas o item não
+        # traz nenhum valor de partilha -- calcular_icms_item não foi chamado,
+        # ou foi chamado com outro critério de contribuinte. Omitir o
+        # ICMSUFDest em silêncio geraria XML fiscalmente errado.
+        raise ValueError(
+            f"item {item.n_item}: operacao interestadual para nao contribuinte exige os "
+            "valores de partilha do ICMS (DIFAL/ICMSUFDest), mas valor_icms_uf_destino, "
+            "valor_icms_uf_remetente e valor_fcp estao todos vazios"
+        )
     if tem_partilha:
         icms_uf_dest = _el(imposto, "ICMSUFDest")
         if item.valor_fcp is not None:
@@ -277,7 +287,10 @@ def build_nfe_xml(data: NfeData) -> bytes:
     # Mesmo predicado do indIEDest abaixo: sem IE => não contribuinte. Ele
     # decide indFinal e se há DIFAL (ICMSUFDest) -- espelha o gate de
     # app/adapters/icms.py (calcular_icms_item), pra XML e cálculo concordarem.
-    dest_contribuinte = bool(data.dest_ie)
+    # IE em branco/só espaços = sem IE, com a MESMA normalização de lá
+    # (não depende de o chamador já ter normalizado).
+    dest_ie = (data.dest_ie or "").strip() or None
+    dest_contribuinte = dest_ie is not None
     difal = interestadual and not dest_contribuinte
 
     root = etree.Element(f"{{{NFE_NS}}}NFe", nsmap={None: NFE_NS})
@@ -322,7 +335,7 @@ def build_nfe_xml(data: NfeData) -> bytes:
     _el(dest, "CPF" if len(dest_doc) == 11 else "CNPJ", dest_doc)
     _el(dest, "xNome", data.dest_nome[:60])
     if dest_contribuinte:
-        _el(dest, "IE", _digits(data.dest_ie))
+        _el(dest, "IE", _digits(dest_ie))
         _el(dest, "indIEDest", "1")            # 1 = contribuinte de ICMS
     else:
         _el(dest, "indIEDest", "9")            # 9 = não contribuinte

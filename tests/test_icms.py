@@ -57,6 +57,17 @@ def test_venda_interestadual_para_contribuinte_nao_tem_partilha_nem_exige_aliquo
     assert resultado.valor_fcp is None
 
 
+@pytest.mark.parametrize("dest_ie", ["", "   "])
+def test_ie_vazia_e_tratada_como_nao_contribuinte(dest_ie):
+    # IE em branco nao e IE -- mesmo sem o nfe_builder normalizar antes.
+    with pytest.raises(AliquotaInterestadualInvalida):
+        calcular_icms_item(Decimal("100.00"), "PA", "SP", None, "00", dest_ie=dest_ie)
+    resultado = calcular_icms_item(Decimal("100.00"), "PA", "SP", Decimal("18.00"), "00", dest_ie=dest_ie)
+    assert resultado.valor_icms_uf_destino == Decimal("6.00")
+    assert resultado.valor_icms_uf_remetente == Decimal("0.00")
+    assert resultado.valor_fcp == Decimal("0.00")
+
+
 def test_venda_interestadual_para_contribuinte_ignora_aliquota_interna_informada():
     resultado = calcular_icms_item(Decimal("100.00"), "SP", "BA", Decimal("20.50"), "00", dest_ie="123456789")
     assert resultado.valor_icms == Decimal("7.00")
