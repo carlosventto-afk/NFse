@@ -113,9 +113,10 @@ Nova tabela `itens_emissao_nfe`:
   `valor_unitario`, `valor_total`, `cfop` (pode sobrescrever o padrão do
   produto por emissão), + campos de imposto calculados por item
   (`valor_icms`, `base_icms`). Venda interestadual (`Cliente.uf` !=
-  UF do emitente) soma `valor_icms_uf_remetente`, `valor_icms_uf_destino`
-  e `valor_fcp` (partilha ICMS, EC 87/2015) — nulos quando a venda é
-  dentro do mesmo estado.
+  UF do emitente) para não contribuinte (cliente sem IE) soma
+  `valor_icms_uf_remetente`, `valor_icms_uf_destino` e `valor_fcp`
+  (partilha ICMS, EC 87/2015) — nulos quando a venda é dentro do mesmo
+  estado ou quando o cliente é contribuinte (tem IE).
 
 ## Arquitetura
 
@@ -152,8 +153,13 @@ despachando pra `nfe_core` em vez de `nfse_core` quando a linha é de
    NCM informados manualmente no cadastro do produto; sem tabela de
    alíquota automática por NCM no MVP — alíquota interna vem do
    cadastro). **Venda interestadual entra no MVP** (decisão do usuário,
-   05/11): quando `Cliente.uf` difere da UF do emitente, o item carrega
-   também DIFAL + FCP + partilha ICMS (EC 87/2015) — cálculo baseado na
+   05/11): quando `Cliente.uf` difere da UF do emitente, o ICMS sai à
+   alíquota interestadual. DIFAL + FCP + partilha ICMS (EC 87/2015) só se
+   aplicam quando o destinatário é consumidor final não contribuinte do
+   ICMS (`Cliente.inscricao_estadual` ausente → `dest_ie` vazio,
+   `indFinal=1`); venda interestadual B2B para contribuinte (com IE) cobra
+   só o ICMS interestadual, sem partilha/FCP. No caso com DIFAL, o cálculo
+   é baseado na
    alíquota interestadual (4%/7%/12%, conforme origem/destino) e na
    alíquota interna do estado de destino, ambas informadas no cadastro
    (tabela de alíquotas interestaduais por UF é fixa/pública, pode
