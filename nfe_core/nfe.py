@@ -30,6 +30,14 @@ from lxml import etree
 
 NFE_NS = "http://www.portalfiscal.inf.br/nfe"
 
+# CSOSN sem cálculo de ICMS no item (102 tributada sem permissão de crédito,
+# 103 isenção na faixa de receita, 300 imune, 400 não tributada): o leiaute
+# agrupa todos em ICMSSN102, só com orig+CSOSN -- sem vBC/vICMS.
+_CSOSN_SEM_CALCULO_ICMS = frozenset({"102", "103", "300", "400"})
+# CST (Regime Normal) sem cálculo de ICMS no item (40 isenta, 41 não
+# tributada, 50 suspensão): todos no grupo ICMS40, sem vBC/vICMS.
+_CST_SEM_CALCULO_ICMS = frozenset({"40", "41", "50"})
+
 
 def _digits(value: str | None) -> str:
     return re.sub(r"\D", "", value or "")
@@ -184,7 +192,8 @@ def _add_det(inf: etree._Element, item: NfeItemData, difal: bool) -> None:
                 f"CST de ICMS inválido: '{item.cst_icms}' tem {len(cst)} dígitos, "
                 "precisa ter exatamente 2"
             )
-        grupo = _el(icms, f"ICMS{cst}")
+        sem_calculo = cst in _CST_SEM_CALCULO_ICMS
+        grupo = _el(icms, "ICMS40" if sem_calculo else f"ICMS{cst}")
         _el(grupo, "orig", "0")   # 0 = nacional; sem campo dedicado de origem no MVP
         _el(grupo, "CST", cst)
     else:
@@ -194,14 +203,19 @@ def _add_det(inf: etree._Element, item: NfeItemData, difal: bool) -> None:
                 f"CSOSN inválido: '{item.csosn_icms}' tem {len(csosn)} dígitos, "
                 "precisa ter exatamente 3"
             )
-        grupo = _el(icms, f"ICMSSN{csosn}")
+        sem_calculo = csosn in _CSOSN_SEM_CALCULO_ICMS
+        grupo = _el(icms, "ICMSSN102" if sem_calculo else f"ICMSSN{csosn}")
         _el(grupo, "orig", "0")
         _el(grupo, "CSOSN", csosn)
 
-    if item.base_icms is not None:
-        _el(grupo, "vBC", f"{item.base_icms:.2f}")
-    if item.valor_icms is not None:
-        _el(grupo, "vICMS", f"{item.valor_icms:.2f}")
+    # Códigos sem cálculo de ICMS não têm vBC/vICMS no leiaute: mesmo que o
+    # cálculo (app/adapters/icms.py, que não ramifica por código) tenha
+    # preenchido base/valor, eles não vão pro XML.
+    if not sem_calculo:
+        if item.base_icms is not None:
+            _el(grupo, "vBC", f"{item.base_icms:.2f}")
+        if item.valor_icms is not None:
+            _el(grupo, "vICMS", f"{item.valor_icms:.2f}")
 
     tem_partilha = any(
         v is not None for v in (item.valor_fcp, item.valor_icms_uf_destino, item.valor_icms_uf_remetente)

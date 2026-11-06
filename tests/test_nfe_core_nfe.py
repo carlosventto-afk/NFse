@@ -119,6 +119,45 @@ def test_build_nfe_xml_interestadual_para_contribuinte_sem_icms_uf_dest():
     assert _ide_text(xml, "indFinal") == "0"
 
 
+def _icms_grupo(xml: bytes) -> etree._Element:
+    icms = etree.fromstring(xml).find(f".//{{{NFE_NS}}}ICMS")
+    (grupo,) = list(icms)
+    return grupo
+
+
+def _filhos(grupo: etree._Element) -> list[str]:
+    return [etree.QName(child).localname for child in grupo]
+
+
+@pytest.mark.parametrize("csosn", ["102", "103", "300", "400"])
+def test_build_nfe_xml_csosn_sem_calculo_omite_vbc_e_vicms(csosn):
+    # CSOSN 102/103/300/400 nao tem vBC/vICMS no leiaute -- todos usam o
+    # grupo ICMSSN102. Mesmo com base/valor preenchidos, nao vao pro XML.
+    data = _nfe_data_minima(emit_crt=1, cst_icms=None, csosn_icms=csosn,
+                             base_icms=Decimal("10.00"), valor_icms=Decimal("1.20"))
+    grupo = _icms_grupo(build_nfe_xml(data))
+    assert etree.QName(grupo).localname == "ICMSSN102"
+    assert _filhos(grupo) == ["orig", "CSOSN"]
+    assert grupo.find(f"{{{NFE_NS}}}CSOSN").text == csosn
+
+
+@pytest.mark.parametrize("cst", ["40", "41", "50"])
+def test_build_nfe_xml_cst_sem_calculo_omite_vbc_e_vicms(cst):
+    # CST 40/41/50 (isenta/nao tributada/suspensao) usam o grupo ICMS40, sem vBC/vICMS.
+    data = _nfe_data_minima(cst_icms=cst, base_icms=Decimal("10.00"), valor_icms=Decimal("1.80"))
+    grupo = _icms_grupo(build_nfe_xml(data))
+    assert etree.QName(grupo).localname == "ICMS40"
+    assert _filhos(grupo) == ["orig", "CST"]
+    assert grupo.find(f"{{{NFE_NS}}}CST").text == cst
+
+
+def test_build_nfe_xml_cst_tributado_mantem_vbc_e_vicms():
+    grupo = _icms_grupo(build_nfe_xml(_nfe_data_minima(cst_icms="00")))
+    assert etree.QName(grupo).localname == "ICMS00"
+    assert grupo.find(f"{{{NFE_NS}}}vBC").text == "10.00"
+    assert grupo.find(f"{{{NFE_NS}}}vICMS").text == "1.80"
+
+
 def test_build_nfe_xml_inclui_dhemi():
     data = _nfe_data_minima(dh_emi=datetime(2026, 11, 5, 10, 0, 0, tzinfo=timezone.utc))
     xml = build_nfe_xml(data)
