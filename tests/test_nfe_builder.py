@@ -19,9 +19,10 @@ def _empresa(crt: int = 3, uf: str = "PA") -> Empresa:
     )
 
 
-def _cliente(uf: str = "PA") -> Cliente:
+def _cliente(uf: str = "PA", inscricao_estadual: str | None = None) -> Cliente:
     return Cliente(
         empresa_id=uuid.uuid4(), cpf_cnpj="98765432100", nome="Cliente Teste", uf=uf,
+        inscricao_estadual=inscricao_estadual,
     )
 
 
@@ -131,6 +132,46 @@ def test_monta_nfe_data_interestadual_sem_aliquota_interna_levanta_erro():
             empresa_pa, cliente_sp, "1", 1, {produto.id: produto},
             [ItemPedido(produto_id=produto.id, quantidade=Decimal("1"), valor_unitario_override=None)],
         )
+
+
+def test_monta_nfe_data_interestadual_para_contribuinte_sem_partilha_nem_aliquota_interna():
+    # B2B interestadual (cliente com IE): sem DIFAL, entao aliquota interna do
+    # destino nao e exigida; ICMS sai a aliquota interestadual (PA->SP = 12%).
+    empresa_pa = _empresa(uf="PA")
+    cliente_sp = _cliente(uf="SP", inscricao_estadual="123456789")
+    produto = _produto()
+    data = montar_nfe_data(
+        empresa_pa, cliente_sp, "1", 1, {produto.id: produto},
+        [ItemPedido(produto_id=produto.id, quantidade=Decimal("1"), valor_unitario_override=None)],
+    )
+    item = data.itens[0]
+    assert data.dest_ie == "123456789"
+    assert item.base_icms == Decimal("10.00")
+    assert item.valor_icms == Decimal("1.20")
+    assert item.valor_icms_uf_remetente is None
+    assert item.valor_icms_uf_destino is None
+    assert item.valor_fcp is None
+
+
+@pytest.mark.parametrize("ie_vazia", ["", "   "])
+def test_monta_nfe_data_ie_vazia_do_cliente_e_tratada_como_nao_contribuinte(ie_vazia):
+    # IE em branco nao e IE: mesmo tratamento de None (indIEDest=9, DIFAL),
+    # pra o gate do DIFAL e o indFinal/indIEDest do XML nao divergirem.
+    empresa_pa = _empresa(uf="PA")
+    cliente_sp = _cliente(uf="SP", inscricao_estadual=ie_vazia)
+    produto = _produto()
+    with pytest.raises(ValueError, match="aliquota interna"):
+        montar_nfe_data(
+            empresa_pa, cliente_sp, "1", 1, {produto.id: produto},
+            [ItemPedido(produto_id=produto.id, quantidade=Decimal("1"), valor_unitario_override=None)],
+        )
+    data = montar_nfe_data(
+        empresa_pa, cliente_sp, "1", 1, {produto.id: produto},
+        [ItemPedido(produto_id=produto.id, quantidade=Decimal("1"), valor_unitario_override=None,
+                     aliquota_interna_destino=Decimal("18.00"))],
+    )
+    assert data.dest_ie is None
+    assert data.itens[0].valor_icms_uf_destino == Decimal("0.60")
 
 
 def test_monta_nfe_data_usa_cfop_override_do_item_quando_informado():

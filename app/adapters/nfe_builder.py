@@ -30,11 +30,12 @@ class ItemPedido:
     quantidade: Decimal
     valor_unitario_override: Decimal | None
     # Aliquota interna do ICMS na UF de destino (%), so usada quando a venda
-    # e interestadual (empresa.uf != cliente.uf). O projeto ainda nao tem
+    # e interestadual (empresa.uf != cliente.uf) PARA NAO CONTRIBUINTE (cliente
+    # sem IE) -- unico caso de DIFAL; B2B interestadual ignora. O projeto ainda nao tem
     # tabela automatica de aliquota interna por UF (ver app/adapters/icms.py)
     # -- por ora e informada manualmente por quem monta o pedido (equivalente
     # ao "cadastro manual" previsto no design doc da Fase 5). Venda interna
-    # ignora este campo. Venda interestadual sem ele levanta
+    # ignora este campo. Venda interestadual p/ nao contribuinte sem ele levanta
     # AliquotaInterestadualInvalida (ver calcular_icms_item).
     aliquota_interna_destino: Decimal | None = None
     # CFOP desta emissao (ItemEmissaoNfe.cfop). Um unico Produto.cfop_padrao
@@ -45,6 +46,17 @@ class ItemPedido:
 
 def _arredondar(valor: Decimal) -> Decimal:
     return valor.quantize(_CENTAVOS, rounding=ROUND_HALF_UP)
+
+
+def _ie_do_cliente(cliente: Cliente) -> str | None:
+    """IE do destinatario normalizada: em branco vira None (nao contribuinte).
+
+    Fonte unica pro gate do DIFAL (calcular_icms_item) e pro NfeData.dest_ie
+    (indIEDest/indFinal no XML) -- os dois precisam concordar sobre quem e
+    contribuinte. O valor literal "ISENTO" NAO e tratado aqui (ver caveat em
+    app/adapters/icms.py)."""
+    ie = (cliente.inscricao_estadual or "").strip()
+    return ie or None
 
 
 def _montar_item(n_item: int, produto: Produto, item: ItemPedido, empresa: Empresa, cliente: Cliente) -> NfeItemData:
@@ -74,6 +86,7 @@ def _montar_item(n_item: int, produto: Produto, item: ItemPedido, empresa: Empre
         uf_destino=cliente.uf,
         aliquota_interna_destino=item.aliquota_interna_destino,
         cst_ou_csosn=cst_icms if cst_icms is not None else csosn_icms,
+        dest_ie=_ie_do_cliente(cliente),
     )
 
     return NfeItemData(
@@ -129,6 +142,6 @@ def montar_nfe_data(
         dest_cpf_cnpj=cliente.cpf_cnpj,
         dest_nome=cliente.nome,
         dest_uf=cliente.uf,
-        dest_ie=cliente.inscricao_estadual,
+        dest_ie=_ie_do_cliente(cliente),
         itens=itens_nfe,
     )

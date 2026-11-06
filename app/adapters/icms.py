@@ -1,4 +1,4 @@
-"""Cálculo de ICMS por item de NF-e: operação interna e partilha interestadual.
+"""Cálculo de ICMS por item de NF-e: operação interna, interestadual e DIFAL.
 
 Operação interna (`uf_emitente == uf_destino`): esta função apenas devolve a
 base de cálculo (`valor_total` do item). O valor de ICMS efetivamente devido
@@ -10,11 +10,30 @@ emitente). Quando não informado, `valor_icms` volta `None` -- é
 responsabilidade do chamador decidir se isso é aceitável, até que exista uma
 tabela de alíquotas internas por UF no projeto.
 
-Operação interestadual (EC 87/2015 -- "partilha" do ICMS + FCP): o vendedor
-cobra ICMS à alíquota interestadual (tabela pública fixa, só entre UF de
-origem e UF de destino -- não depende da mercadoria, exceto pela alíquota de
-4% para produto importado, que este módulo NÃO implementa porque
-`NfeItemData`/esta função não recebem um flag "importado"). A diferença entre
+Operação interestadual: o vendedor sempre cobra ICMS à alíquota
+interestadual (tabela pública fixa, só entre UF de origem e UF de destino --
+não depende da mercadoria, exceto pela alíquota de 4% para produto
+importado, que este módulo NÃO implementa porque `NfeItemData`/esta função
+não recebem um flag "importado"). O que muda é o DESTINATÁRIO (`dest_ie`):
+
+- Destinatário CONTRIBUINTE do ICMS (`dest_ie` informado -- tem Inscrição
+  Estadual, típico B2B): NÃO há DIFAL/partilha/FCP. O ICMS sai só à alíquota
+  interestadual e os três campos de partilha voltam `None` (igual à operação
+  interna). `aliquota_interna_destino` é irrelevante aqui e NÃO é exigida.
+- Destinatário NÃO CONTRIBUINTE / consumidor final (`dest_ie is None`): é o
+  ÚNICO caso de DIFAL (EC 87/2015), descrito abaixo.
+
+SIMPLIFICAÇÃO: "tem IE" (`dest_ie is not None`) é o único sinal de
+contribuinte que este módulo tem. A regra real usa o indicador de consumidor
+final (indFinal) + indIEDest: um contribuinte comprando para uso/consumo
+próprio também gera DIFAL (devido pelo próprio destinatário, sem
+ICMSUFDest), e destinatário com IE "ISENTO" (indIEDest=2) é tratado pela
+SEFAZ como não contribuinte -- nenhum desses casos é modelado aqui. O mesmo
+critério alimenta o `indFinal` do XML (`nfe_core/nfe.py`), pra os dois nunca
+divergirem. Reconfirmar no spike fiscal de homologação da Fase 1.
+
+DIFAL (EC 87/2015 -- "partilha" do ICMS + FCP, só para não contribuinte em
+operação interestadual): a diferença entre
 a alíquota interna do destino (`aliquota_interna_destino`, obrigatória nesse
 caso -- OBRIGATORIAMENTE informada pelo chamador, pois o projeto não tem
 tabela automática de alíquota interna por UF) e a interestadual é o ICMS
@@ -22,10 +41,10 @@ devido à UF de destino (`valor_icms_uf_destino`). Pelo cronograma original da
 EC 87/2015 essa diferença era partilhada ano a ano entre origem e destino,
 mas o cronograma terminou em 2019: hoje a diferença INTEGRAL vai para o
 destino, e a parcela da UF de origem (`valor_icms_uf_remetente`) é
-corretamente `Decimal("0")` -- não `None` -- pois `None` significa "a
-operação não é interestadual" para o builder de XML (`nfe_core/nfe.py`,
-`_add_det`), enquanto `Decimal("0")` significa "é interestadual, e a parcela
-da UF de origem hoje é zero".
+corretamente `Decimal("0")` -- não `None` -- pois `None` significa "não há
+partilha nesta operação" (interna, ou interestadual para contribuinte) para o
+builder de XML (`nfe_core/nfe.py`, `_add_det`), enquanto `Decimal("0")`
+significa "há partilha, e a parcela da UF de origem hoje é zero".
 
 A TABELA ABAIXO (`ALIQUOTA_INTERESTADUAL_SIMPLIFICADA`) É UMA SIMPLIFICAÇÃO,
 NÃO A TABELA OFICIAL COMPLETA: a regra real tem exceções e casos por produto
@@ -45,7 +64,7 @@ FCP (Fundo de Combate à Pobreza): calcular o FCP realmente devido exige saber
 se/quanto a UF de destino cobra de adicional e se esse adicional já está
 embutido em `aliquota_interna_destino` ou não -- esse detalhamento (tabela de
 FCP por UF) está fora do escopo desta tarefa. `valor_fcp` é `Decimal("0")`
-por padrão em operação interestadual; se algum dia for preciso computar FCP
+por padrão quando há DIFAL (interestadual para não contribuinte); se algum dia for preciso computar FCP
 de fato, o chamador precisará passar essa informação explicitamente (ver
 Review Focus do plano).
 
@@ -76,7 +95,7 @@ _CENTAVOS = Decimal("0.01")
 
 
 class AliquotaInterestadualInvalida(ValueError):
-    """Venda interestadual sem a alíquota interna do destino informada."""
+    """Venda interestadual para não contribuinte sem a alíquota interna do destino informada."""
 
 
 @dataclass
@@ -105,8 +124,19 @@ def calcular_icms_item(
     uf_destino: str,
     aliquota_interna_destino: Decimal | None,
     cst_ou_csosn: str,
+    *,
+    dest_ie: str | None,
 ) -> ItemIcmsCalculado:
-    """Calcula o ICMS de um item: operação interna, ou partilha EC 87/2015 + FCP.
+    """Calcula o ICMS de um item em um de três casos (ver docstring do módulo):
+
+    - interna (`uf_emitente == uf_destino`): sem partilha;
+    - interestadual para contribuinte (`dest_ie` informado): ICMS à alíquota
+      interestadual, sem partilha, sem exigir `aliquota_interna_destino`;
+    - interestadual para não contribuinte (`dest_ie is None`): DIFAL/partilha
+      EC 87/2015 + FCP, exige `aliquota_interna_destino`.
+
+    `dest_ie` é keyword-only e obrigatório de propósito: decide se há DIFAL,
+    então o chamador precisa dizer explicitamente qual é a IE do destinatário.
 
     `cst_ou_csosn` faz parte da assinatura pra compatibilidade com o restante
     do pipeline de NF-e, mas não altera o cálculo nesta versão (ver docstring
@@ -130,15 +160,26 @@ def calcular_icms_item(
             valor_fcp=None,
         )
 
-    if aliquota_interna_destino is None:
-        raise AliquotaInterestadualInvalida(
-            "venda interestadual exige a aliquota interna do destino "
-            "(aliquota_interna_destino) para calcular a partilha do ICMS "
-            "(DIFAL, EC 87/2015)"
-        )
-
     aliquota_interestadual = _aliquota_interestadual(uf_emitente, uf_destino)
     valor_icms = _arredondar(base_icms * aliquota_interestadual / Decimal("100"))
+
+    if dest_ie is not None:
+        # Interestadual para contribuinte (B2B): sem DIFAL/partilha/FCP.
+        return ItemIcmsCalculado(
+            base_icms=base_icms,
+            valor_icms=valor_icms,
+            valor_icms_uf_remetente=None,
+            valor_icms_uf_destino=None,
+            valor_fcp=None,
+        )
+
+    if aliquota_interna_destino is None:
+        raise AliquotaInterestadualInvalida(
+            "venda interestadual para nao contribuinte (destinatario sem IE) exige "
+            "a aliquota interna do destino (aliquota_interna_destino) para calcular "
+            "a partilha do ICMS (DIFAL, EC 87/2015)"
+        )
+
     diferenca_aliquota = aliquota_interna_destino - aliquota_interestadual
     valor_icms_uf_destino = _arredondar(base_icms * diferenca_aliquota / Decimal("100"))
 

@@ -408,12 +408,14 @@ class ItemEmissaoNfe(Base):
     cfop: Mapped[str] = mapped_column(String(4), nullable=False)
     base_icms: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     valor_icms: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
-    # Partilha do ICMS (EC 87/2015) -- so em venda interestadual; nulos na venda interna.
+    # Partilha do ICMS (EC 87/2015) -- so em venda interestadual para nao
+    # contribuinte (cliente sem IE); nulos na venda interna e no B2B interestadual.
     valor_icms_uf_remetente: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     valor_icms_uf_destino: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     valor_fcp: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     # Aliquota interna do ICMS na UF de destino (%), informada por quem cria a
     # emissao e consumida pelo worker (ItemPedido.aliquota_interna_destino).
-    # Obrigatoria so em venda interestadual -- sem ela o calculo do DIFAL
+    # Obrigatoria so em venda interestadual para nao contribuinte (cliente sem
+    # IE) -- sem ela o calculo do DIFAL
     # levanta AliquotaInterestadualInvalida (app/adapters/icms.py).
     aliquota_interna_destino: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
