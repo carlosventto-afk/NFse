@@ -3,8 +3,9 @@
 Leiaute: NF-e 4.00 (NT da NF-e), namespace oficial
 http://www.portalfiscal.inf.br/nfe. Estrutura mínima: identificação (ide),
 emitente (emit), destinatário (dest) e itens (det/prod/imposto/ICMS), com
-partilha de ICMS interestadual (ICMSUFDest, EC 87/2015) quando a UF do
-destinatário difere da UF do emitente.
+partilha de ICMS interestadual (ICMSUFDest, EC 87/2015) só quando a UF do
+destinatário difere da UF do emitente E o destinatário não tem IE (não
+contribuinte / consumidor final) -- venda interestadual B2B não tem DIFAL.
 
 NAO é a implementação exaustiva do schema XSD completo (sem enderEmit,
 enderDest, totais <total>, transporte <transp> ou grupos de PIS/COFINS/IPI
@@ -61,7 +62,8 @@ class NfeItemData:
     base_icms: Decimal | None
     valor_icms: Decimal | None
     # Partilha ICMS interestadual (EC 87/2015) -- só relevantes/emitidos
-    # quando a UF do destinatário difere da UF do emitente.
+    # quando a UF do destinatário difere da UF do emitente E o destinatário
+    # não tem IE (não contribuinte). Fora disso, devem ser None.
     valor_icms_uf_remetente: Decimal | None
     valor_icms_uf_destino: Decimal | None
     valor_fcp: Decimal | None
@@ -143,7 +145,9 @@ def chave_de_acesso(data: NfeData, c_nf: str) -> str:
     return chave_sem_dv + _dv_mod11(chave_sem_dv)
 
 
-def _add_det(inf: etree._Element, item: NfeItemData, interestadual: bool) -> None:
+def _add_det(inf: etree._Element, item: NfeItemData, difal: bool) -> None:
+    """`difal`: interestadual E destinatário não contribuinte -- único caso em
+    que o grupo ICMSUFDest (partilha EC 87/2015) existe."""
     det = _el(inf, "det")
     det.set("nItem", str(item.n_item))
 
@@ -199,9 +203,16 @@ def _add_det(inf: etree._Element, item: NfeItemData, interestadual: bool) -> Non
     if item.valor_icms is not None:
         _el(grupo, "vICMS", f"{item.valor_icms:.2f}")
 
-    if interestadual and any(
+    tem_partilha = any(
         v is not None for v in (item.valor_fcp, item.valor_icms_uf_destino, item.valor_icms_uf_remetente)
-    ):
+    )
+    if tem_partilha and not difal:
+        raise ValueError(
+            f"item {item.n_item} tem valores de partilha do ICMS (DIFAL/ICMSUFDest), mas a "
+            "operacao nao e interestadual para nao contribuinte -- partilha so se aplica a "
+            "destinatario sem IE em venda interestadual"
+        )
+    if tem_partilha:
         icms_uf_dest = _el(imposto, "ICMSUFDest")
         if item.valor_fcp is not None:
             _el(icms_uf_dest, "vFCPUFDest", f"{item.valor_fcp:.2f}")
@@ -234,6 +245,11 @@ def build_nfe_xml(data: NfeData) -> bytes:
     c_nf = _gerar_c_nf(data)
     chave = chave_de_acesso(data, c_nf=c_nf)
     interestadual = data.emit_uf.strip().upper() != data.dest_uf.strip().upper()
+    # Mesmo predicado do indIEDest abaixo: sem IE => não contribuinte. Ele
+    # decide indFinal e se há DIFAL (ICMSUFDest) -- espelha o gate de
+    # app/adapters/icms.py (calcular_icms_item), pra XML e cálculo concordarem.
+    dest_contribuinte = bool(data.dest_ie)
+    difal = interestadual and not dest_contribuinte
 
     root = etree.Element(f"{{{NFE_NS}}}NFe", nsmap={None: NFE_NS})
     inf = etree.SubElement(root, f"{{{NFE_NS}}}infNFe", versao="4.00")
@@ -254,6 +270,12 @@ def build_nfe_xml(data: NfeData) -> bytes:
     _el(ide, "cDV", chave[-1])
     _el(ide, "tpAmb", str(data.tp_amb))
     _el(ide, "finNFe", "1")                    # 1 = NF-e normal
+    # indFinal: 1 = consumidor final, 0 = normal. SIMPLIFICAÇÃO: derivado só
+    # de ter IE (contribuinte comprando pra uso/consumo próprio também seria
+    # consumidor final) -- ver docstring de app/adapters/icms.py. Ordem
+    # finNFe -> indFinal -> indPres segue o leiaute 4.00; reconfirmar no spike
+    # de homologação da Fase 1 (indPres ainda não é emitido).
+    _el(ide, "indFinal", "0" if dest_contribuinte else "1")
     _el(ide, "procEmi", "0")                   # 0 = emissão própria do contribuinte
     _el(ide, "verProc", "NfeCore/1.0")
 
@@ -270,7 +292,7 @@ def build_nfe_xml(data: NfeData) -> bytes:
     dest = _el(inf, "dest")
     _el(dest, "CPF" if len(dest_doc) == 11 else "CNPJ", dest_doc)
     _el(dest, "xNome", data.dest_nome[:60])
-    if data.dest_ie:
+    if dest_contribuinte:
         _el(dest, "IE", _digits(data.dest_ie))
         _el(dest, "indIEDest", "1")            # 1 = contribuinte de ICMS
     else:
@@ -278,6 +300,6 @@ def build_nfe_xml(data: NfeData) -> bytes:
     _el(dest, "UF", data.dest_uf.strip().upper())
 
     for item in data.itens:
-        _add_det(inf, item, interestadual)
+        _add_det(inf, item, difal)
 
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8")

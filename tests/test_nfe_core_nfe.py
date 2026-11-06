@@ -3,8 +3,9 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
+from lxml import etree
 
-from nfe_core.nfe import NfeData, NfeItemData, build_nfe_xml, chave_de_acesso
+from nfe_core.nfe import NFE_NS, NfeData, NfeItemData, build_nfe_xml, chave_de_acesso
 
 _ITEM_FIELDS = {
     "n_item", "c_prod", "descricao", "ncm", "cfop", "unidade", "quantidade",
@@ -75,6 +76,47 @@ def test_build_nfe_xml_inclui_icms_uf_destino_quando_interestadual():
     xml = build_nfe_xml(data)
     assert b"vICMSUFDest" in xml
     assert b"vFCP" in xml
+
+
+def _ide_tags(xml: bytes) -> list[str]:
+    root = etree.fromstring(xml)
+    ide = root.find(f".//{{{NFE_NS}}}ide")
+    return [etree.QName(child).localname for child in ide]
+
+
+def _ide_text(xml: bytes, tag: str) -> str | None:
+    node = etree.fromstring(xml).find(f".//{{{NFE_NS}}}ide/{{{NFE_NS}}}{tag}")
+    return None if node is None else node.text
+
+
+@pytest.mark.parametrize("dest_ie,ind_final", [(None, "1"), ("123456789", "0")])
+def test_build_nfe_xml_ind_final_deriva_do_dest_ie(dest_ie, ind_final):
+    # indFinal: 1 = consumidor final (destinatario sem IE), 0 = contribuinte.
+    xml = build_nfe_xml(_nfe_data_minima(dest_ie=dest_ie))
+    assert _ide_text(xml, "indFinal") == ind_final
+
+
+def test_build_nfe_xml_ind_final_vem_logo_apos_fin_nfe():
+    tags = _ide_tags(build_nfe_xml(_nfe_data_minima()))
+    assert tags[tags.index("finNFe") + 1] == "indFinal"
+
+
+def test_build_nfe_xml_recusa_partilha_para_destinatario_contribuinte():
+    # ICMSUFDest (DIFAL) so existe pra nao contribuinte -- partilha com
+    # destinatario com IE e dado inconsistente, erra alto em vez de emitir.
+    data = _nfe_data_minima(emit_uf="PA", dest_uf="SP", dest_ie="123456789",
+                             valor_icms_uf_destino=Decimal("10.00"), valor_fcp=Decimal("2.00"),
+                             valor_icms_uf_remetente=Decimal("0.00"))
+    with pytest.raises(ValueError, match="contribuinte"):
+        build_nfe_xml(data)
+
+
+def test_build_nfe_xml_interestadual_para_contribuinte_sem_icms_uf_dest():
+    data = _nfe_data_minima(emit_uf="PA", dest_uf="SP", dest_ie="123456789")
+    xml = build_nfe_xml(data)
+    assert b"ICMSUFDest" not in xml
+    assert _ide_text(xml, "idDest") == "2"
+    assert _ide_text(xml, "indFinal") == "0"
 
 
 def test_build_nfe_xml_inclui_dhemi():
