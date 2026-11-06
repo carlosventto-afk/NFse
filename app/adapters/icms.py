@@ -72,11 +72,11 @@ Review Focus do plano).
 restante do pipeline de NF-e), mas esta função não ramifica o cálculo por
 CST/CSOSN: tratamento de isenção/suspensão por código (CST 40/41/50 etc.) não
 é exigido por nenhum teste desta tarefa e fica fora de escopo (YAGNI) até que
-surja um caso de uso real. Consequência: para códigos sem cálculo de ICMS
-(CSOSN 102/103/300/400, CST 40/41/50) `base_icms`/`valor_icms` ainda vêm
-preenchidos daqui, mas o builder de XML (`nfe_core/nfe.py`,
-`_CSOSN_SEM_CALCULO_ICMS`/`_CST_SEM_CALCULO_ICMS`) os omite, pois esses
-grupos não têm vBC/vICMS no leiaute.
+surja um caso de uso real. Consequência: `base_icms`/`valor_icms` vêm sempre
+preenchidos daqui, e o builder de XML (`nfe_core/nfe.py`, allow-lists
+`_CST_COM_VBC_VICMS`/`_CSOSN_COM_VBC_VICMS`) só os emite para os códigos que
+têm vBC/vICMS no leiaute (CST 00/10/20/51/70/90, CSOSN 900) -- todo o resto
+(inclusive CSOSN 101, o mais comum do Simples Nacional) sai sem esses campos.
 """
 from __future__ import annotations
 

@@ -151,11 +151,44 @@ def test_build_nfe_xml_cst_sem_calculo_omite_vbc_e_vicms(cst):
     assert grupo.find(f"{{{NFE_NS}}}CST").text == cst
 
 
-def test_build_nfe_xml_cst_tributado_mantem_vbc_e_vicms():
-    grupo = _icms_grupo(build_nfe_xml(_nfe_data_minima(cst_icms="00")))
-    assert etree.QName(grupo).localname == "ICMS00"
+@pytest.mark.parametrize("cst", ["00", "10", "20", "51", "70", "90"])
+def test_build_nfe_xml_cst_com_vbc_vicms_mantem_vbc_e_vicms(cst):
+    grupo = _icms_grupo(build_nfe_xml(_nfe_data_minima(cst_icms=cst)))
+    assert etree.QName(grupo).localname == f"ICMS{cst}"
     assert grupo.find(f"{{{NFE_NS}}}vBC").text == "10.00"
     assert grupo.find(f"{{{NFE_NS}}}vICMS").text == "1.80"
+
+
+@pytest.mark.parametrize("cst", ["30", "60"])
+def test_build_nfe_xml_cst_30_e_60_omitem_vbc_e_vicms(cst):
+    # CST 30 (isenta/nao tributada com ST) e 60 (ST ja retido) nao tem
+    # vBC/vICMS no leiaute -- a antiga skip-list deixava passar.
+    data = _nfe_data_minima(cst_icms=cst, base_icms=Decimal("10.00"), valor_icms=Decimal("1.80"))
+    grupo = _icms_grupo(build_nfe_xml(data))
+    assert etree.QName(grupo).localname == f"ICMS{cst}"
+    assert _filhos(grupo) == ["orig", "CST"]
+
+
+def test_build_nfe_xml_csosn_101_omite_vbc_e_vicms():
+    # Regressao: CSOSN 101 (o mais comum do Simples Nacional) NAO tem
+    # vBC/vICMS no leiaute (tem pCredSN/vCredICMSSN, ainda nao modelados).
+    # Grupo sai "pelado" (orig+CSOSN) em vez de com campos errados.
+    data = _nfe_data_minima(emit_crt=1, cst_icms=None, csosn_icms="101",
+                             base_icms=Decimal("10.00"), valor_icms=Decimal("1.20"))
+    grupo = _icms_grupo(build_nfe_xml(data))
+    assert etree.QName(grupo).localname == "ICMSSN101"
+    assert _filhos(grupo) == ["orig", "CSOSN"]
+
+
+def test_build_nfe_xml_csosn_900_mantem_vbc_e_vicms():
+    # CSOSN 900 ("Outros") e o unico do Simples Nacional com vBC/vICMS.
+    data = _nfe_data_minima(emit_crt=1, cst_icms=None, csosn_icms="900",
+                             base_icms=Decimal("10.00"), valor_icms=Decimal("1.20"))
+    grupo = _icms_grupo(build_nfe_xml(data))
+    assert etree.QName(grupo).localname == "ICMSSN900"
+    assert _filhos(grupo) == ["orig", "CSOSN", "vBC", "vICMS"]
+    assert grupo.find(f"{{{NFE_NS}}}vBC").text == "10.00"
+    assert grupo.find(f"{{{NFE_NS}}}vICMS").text == "1.20"
 
 
 def test_build_nfe_xml_inclui_dhemi():

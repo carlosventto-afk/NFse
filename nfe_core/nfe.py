@@ -30,13 +30,28 @@ from lxml import etree
 
 NFE_NS = "http://www.portalfiscal.inf.br/nfe"
 
-# CSOSN sem cálculo de ICMS no item (102 tributada sem permissão de crédito,
-# 103 isenção na faixa de receita, 300 imune, 400 não tributada): o leiaute
-# agrupa todos em ICMSSN102, só com orig+CSOSN -- sem vBC/vICMS.
-_CSOSN_SEM_CALCULO_ICMS = frozenset({"102", "103", "300", "400"})
-# CST (Regime Normal) sem cálculo de ICMS no item (40 isenta, 41 não
-# tributada, 50 suspensão): todos no grupo ICMS40, sem vBC/vICMS.
-_CST_SEM_CALCULO_ICMS = frozenset({"40", "41", "50"})
+# So estes CST tem vBC/vICMS no leiaute real (00 tributada integralmente,
+# 10 com ST, 20 com reducao de base, 51 diferimento, 70 reducao+ST, 90
+# outros). Qualquer CST fora desta lista (ex.: 30 isenta/nao-tributada
+# com ST, 40/41/50 isenta/nao-tributada/suspensao, 60 ST ja retido) nao
+# tem esses campos -- omitir em vez de arriscar emitir errado.
+_CST_COM_VBC_VICMS = frozenset({"00", "10", "20", "51", "70", "90"})
+
+# Simples Nacional: SO o CSOSN 900 ("Outros") tem vBC/vICMS no leiaute
+# real. Os demais (101, 102, 103, 201, 202, 203, 300, 400, 500) nao tem
+# esses campos -- alguns (ex.: 101) tem campos PROPRIOS (pCredSN,
+# vCredICMSSN) que este modulo ainda nao modela (NfeItemData nao carrega
+# essa informacao). Omitir vBC/vICMS para qualquer CSOSN fora desta lista
+# e o minimo seguro (nao emite campo errado); nao e a implementacao
+# completa do CSOSN 101 em si, que precisa de pCredSN/vCredICMSSN -- fica
+# para quando esses dados existirem no cadastro (ver Fase 1 do plano).
+_CSOSN_COM_VBC_VICMS = frozenset({"900"})
+
+# Nome do grupo XML (independente de ter vBC/vICMS): o leiaute agrupa
+# CST 40/41/50 em ICMS40 e CSOSN 102/103/300/400 em ICMSSN102; os demais
+# códigos usam o grupo de mesmo número (ICMS{cst} / ICMSSN{csosn}).
+_CST_GRUPO_ICMS40 = frozenset({"40", "41", "50"})
+_CSOSN_GRUPO_ICMSSN102 = frozenset({"102", "103", "300", "400"})
 
 
 def _digits(value: str | None) -> str:
@@ -192,8 +207,8 @@ def _add_det(inf: etree._Element, item: NfeItemData, difal: bool) -> None:
                 f"CST de ICMS inválido: '{item.cst_icms}' tem {len(cst)} dígitos, "
                 "precisa ter exatamente 2"
             )
-        sem_calculo = cst in _CST_SEM_CALCULO_ICMS
-        grupo = _el(icms, "ICMS40" if sem_calculo else f"ICMS{cst}")
+        tem_vbc_vicms = cst in _CST_COM_VBC_VICMS
+        grupo = _el(icms, "ICMS40" if cst in _CST_GRUPO_ICMS40 else f"ICMS{cst}")
         _el(grupo, "orig", "0")   # 0 = nacional; sem campo dedicado de origem no MVP
         _el(grupo, "CST", cst)
     else:
@@ -203,15 +218,15 @@ def _add_det(inf: etree._Element, item: NfeItemData, difal: bool) -> None:
                 f"CSOSN inválido: '{item.csosn_icms}' tem {len(csosn)} dígitos, "
                 "precisa ter exatamente 3"
             )
-        sem_calculo = csosn in _CSOSN_SEM_CALCULO_ICMS
-        grupo = _el(icms, "ICMSSN102" if sem_calculo else f"ICMSSN{csosn}")
+        tem_vbc_vicms = csosn in _CSOSN_COM_VBC_VICMS
+        grupo = _el(icms, "ICMSSN102" if csosn in _CSOSN_GRUPO_ICMSSN102 else f"ICMSSN{csosn}")
         _el(grupo, "orig", "0")
         _el(grupo, "CSOSN", csosn)
 
-    # Códigos sem cálculo de ICMS não têm vBC/vICMS no leiaute: mesmo que o
-    # cálculo (app/adapters/icms.py, que não ramifica por código) tenha
-    # preenchido base/valor, eles não vão pro XML.
-    if not sem_calculo:
+    # Allow-list: só códigos que TÊM vBC/vICMS no leiaute os recebem. O
+    # cálculo (app/adapters/icms.py, que não ramifica por código) preenche
+    # base/valor sempre; para os demais códigos eles não vão pro XML.
+    if tem_vbc_vicms:
         if item.base_icms is not None:
             _el(grupo, "vBC", f"{item.base_icms:.2f}")
         if item.valor_icms is not None:
