@@ -132,6 +132,13 @@ class Empresa(Base):
     # certa -- evita a mesma rejeicao na primeira emissao de cada empresa.
     serie: Mapped[str] = mapped_column(String(5), default="10001", nullable=False)
     proximo_numero: Mapped[int] = mapped_column(default=1, nullable=False)
+    # Numeracao PROPRIA da NF-e modelo 55 -- documento fiscal distinto da
+    # NFS-e, nao pode compartilhar serie/proximo_numero acima (ver
+    # app/numeracao.py:reservar_proximo_numero_nfe). Sem regra conhecida de
+    # faixa reservada como a da NFS-e, entao "1"; confirmar no spike de
+    # homologacao da Fase 1, como todo detalhe de leiaute deste projeto.
+    serie_nfe: Mapped[str] = mapped_column(String(3), default="1", server_default="1", nullable=False)
+    proximo_numero_nfe: Mapped[int] = mapped_column(default=1, server_default="1", nullable=False)
     certificado_pfx_cifrado: Mapped[str] = mapped_column(Text, nullable=False)
     certificado_senha_cifrada: Mapped[str | None] = mapped_column(Text, nullable=True)
     certificado_valido_ate: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -142,6 +149,11 @@ class Empresa(Base):
     complemento: Mapped[str | None] = mapped_column(String(100), nullable=True)
     bairro: Mapped[str | None] = mapped_column(String(100), nullable=True)
     cep: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    # Dados fiscais para NF-e modelo 55 (mercadorias). crt: 1=Simples Nacional,
+    # 2=Simples Nacional excesso de sublimite, 3=Regime Normal.
+    inscricao_estadual: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    crt: Mapped[int | None] = mapped_column(nullable=True)
+    uf: Mapped[str | None] = mapped_column(String(2), nullable=True)
     # Provedor usado para TODAS as operacoes fiscais desta empresa (emissao,
     # cancelamento, consulta, PDF) -- "spedy" exige spedy_empresa_id e
     # spedy_api_key_cifrada preenchidos (provisionamento em PUT /empresas/mim).
@@ -326,3 +338,95 @@ class Emissao(Base):
     ambiente: Mapped[AmbienteEnum | None] = mapped_column(String(20), nullable=True)
 
     empresa: Mapped["Empresa"] = relationship(back_populates="emissoes")
+
+
+class Produto(Base):
+    __tablename__ = "produtos"
+    __table_args__ = (
+        UniqueConstraint("empresa_id", "codigo_interno", name="uq_produto_empresa_codigo_interno"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    empresa_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("empresas.id"), nullable=False)
+    codigo_interno: Mapped[str] = mapped_column(String(60), nullable=False)
+    descricao: Mapped[str] = mapped_column(String(120), nullable=False)
+    ncm: Mapped[str] = mapped_column(String(8), nullable=False)
+    cfop_padrao: Mapped[str] = mapped_column(String(4), nullable=False)
+    unidade: Mapped[str] = mapped_column(String(6), nullable=False)
+    # Exatamente um dos dois e preenchido: cst_icms no regime normal, csosn_icms
+    # no Simples Nacional (CRT 1/2) -- a validacao cruzada fica para a camada de
+    # servico, nao no banco.
+    cst_icms: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    csosn_icms: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    valor_unitario_padrao: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    eh_substituicao_tributaria: Mapped[bool] = mapped_column(default=False, nullable=False)
+    ativo: Mapped[bool] = mapped_column(default=True, nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_agora, nullable=False)
+
+
+class EmissaoNfe(Base):
+    __tablename__ = "emissoes_nfe"
+    __table_args__ = (
+        UniqueConstraint("empresa_id", "serie", "numero", name="uq_emissao_nfe_empresa_serie_numero"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    empresa_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("empresas.id"), nullable=False)
+    # Destinatario (reaproveita Cliente, que ja guarda UF/endereco completo).
+    cliente_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("clientes.id"), nullable=False)
+    serie: Mapped[str] = mapped_column(String(3), nullable=False)
+    numero: Mapped[int] = mapped_column(nullable=False)
+    # Chave de acesso NF-e tem 44 digitos (diferente dos 50 da NFS-e).
+    chave_acesso: Mapped[str | None] = mapped_column(String(44), nullable=True)
+    status: Mapped[StatusEmissao] = mapped_column(String(40), nullable=False)
+    xml_nfe: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    protocolo_autorizacao: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    erros: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resposta_bruta: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requisicao_bruta: Mapped[str | None] = mapped_column(Text, nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_agora, nullable=False)
+    # Reemissao automatica com backoff (mesma mecanica de Emissao -- ver
+    # _agendar_proxima_tentativa em app/worker.py).
+    tentativas_reemissao: Mapped[int] = mapped_column(default=0, server_default="0", nullable=False)
+    proxima_tentativa_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Justificativa (xJust, 15-255 caracteres) do pedido de cancelamento --
+    # gravada por POST /emissoes-nfe/{id}/cancelar; o envio do evento a SEFAZ
+    # (nfe_core.evento) ainda nao existe, a linha fica em cancelamento_pendente.
+    justificativa_cancelamento: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Ambiente (homologacao/producao) para o qual a chave/xml_nfe desta linha
+    # foram montados e enviados -- mesmo papel de Emissao.ambiente (NFS-e).
+    # Gravado UMA vez, no mesmo commit que grava chave_acesso/xml_nfe na
+    # primeira montagem (ver processar_uma_pendente_nfe), e nunca mais muda:
+    # toda retentativa consulta/reenvia NESTE ambiente, nunca no
+    # empresa.ambiente atual (a empresa pode alternar a qualquer momento via
+    # PUT /empresas/mim -- sem isso, uma nota de teste viraria documento
+    # fiscal real, ou a consulta de uma nota de producao iria pra SEFAZ de
+    # homologacao, que responde 217 e dispara reenvio no lugar errado). Nulo
+    # so enquanto a linha nunca foi montada (chave_acesso tambem nula).
+    ambiente: Mapped[AmbienteEnum | None] = mapped_column(String(20), nullable=True)
+
+
+class ItemEmissaoNfe(Base):
+    __tablename__ = "itens_emissao_nfe"
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    emissao_nfe_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("emissoes_nfe.id"), nullable=False)
+    produto_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("produtos.id"), nullable=False)
+    quantidade: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    valor_unitario: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    valor_total: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    # Pode sobrescrever Produto.cfop_padrao por emissao.
+    cfop: Mapped[str] = mapped_column(String(4), nullable=False)
+    base_icms: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    valor_icms: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    # Partilha do ICMS (EC 87/2015) -- so em venda interestadual para nao
+    # contribuinte (cliente sem IE); nulos na venda interna e no B2B interestadual.
+    valor_icms_uf_remetente: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    valor_icms_uf_destino: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    valor_fcp: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    # Aliquota interna do ICMS na UF de destino (%), informada por quem cria a
+    # emissao e consumida pelo worker (ItemPedido.aliquota_interna_destino).
+    # Obrigatoria so em venda interestadual para nao contribuinte (cliente sem
+    # IE) -- sem ela o calculo do DIFAL
+    # levanta AliquotaInterestadualInvalida (app/adapters/icms.py).
+    aliquota_interna_destino: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)

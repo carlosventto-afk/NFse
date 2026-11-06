@@ -228,12 +228,29 @@ class EmpresaDetalheOut(BaseModel):
     cep: str | None
     provedor_emissao: str
     spedy_empresa_id: str | None
+    uf: str | None
+    crt: int | None
+    inscricao_estadual: str | None
 
     model_config = {"from_attributes": True}
 
 
 class NumeracaoIn(BaseModel):
     serie: str = Field(min_length=1, max_length=5)
+    proximo_numero: int = Field(ge=1)
+
+
+class NumeracaoNfeOut(BaseModel):
+    """Mesma forma de NumeracaoOut, mas lida de Empresa.serie_nfe/
+    proximo_numero_nfe (sequencia propria da NF-e)."""
+    serie: str
+    proximo_numero: int
+
+
+class NumeracaoNfeIn(BaseModel):
+    # max_length=3 (nao 5 como NumeracaoIn): Empresa.serie_nfe e
+    # EmissaoNfe.serie sao String(3).
+    serie: str = Field(min_length=1, max_length=3)
     proximo_numero: int = Field(ge=1)
 
 
@@ -313,5 +330,118 @@ class EmissaoOut(BaseModel):
     tentativas_reemissao: int
     proxima_tentativa_em: datetime | None
     ambiente: str | None
+
+    model_config = {"from_attributes": True}
+
+
+class ProdutoCriarIn(BaseModel):
+    codigo_interno: str = Field(max_length=60)
+    descricao: str = Field(max_length=120)
+    ncm: str = Field(max_length=8)
+    cfop_padrao: str = Field(max_length=4)
+    unidade: str = Field(max_length=6)
+    cst_icms: str | None = Field(default=None, max_length=3)
+    csosn_icms: str | None = Field(default=None, max_length=3)
+    valor_unitario_padrao: Decimal | None = Field(default=None)
+    eh_substituicao_tributaria: bool = False
+
+
+class ProdutoAtualizarIn(ProdutoCriarIn):
+    ativo: bool = True
+
+
+class ItemEmissaoNfeIn(BaseModel):
+    produto_id: uuid.UUID
+    # max_digits/decimal_places espelham ItemEmissaoNfe Numeric(14, 4): sem
+    # isso o Postgres arredondaria em silencio na gravacao e o valor_total
+    # calculado aqui deixaria de bater com quantidade x valor_unitario gravados.
+    quantidade: Decimal = Field(max_digits=14, decimal_places=4)
+    valor_unitario_override: Decimal | None = Field(default=None, max_digits=14, decimal_places=4)
+    cfop_override: str | None = Field(default=None, pattern=r"^\d{4}$")
+    # Aliquota interna do ICMS na UF de destino (%) -- Numeric(5, 2).
+    aliquota_interna_destino: Decimal | None = Field(
+        default=None, ge=0, le=100, max_digits=5, decimal_places=2,
+    )
+
+    @field_validator("quantidade")
+    @classmethod
+    def quantidade_positiva(cls, v: Decimal) -> Decimal:
+        if v <= 0:
+            raise ValueError("quantidade deve ser positiva")
+        return v
+
+    @field_validator("valor_unitario_override")
+    @classmethod
+    def valor_unitario_positivo(cls, v: Decimal | None) -> Decimal | None:
+        if v is not None and v <= 0:
+            raise ValueError("valor_unitario_override, quando informado, deve ser positivo")
+        return v
+
+
+class EmissaoNfeIn(BaseModel):
+    cliente_id: uuid.UUID
+    itens: list[ItemEmissaoNfeIn] = Field(min_length=1)
+
+
+class CancelarEmissaoNfeIn(BaseModel):
+    # xJust do evento de cancelamento: 15 a 255 caracteres (mesmo minimo
+    # validado em nfe_core.evento.build_evento_cancelamento_nfe_xml).
+    justificativa: str
+
+    @field_validator("justificativa")
+    @classmethod
+    def justificativa_valida(cls, v: str) -> str:
+        v = v.strip()
+        if len(v) < 15:
+            raise ValueError("justificativa precisa ter ao menos 15 caracteres")
+        if len(v) > 255:
+            raise ValueError("justificativa nao pode passar de 255 caracteres")
+        return v
+
+
+class ItemEmissaoNfeOut(BaseModel):
+    id: uuid.UUID
+    produto_id: uuid.UUID
+    quantidade: Decimal
+    valor_unitario: Decimal
+    valor_total: Decimal
+    cfop: str
+    aliquota_interna_destino: Decimal | None
+
+    model_config = {"from_attributes": True}
+
+
+class EmissaoNfeOut(BaseModel):
+    id: uuid.UUID
+    cliente_id: uuid.UUID
+    status: str
+    serie: str
+    numero: int
+    chave_acesso: str | None
+    protocolo_autorizacao: str | None
+    erros: str | None
+    tentativas_reemissao: int
+    proxima_tentativa_em: datetime | None
+    justificativa_cancelamento: str | None
+    criado_em: datetime
+    # EmissaoNfe nao tem relationship ORM com os itens (ver app/worker.py) --
+    # o router preenche este campo explicitamente.
+    itens: list[ItemEmissaoNfeOut] = []
+
+    model_config = {"from_attributes": True}
+
+
+class ProdutoOut(BaseModel):
+    id: uuid.UUID
+    codigo_interno: str
+    descricao: str
+    ncm: str
+    cfop_padrao: str
+    unidade: str
+    cst_icms: str | None
+    csosn_icms: str | None
+    valor_unitario_padrao: Decimal | None
+    eh_substituicao_tributaria: bool
+    ativo: bool
 
     model_config = {"from_attributes": True}

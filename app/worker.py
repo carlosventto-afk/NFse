@@ -4,16 +4,22 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from cryptography.fernet import InvalidToken
+from lxml import etree
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.adapters.dps_builder import DadosEmissao, montar_dps_data
+from app.adapters.nfe_builder import ItemPedido, montar_nfe_data
 from app.adapters.spedy_client import SpedyClient, SpedyError
 from app.adapters.spedy_payload import montar_payload_spedy
 from app.adapters.spedy_resposta import chave_acesso_de, interpretar_status_cancelamento, interpretar_status_emissao
 from app.config import Settings, get_settings
 from app.crypto import decifrar
-from app.models import AmbienteEnum, Cliente, Emissao, Empresa, ProvedorEmissao, StatusEmissao
+from app.models import (
+    AmbienteEnum, Cliente, Emissao, EmissaoNfe, Empresa, ItemEmissaoNfe, Produto, ProvedorEmissao, StatusEmissao,
+)
+from nfe_core import NFE_NS, SefazClient, build_nfe_xml, eh_autorizado, eh_denegado, nao_encontrada, sign_nfe
+from nfe_core import AmbienteEnum as AmbienteNfe
 from nfse_core import (
     CertificateError,
     EventoCancelamentoData,
@@ -50,7 +56,7 @@ _BACKOFF_REEMISSAO_AUTOMATICA = [timedelta(minutes=2), timedelta(minutes=10), ti
 PACING_SEGUNDOS = 2.0
 
 
-def _agendar_proxima_tentativa(emissao: Emissao) -> None:
+def _agendar_proxima_tentativa(emissao: Emissao | EmissaoNfe) -> None:
     """Chamado toda vez que uma emissao e marcada como rejeitada: agenda a
     proxima tentativa automatica (ver processar_reemissao_automatica_pendente)
     se ainda nao estourou o limite. Nao mexe no status -- quem chama decide
@@ -63,7 +69,7 @@ def _agendar_proxima_tentativa(emissao: Emissao) -> None:
         emissao.proxima_tentativa_em = None
 
 
-async def _marcar_rejeitada(session: AsyncSession, emissao: Emissao, codigo: str, titulo: str) -> None:
+async def _marcar_rejeitada(session: AsyncSession, emissao: Emissao | EmissaoNfe, codigo: str, titulo: str) -> None:
     """Marca a emissao como rejeitada com um erro de origem interna (nao veio
     da SEFIN) e commita. json.dumps evita XML/mensagem de excecao com aspas
     ou barras invertidas quebrando o JSON gravado na coluna `erros`."""
@@ -620,6 +626,290 @@ async def processar_reemissao_automatica_pendente(session: AsyncSession) -> bool
     return True
 
 
+async def _montar_e_assinar_nfe(
+    session: AsyncSession, emissao: EmissaoNfe, empresa: Empresa, ambiente: AmbienteEnum, settings: Settings,
+) -> tuple[str, bytes]:
+    """Monta e assina a NF-e a partir do cadastro ATUAL. Devolve (chave, xml assinado).
+
+    `ambiente` e o da LINHA (congelado na primeira montagem), nunca o atual
+    da empresa: o tpAmb do XML tem que bater com a SEFAZ para onde ele vai.
+
+    Roda a cada tentativa que vai enviar (ver processar_uma_pendente_nfe).
+    dh_emi = emissao.criado_em (fixo desde a criacao da linha), entao a chave
+    -- cUF + AAMM + CNPJ + serie + numero + cNF(serie+numero) -- sai identica
+    em toda retentativa, mesmo cruzando a virada do mes. A chave sai do Id do
+    infNFe que o proprio build_nfe_xml gravou -- uma unica fonte de verdade,
+    sem recalcular chave_de_acesso() separadamente."""
+    pfx_base64 = decifrar(empresa.certificado_pfx_cifrado, settings.fernet_key)
+    senha = (
+        decifrar(empresa.certificado_senha_cifrada, settings.fernet_key)
+        if empresa.certificado_senha_cifrada
+        else None
+    )
+    cliente = await session.get(Cliente, emissao.cliente_id)
+    itens_db = (await session.execute(
+        select(ItemEmissaoNfe).where(ItemEmissaoNfe.emissao_nfe_id == emissao.id).order_by(ItemEmissaoNfe.id)
+    )).scalars().all()
+    produtos_por_id = {item.produto_id: await session.get(Produto, item.produto_id) for item in itens_db}
+    # valor_unitario do item ja e o preco final resolvido na criacao da
+    # emissao (Task 12) -- passado como override pra nao cair no
+    # valor_unitario_padrao do produto, que pode ter mudado desde entao.
+    itens = [
+        ItemPedido(
+            produto_id=item.produto_id,
+            quantidade=item.quantidade,
+            valor_unitario_override=item.valor_unitario,
+            aliquota_interna_destino=item.aliquota_interna_destino,
+            cfop_override=item.cfop,
+        )
+        for item in itens_db
+    ]
+    nfe_data = montar_nfe_data(
+        empresa, cliente, emissao.serie, emissao.numero, produtos_por_id, itens,
+        dh_emi=emissao.criado_em, ambiente=ambiente,
+    )
+    assinado = sign_nfe(build_nfe_xml(nfe_data), pfx_base64, senha)
+    inf = etree.fromstring(assinado).find(f"{{{NFE_NS}}}infNFe")
+    return inf.get("Id")[len("NFe"):], assinado
+
+
+async def processar_uma_pendente_nfe(session: AsyncSession, settings: Settings | None = None) -> bool:
+    """Processa uma NF-e 'pendente' (se houver). Retorna True se processou.
+
+    Mesma semantica de status da NFS-e: `pendente` = fila automatica do
+    worker; `aguardando_emissao` = rascunho que o worker ignora.
+
+    Espelha processar_uma_pendente (NFS-e): SELECT ... FOR UPDATE SKIP LOCKED,
+    chave gravada ANTES de falar com a SEFAZ, consulta antes de reenviar, erros
+    isolados por linha (nunca derruba o loop_worker).
+
+    Mesmo principio da NFS-e: toda tentativa que vai ENVIAR remonta e
+    reassina o XML a partir do cadastro ATUAL (itens, precos, CFOP, ICMS,
+    certificado) -- assim uma rejeicao por dado corrigivel (NCM, CFOP, preco)
+    se resolve corrigindo o cadastro, sem XML congelado. So a chave fica
+    estavel, como o dps_id da NFS-e: ela tem AAMM, entao o dh_emi e preso em
+    emissao.criado_em (nunca o relogio) e a chave recalculada e identica a de
+    qualquer tentativa anterior, mesmo cruzando a virada do mes.
+
+    Ordem numa retentativa (linha ja tem chave): consulta a SEFAZ PRIMEIRO,
+    com a chave gravada. Se ja esta autorizada, registra e NAO remonta -- o
+    xml_nfe gravado e exatamente o que foi enviado (gravado antes de cada
+    envio) e e o que a SEFAZ autorizou; remontar com cadastro alterado
+    guardaria um XML diferente do autorizado. Tambem nao depende do
+    certificado/cadastro estar OK pra reconhecer uma autorizacao que ja
+    aconteceu. Uso denegado (110/301/302) na consulta tambem e final: registra
+    a denegacao (com protocolo) sem remontar. So remonta, confere a chave e
+    envia quando a SEFAZ responde 217 (chave nao consta na base); qualquer
+    outra resposta e inconclusiva -- rejeita a linha com CONSULTA_INCONCLUSIVA
+    e deixa o backoff automatico consultar de novo, sem reenviar.
+
+    Rejeicao final: uso denegado e terminal (grava o protocolo da denegacao,
+    nao agenda retentativa); demais rejeicoes agendam retentativa automatica.
+    """
+    settings = settings or get_settings()
+
+    stmt = (
+        select(EmissaoNfe)
+        .where(EmissaoNfe.status == StatusEmissao.pendente)
+        .order_by(EmissaoNfe.criado_em)
+        .limit(1)
+        .with_for_update(skip_locked=True)
+    )
+    emissao = (await session.execute(stmt)).scalar_one_or_none()
+    if emissao is None:
+        return False
+
+    empresa = await session.get(Empresa, emissao.empresa_id)
+
+    # chave_acesso ja gravada = uma tentativa anterior chegou a montar/assinar
+    # (e talvez a submeter) esta NF-e. Nao se reenvia as cegas: pergunta-se
+    # primeiro a SEFAZ (mesmo principio do ja_submetida da NFS-e).
+    ja_submetida = emissao.chave_acesso is not None
+
+    # Ambiente (homologacao/producao) desta NF-e: congelado na LINHA na
+    # primeira montagem (mesmo commit da chave/XML, la embaixo) e nunca mais
+    # relido da empresa. empresa.ambiente pode mudar a qualquer momento (PUT
+    # /empresas/mim); ler o atual numa retentativa mandaria uma nota de teste
+    # pra SEFAZ real, ou consultaria uma nota de producao na SEFAZ de
+    # homologacao -- que responde 217 e dispararia reenvio no lugar errado.
+    # Mesmo principio de Emissao.ambiente na NFS-e, SEM o fallback pro
+    # ambiente atual: toda EmissaoNfe ja nasceu com esta coluna.
+    if ja_submetida:
+        if emissao.ambiente is None:
+            # Invariante quebrada (chave gravada sem ambiente). Cair pro
+            # empresa.ambiente reabriria exatamente o risco acima -- nao
+            # fala com SEFAZ nenhuma, deixa pra analise manual.
+            logger.error("emissao NF-e %s tem chave %s mas nao tem ambiente gravado", emissao.id, emissao.chave_acesso)
+            await _marcar_rejeitada(
+                session, emissao, "AMBIENTE_DESCONHECIDO",
+                f"a NF-e {emissao.chave_acesso} ja foi montada mas nao tem o ambiente "
+                "(homologacao/producao) gravado; consulta/reenvio bloqueados",
+            )
+            return True
+        ambiente_emissao = AmbienteEnum(emissao.ambiente)
+    else:
+        # Primeira montagem: unico momento em que o ambiente vem da empresa.
+        # So e persistido junto com chave/XML (abaixo) -- se a montagem
+        # falhar, nada foi enviado e a proxima tentativa decide de novo.
+        ambiente_emissao = AmbienteEnum(empresa.ambiente)
+    ambiente = AmbienteNfe(ambiente_emissao.value)
+    cliente_sefaz = SefazClient()
+
+    # O SefazClient nao tem uma excecao propria de transporte: repassa o que
+    # o zeep levantar. Por isso o `except Exception` abaixo, escopado SO as
+    # chamadas a SEFAZ (nunca ao resto da funcao): qualquer falha nelas e
+    # tratada como transporte, isolada nesta linha.
+    resposta = None
+    if ja_submetida:
+        try:
+            previa = await cliente_sefaz.consultar_protocolo(emissao.chave_acesso, empresa.uf, ambiente)
+        except Exception as exc:
+            # Nao da para saber se esta NF-e ja foi autorizada. Reenviar as
+            # cegas arrisca gravar como rejeitada (duplicidade) uma nota que
+            # foi autorizada -- registra para nova tentativa/reconciliacao.
+            await _marcar_rejeitada(
+                session, emissao, "CONSULTA_NFE",
+                f"nao foi possivel confirmar na SEFAZ se a NF-e {emissao.chave_acesso} "
+                f"ja foi autorizada: {exc}",
+            )
+            return True
+        if eh_autorizado(previa.c_stat) or eh_denegado(previa.c_stat):
+            # Resultado final ja registrado na SEFAZ para esta chave: usa a
+            # consulta como resposta, sem remontar nem reenviar. Denegacao
+            # cai no ramo terminal la embaixo (grava protocolo, sem retry).
+            resposta = previa
+        elif not nao_encontrada(previa.c_stat):
+            # So 217 ("nao consta na base") garante que reenviar e seguro.
+            # Qualquer outra resposta (erro da SEFAZ, cStat que nao parseou
+            # -> None, codigo desconhecido) = estado real desconhecido:
+            # reenviar arriscaria duplicidade ou sobrescrever o xml_nfe com
+            # um XML diferente do que a SEFAZ tem. Nao chuta -- agenda nova
+            # consulta pelo backoff normal.
+            await _marcar_rejeitada(
+                session, emissao, "CONSULTA_INCONCLUSIVA",
+                f"a consulta da NF-e {emissao.chave_acesso} na SEFAZ nao confirmou "
+                f"autorizacao nem inexistencia (cStat {previa.c_stat}: {previa.x_motivo}); "
+                "reenvio suspenso ate nova consulta",
+            )
+            return True
+        # else: 217 -> SEFAZ nao tem a chave; segue para remontar e enviar.
+
+    if resposta is None:
+        try:
+            chave, assinado = await _montar_e_assinar_nfe(session, emissao, empresa, ambiente_emissao, settings)
+        except (CertificateError, InvalidToken, ValueError, KeyError, TypeError, AttributeError) as exc:
+            # Tudo aqui e montagem PURA desta linha (nada desta tentativa foi
+            # enviado a SEFAZ; se havia tentativa anterior, a consulta acima
+            # ja confirmou que a chave nao consta na SEFAZ -- 217), entao recusar a linha e
+            # sempre seguro. Alem do trio da NFS-e (certificado / FERNET_KEY /
+            # ValueError de validacao, que inclui AliquotaInterestadualInvalida),
+            # cobre TypeError/AttributeError/KeyError de cadastro incompleto
+            # (ex.: Cliente.uf ou Empresa.uf nulos -> None.strip() no calculo
+            # de ICMS). Sem isso, a excecao escapa pro loop_worker, a linha
+            # volta a pendente no rollback e, sendo a mais antiga, e
+            # repescada a cada volta pra sempre -- travando a fila de NF-e de
+            # todas as empresas atras dela.
+            detalhe = str(exc) or (
+                "certificado cifrado desta empresa nao pode ser decifrado com a "
+                "FERNET_KEY atual (recadastre o certificado)"
+            )
+            await _marcar_rejeitada(session, emissao, "CERTIFICADO_OU_DADOS", detalhe)
+            return True
+
+        if ja_submetida and chave != emissao.chave_acesso:
+            # Nunca deveria acontecer: a chave so depende de criado_em, CNPJ,
+            # UF, serie e numero, que nao mudam depois da criacao da linha.
+            # Se mudou, enviar criaria uma NF-e com OUTRA chave pra mesma
+            # serie/numero enquanto a gravada pode estar em processamento --
+            # bloqueia e deixa para analise manual.
+            logger.error(
+                "emissao NF-e %s: chave recalculada %s diverge da gravada %s; envio bloqueado",
+                emissao.id, chave, emissao.chave_acesso,
+            )
+            await _marcar_rejeitada(
+                session, emissao, "CHAVE_DIVERGENTE",
+                f"chave recalculada {chave} diverge da chave ja gravada {emissao.chave_acesso} "
+                "(CNPJ/UF/serie/numero/criado_em mudaram?); envio bloqueado",
+            )
+            return True
+
+        # Chave e XML gravados ANTES do envio, de proposito: se o processo
+        # morrer entre o envio e o commit final, a proxima tentativa ja sabe
+        # a chave (consulta em vez de reenviar as cegas) e o xml_nfe e
+        # exatamente o que foi enviado. O ambiente vai no MESMO commit: chave,
+        # XML (com seu tpAmb) e o ambiente para onde foram enviados formam um
+        # snapshot unico -- ou tudo, ou nada. Numa retentativa (217) o valor
+        # ja e o gravado; reatribuir e no-op, nunca troca de ambiente.
+        emissao.chave_acesso = chave
+        emissao.xml_nfe = assinado
+        emissao.ambiente = ambiente_emissao
+        await session.commit()
+        # O commit acima solta a trava do SELECT ... FOR UPDATE; readquire
+        # para o resto do processamento continuar exclusivo desta linha.
+        await session.execute(select(EmissaoNfe).where(EmissaoNfe.id == emissao.id).with_for_update())
+
+        try:
+            resposta = await cliente_sefaz.autorizar(assinado, empresa.uf, ambiente)
+        except Exception as exc:
+            await _marcar_rejeitada(session, emissao, "TRANSPORTE", str(exc))
+            return True
+
+    emissao.resposta_bruta = str(resposta.bruta)
+    if eh_autorizado(resposta.c_stat):
+        emissao.status = StatusEmissao.autorizada
+        emissao.protocolo_autorizacao = resposta.protocolo
+        # Limpa erro/agendamento de uma tentativa rejeitada anterior.
+        emissao.erros = None
+        emissao.proxima_tentativa_em = None
+    else:
+        emissao.status = StatusEmissao.rejeitada
+        emissao.erros = json.dumps(
+            [{"codigo": resposta.c_stat or "SEFAZ", "titulo": resposta.x_motivo or "NF-e rejeitada pela SEFAZ"}],
+            ensure_ascii=False,
+        )
+        if eh_denegado(resposta.c_stat):
+            # Uso denegado e FINAL: o numero fica queimado na SEFAZ e o
+            # protocolo da denegacao e prova que precisa ser guardada.
+            # Retentar so repetiria a mesma denegacao -- sem agendamento,
+            # o promotor de reemissao automatica nunca repesca a linha.
+            emissao.protocolo_autorizacao = resposta.protocolo
+            emissao.proxima_tentativa_em = None
+            logger.warning("emissao NF-e %s com uso denegado; resposta bruta: %s", emissao.id, resposta.bruta)
+        else:
+            logger.warning("emissao NF-e %s rejeitada; resposta bruta: %s", emissao.id, resposta.bruta)
+            _agendar_proxima_tentativa(emissao)
+
+    await session.commit()
+    return True
+
+
+async def processar_reemissao_automatica_pendente_nfe(session: AsyncSession) -> bool:
+    """Espelha processar_reemissao_automatica_pendente para NF-e: promove UMA
+    emissao rejeitada com tentativa automatica vencida de volta pra
+    "pendente" (estado inicial da NF-e). processar_uma_pendente_nfe
+    cuida do reenvio -- consultando a SEFAZ antes, ja que a linha tem chave."""
+    agora = datetime.now(timezone.utc)
+    stmt = (
+        select(EmissaoNfe)
+        .where(
+            EmissaoNfe.status == StatusEmissao.rejeitada,
+            EmissaoNfe.proxima_tentativa_em.isnot(None),
+            EmissaoNfe.proxima_tentativa_em <= agora,
+        )
+        .order_by(EmissaoNfe.proxima_tentativa_em)
+        .limit(1)
+        .with_for_update(skip_locked=True)
+    )
+    emissao = (await session.execute(stmt)).scalar_one_or_none()
+    if emissao is None:
+        return False
+
+    emissao.status = StatusEmissao.pendente
+    emissao.proxima_tentativa_em = None
+    await session.commit()
+    return True
+
+
 async def loop_worker(session_factory: async_sessionmaker, intervalo_segundos: float = 5.0) -> None:
     while True:
         try:
@@ -633,6 +923,10 @@ async def loop_worker(session_factory: async_sessionmaker, intervalo_segundos: f
                 processou_confirmacao_spedy = await processar_uma_aguardando_confirmacao_spedy(session)
             async with session_factory() as session:
                 processou_confirmacao_cancel_spedy = await processar_um_cancelamento_aguardando_confirmacao_spedy(session)
+            async with session_factory() as session:
+                processou_reemissao_automatica_nfe = await processar_reemissao_automatica_pendente_nfe(session)
+            async with session_factory() as session:
+                processou_emissao_nfe = await processar_uma_pendente_nfe(session)
         except Exception:
             # Supervisao do loop, de proposito abrangente: o tratamento fino
             # (por tipo de erro, por linha) mora dentro de
@@ -646,13 +940,16 @@ async def loop_worker(session_factory: async_sessionmaker, intervalo_segundos: f
             processou_cancelamento = False
             processou_confirmacao_spedy = False
             processou_confirmacao_cancel_spedy = False
+            processou_reemissao_automatica_nfe = False
+            processou_emissao_nfe = False
         processou_algo = any([
             processou_reemissao_automatica, processou_emissao, processou_cancelamento,
             processou_confirmacao_spedy, processou_confirmacao_cancel_spedy,
+            processou_reemissao_automatica_nfe, processou_emissao_nfe,
         ])
         if not processou_algo:
             await asyncio.sleep(intervalo_segundos)
-        elif processou_emissao:
+        elif processou_emissao or processou_emissao_nfe:
             # So pausa apos emissao de verdade (nao apos so promover uma
             # reemissao automatica de rejeitada->pendente, que nao fala com
             # SEFIN/Spedy) -- evita rajada contra o provedor num backlog

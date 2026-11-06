@@ -19,6 +19,7 @@ COPY alembic.ini .
 COPY alembic/ alembic/
 COPY app/ app/
 COPY nfse_core/ nfse_core/
+COPY nfe_core/ nfe_core/
 COPY scripts/ scripts/
 COPY --from=frontend-build /frontend/dist/ frontend/dist/
 
