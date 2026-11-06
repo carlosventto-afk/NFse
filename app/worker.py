@@ -627,9 +627,12 @@ async def processar_reemissao_automatica_pendente(session: AsyncSession) -> bool
 
 
 async def _montar_e_assinar_nfe(
-    session: AsyncSession, emissao: EmissaoNfe, empresa: Empresa, settings: Settings,
+    session: AsyncSession, emissao: EmissaoNfe, empresa: Empresa, ambiente: AmbienteEnum, settings: Settings,
 ) -> tuple[str, bytes]:
     """Monta e assina a NF-e a partir do cadastro ATUAL. Devolve (chave, xml assinado).
+
+    `ambiente` e o da LINHA (congelado na primeira montagem), nunca o atual
+    da empresa: o tpAmb do XML tem que bater com a SEFAZ para onde ele vai.
 
     Roda a cada tentativa que vai enviar (ver processar_uma_pendente_nfe).
     dh_emi = emissao.criado_em (fixo desde a criacao da linha), entao a chave
@@ -662,7 +665,8 @@ async def _montar_e_assinar_nfe(
         for item in itens_db
     ]
     nfe_data = montar_nfe_data(
-        empresa, cliente, emissao.serie, emissao.numero, produtos_por_id, itens, dh_emi=emissao.criado_em,
+        empresa, cliente, emissao.serie, emissao.numero, produtos_por_id, itens,
+        dh_emi=emissao.criado_em, ambiente=ambiente,
     )
     assinado = sign_nfe(build_nfe_xml(nfe_data), pfx_base64, senha)
     inf = etree.fromstring(assinado).find(f"{{{NFE_NS}}}infNFe")
@@ -722,7 +726,33 @@ async def processar_uma_pendente_nfe(session: AsyncSession, settings: Settings |
     # primeiro a SEFAZ (mesmo principio do ja_submetida da NFS-e).
     ja_submetida = emissao.chave_acesso is not None
 
-    ambiente = AmbienteNfe(AmbienteEnum(empresa.ambiente).value)
+    # Ambiente (homologacao/producao) desta NF-e: congelado na LINHA na
+    # primeira montagem (mesmo commit da chave/XML, la embaixo) e nunca mais
+    # relido da empresa. empresa.ambiente pode mudar a qualquer momento (PUT
+    # /empresas/mim); ler o atual numa retentativa mandaria uma nota de teste
+    # pra SEFAZ real, ou consultaria uma nota de producao na SEFAZ de
+    # homologacao -- que responde 217 e dispararia reenvio no lugar errado.
+    # Mesmo principio de Emissao.ambiente na NFS-e, SEM o fallback pro
+    # ambiente atual: toda EmissaoNfe ja nasceu com esta coluna.
+    if ja_submetida:
+        if emissao.ambiente is None:
+            # Invariante quebrada (chave gravada sem ambiente). Cair pro
+            # empresa.ambiente reabriria exatamente o risco acima -- nao
+            # fala com SEFAZ nenhuma, deixa pra analise manual.
+            logger.error("emissao NF-e %s tem chave %s mas nao tem ambiente gravado", emissao.id, emissao.chave_acesso)
+            await _marcar_rejeitada(
+                session, emissao, "AMBIENTE_DESCONHECIDO",
+                f"a NF-e {emissao.chave_acesso} ja foi montada mas nao tem o ambiente "
+                "(homologacao/producao) gravado; consulta/reenvio bloqueados",
+            )
+            return True
+        ambiente_emissao = AmbienteEnum(emissao.ambiente)
+    else:
+        # Primeira montagem: unico momento em que o ambiente vem da empresa.
+        # So e persistido junto com chave/XML (abaixo) -- se a montagem
+        # falhar, nada foi enviado e a proxima tentativa decide de novo.
+        ambiente_emissao = AmbienteEnum(empresa.ambiente)
+    ambiente = AmbienteNfe(ambiente_emissao.value)
     cliente_sefaz = SefazClient()
 
     # O SefazClient nao tem uma excecao propria de transporte: repassa o que
@@ -766,7 +796,7 @@ async def processar_uma_pendente_nfe(session: AsyncSession, settings: Settings |
 
     if resposta is None:
         try:
-            chave, assinado = await _montar_e_assinar_nfe(session, emissao, empresa, settings)
+            chave, assinado = await _montar_e_assinar_nfe(session, emissao, empresa, ambiente_emissao, settings)
         except (CertificateError, InvalidToken, ValueError, KeyError, TypeError, AttributeError) as exc:
             # Tudo aqui e montagem PURA desta linha (nada desta tentativa foi
             # enviado a SEFAZ; se havia tentativa anterior, a consulta acima
@@ -806,9 +836,13 @@ async def processar_uma_pendente_nfe(session: AsyncSession, settings: Settings |
         # Chave e XML gravados ANTES do envio, de proposito: se o processo
         # morrer entre o envio e o commit final, a proxima tentativa ja sabe
         # a chave (consulta em vez de reenviar as cegas) e o xml_nfe e
-        # exatamente o que foi enviado.
+        # exatamente o que foi enviado. O ambiente vai no MESMO commit: chave,
+        # XML (com seu tpAmb) e o ambiente para onde foram enviados formam um
+        # snapshot unico -- ou tudo, ou nada. Numa retentativa (217) o valor
+        # ja e o gravado; reatribuir e no-op, nunca troca de ambiente.
         emissao.chave_acesso = chave
         emissao.xml_nfe = assinado
+        emissao.ambiente = ambiente_emissao
         await session.commit()
         # O commit acima solta a trava do SELECT ... FOR UPDATE; readquire
         # para o resto do processamento continuar exclusivo desta linha.

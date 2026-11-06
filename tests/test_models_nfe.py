@@ -3,7 +3,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from app.models import Cliente, Empresa, EmissaoNfe, ItemEmissaoNfe, Produto, StatusEmissao
+from app.models import AmbienteEnum, Cliente,Empresa, EmissaoNfe, ItemEmissaoNfe, Produto, StatusEmissao
 from tests.apoio import criar_empresa_titular
 
 
@@ -80,6 +80,27 @@ async def test_emissao_nfe_tem_bookkeeping_de_reemissao_e_item_carrega_aliquota_
     await db_session.commit()
     await db_session.refresh(item)
     assert item.aliquota_interna_destino == Decimal("18.00")
+
+
+@pytest.mark.asyncio
+async def test_emissao_nfe_guarda_ambiente_do_envio_nulo_ate_a_primeira_montagem(db_session):
+    # Mesmo papel de Emissao.ambiente (NFS-e): o ambiente em que a NF-e foi
+    # montada/enviada, congelado -- nao o atual da empresa, que pode mudar.
+    empresa, _usuario = await criar_empresa_titular(db_session)
+    cliente = Cliente(empresa_id=empresa.id, nome="Comprador", cpf_cnpj="12345678901")
+    db_session.add(cliente)
+    await db_session.flush()
+    emissao = EmissaoNfe(empresa_id=empresa.id, cliente_id=cliente.id,
+                         serie="1", numero=1, status=StatusEmissao.pendente)
+    db_session.add(emissao)
+    await db_session.commit()
+    await db_session.refresh(emissao)
+    assert emissao.ambiente is None
+
+    emissao.ambiente = AmbienteEnum.producao
+    await db_session.commit()
+    await db_session.refresh(emissao)
+    assert AmbienteEnum(emissao.ambiente) == AmbienteEnum.producao
 
 
 @pytest.mark.asyncio

@@ -393,6 +393,17 @@ class EmissaoNfe(Base):
     # gravada por POST /emissoes-nfe/{id}/cancelar; o envio do evento a SEFAZ
     # (nfe_core.evento) ainda nao existe, a linha fica em cancelamento_pendente.
     justificativa_cancelamento: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Ambiente (homologacao/producao) para o qual a chave/xml_nfe desta linha
+    # foram montados e enviados -- mesmo papel de Emissao.ambiente (NFS-e).
+    # Gravado UMA vez, no mesmo commit que grava chave_acesso/xml_nfe na
+    # primeira montagem (ver processar_uma_pendente_nfe), e nunca mais muda:
+    # toda retentativa consulta/reenvia NESTE ambiente, nunca no
+    # empresa.ambiente atual (a empresa pode alternar a qualquer momento via
+    # PUT /empresas/mim -- sem isso, uma nota de teste viraria documento
+    # fiscal real, ou a consulta de uma nota de producao iria pra SEFAZ de
+    # homologacao, que responde 217 e dispara reenvio no lugar errado). Nulo
+    # so enquanto a linha nunca foi montada (chave_acesso tambem nula).
+    ambiente: Mapped[AmbienteEnum | None] = mapped_column(String(20), nullable=True)
 
 
 class ItemEmissaoNfe(Base):

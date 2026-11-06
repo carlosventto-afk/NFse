@@ -117,17 +117,25 @@ def montar_nfe_data(
     produtos_por_id: dict[uuid.UUID, Produto],
     itens: list[ItemPedido],
     dh_emi: datetime | None = None,
+    ambiente: AmbienteEnum | None = None,
 ) -> NfeData:
     """`dh_emi` entra no AAMM da chave de acesso. O worker passa um instante
     fixo (EmissaoNfe.criado_em) pra chave ser estavel entre retentativas;
-    sem ele, usa o agora."""
+    sem ele, usa o agora.
+
+    `ambiente` define o tpAmb do XML. O worker sempre passa o ambiente
+    congelado na linha (EmissaoNfe.ambiente) -- o tpAmb precisa bater com a
+    SEFAZ para onde a nota vai, mesmo que empresa.ambiente tenha mudado desde
+    a primeira montagem. Sem ele, usa o ambiente atual da empresa."""
+    if ambiente is None:
+        ambiente = empresa.ambiente
     itens_nfe = [
         _montar_item(n_item, produtos_por_id[item.produto_id], item, empresa, cliente)
         for n_item, item in enumerate(itens, start=1)
     ]
 
     return NfeData(
-        tp_amb=1 if empresa.ambiente == AmbienteEnum.producao else 2,
+        tp_amb=1 if ambiente == AmbienteEnum.producao else 2,
         # Codigo IBGE da UF = os 2 primeiros digitos do codigo IBGE do
         # municipio (padrao nacional) -- evita precisar de uma tabela
         # separada UF->codigo so pra isso.

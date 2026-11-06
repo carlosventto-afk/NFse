@@ -40,15 +40,22 @@ async def _criar_emissao_nfe_pendente(
     tentativas_reemissao: int = 0,
     criado_em: datetime | None = None,
     cfop_item: str = "5102",
+    empresa_ambiente: AmbienteEnum = AmbienteEnum.homologacao,
+    ambiente: AmbienteEnum | None = None,
 ) -> EmissaoNfe:
     fernet_key = fernet_key or get_settings().fernet_key
+    # Invariante do worker: chave_acesso e ambiente sao gravados JUNTOS (mesmo
+    # commit) -- uma linha "ja montada" sem ambiente nao existe. Sem ambiente
+    # explicito, a linha montada herda o ambiente da empresa.
+    if ambiente is None and chave_acesso is not None:
+        ambiente = empresa_ambiente
     titular = Usuario(email=f"titular-nfe-{uuid.uuid4()}@teste.com", senha_hash=hash_senha("senha-forte-123"))
     db_session.add(titular)
     await db_session.flush()
     empresa = Empresa(
         cnpj="12345678000199", municipio_ibge="1501402", op_simp_nac=1,
         codigo_tributacao="141001", descricao_servico_padrao="Venda",
-        ambiente=AmbienteEnum.homologacao,
+        ambiente=empresa_ambiente,
         certificado_pfx_cifrado=cifrar(_PFX, fernet_key),
         certificado_senha_cifrada=cifrar("senha123", fernet_key),
         certificado_valido_ate=datetime.now(timezone.utc) + timedelta(days=365),
@@ -67,7 +74,7 @@ async def _criar_emissao_nfe_pendente(
     emissao = EmissaoNfe(
         empresa_id=empresa.id, cliente_id=cliente.id, serie=serie, numero=numero, status=status,
         protocolo_autorizacao=protocolo_autorizacao, chave_acesso=chave_acesso, xml_nfe=xml_nfe,
-        tentativas_reemissao=tentativas_reemissao,
+        tentativas_reemissao=tentativas_reemissao, ambiente=ambiente,
     )
     if criado_em is not None:
         emissao.criado_em = criado_em
@@ -280,8 +287,9 @@ async def test_montagem_tem_chave_estavel_presa_ao_criado_em_e_nao_ao_relogio(db
     emissao = await _criar_emissao_nfe_pendente(db_session, criado_em=criado_em)
     empresa = await db_session.get(Empresa, emissao.empresa_id)
 
-    chave_1, _ = await worker._montar_e_assinar_nfe(db_session, emissao, empresa, get_settings())
-    chave_2, _ = await worker._montar_e_assinar_nfe(db_session, emissao, empresa, get_settings())
+    amb = AmbienteEnum.homologacao
+    chave_1, _ = await worker._montar_e_assinar_nfe(db_session, emissao, empresa, amb, get_settings())
+    chave_2, _ = await worker._montar_e_assinar_nfe(db_session, emissao, empresa, amb, get_settings())
 
     assert chave_1 == chave_2
     assert chave_1[2:6] == "2609"
@@ -397,6 +405,118 @@ async def test_retentativa_com_consulta_inconclusiva_nao_remonta_nem_reenvia(
     assert emissao.protocolo_autorizacao is None
     # Nao e beco sem saida: volta pra fila automatica e consulta de novo.
     assert emissao.proxima_tentativa_em is not None
+
+
+# --- ambiente congelado na linha (nao o atual da empresa) -------------------
+
+
+def _tp_amb(xml: bytes) -> str:
+    return etree.fromstring(xml).find(f".//{{{NFE_NS}}}tpAmb").text
+
+
+@patch("app.worker.SefazClient")
+async def test_primeira_montagem_grava_ambiente_da_empresa_junto_com_chave_e_xml(mock_client_cls, db_session):
+    emissao = await _criar_emissao_nfe_pendente(db_session, empresa_ambiente=AmbienteEnum.producao)
+    assert emissao.ambiente is None
+    engine = create_async_engine(get_settings().database_url_test)
+    visto: dict = {}
+
+    async def _autorizar_explodindo(xml_assinado, uf, ambiente):
+        # Mesmo snapshot atomico de chave/XML: o ambiente para o qual eles
+        # foram montados ja precisa estar commitado ANTES do envio.
+        async with engine.connect() as conn:
+            linha = (await conn.execute(
+                select(EmissaoNfe.chave_acesso, EmissaoNfe.xml_nfe, EmissaoNfe.ambiente)
+                .where(EmissaoNfe.id == emissao.id)
+            )).one()
+        visto.update(chave=linha.chave_acesso, xml=linha.xml_nfe, ambiente=linha.ambiente, enviado_para=ambiente)
+        raise Exception("rede caiu")
+
+    mock_client_cls.return_value.autorizar = AsyncMock(side_effect=_autorizar_explodindo)
+    try:
+        assert await processar_uma_pendente_nfe(db_session, get_settings()) is True
+    finally:
+        await engine.dispose()
+
+    await db_session.refresh(emissao)
+    assert visto["chave"] == emissao.chave_acesso is not None
+    assert visto["xml"] == emissao.xml_nfe
+    assert AmbienteEnum(visto["ambiente"]) == AmbienteEnum.producao
+    assert AmbienteEnum(emissao.ambiente) == AmbienteEnum.producao
+    assert visto["enviado_para"].value == "producao"
+    assert _tp_amb(emissao.xml_nfe) == "1"
+
+
+@patch("app.worker.SefazClient")
+async def test_retentativa_usa_ambiente_gravado_e_nao_o_atual_da_empresa(mock_client_cls, db_session):
+    # Linha montada/enviada em HOMOLOGACAO; depois a empresa virou PRODUCAO.
+    # A retentativa NAO pode mandar essa nota de teste para a SEFAZ real:
+    # consulta e (no 217) reenvia no ambiente gravado, com tpAmb coerente.
+    mock_client_cls.return_value.consultar_protocolo = AsyncMock(return_value=_consulta(False, "217"))
+    mock_client_cls.return_value.autorizar = AsyncMock(return_value=_resposta_autorizada("888"))
+    emissao = await _criar_emissao_nfe_pendente(db_session, empresa_ambiente=AmbienteEnum.homologacao)
+    empresa = await db_session.get(Empresa, emissao.empresa_id)
+    chave, xml = await worker._montar_e_assinar_nfe(db_session, emissao, empresa, AmbienteEnum.homologacao, get_settings())
+    emissao.chave_acesso, emissao.xml_nfe, emissao.ambiente = chave, xml, AmbienteEnum.homologacao
+    empresa.ambiente = AmbienteEnum.producao
+    await db_session.commit()
+
+    assert await processar_uma_pendente_nfe(db_session, get_settings()) is True
+
+    _chave, _uf, amb_consulta = mock_client_cls.return_value.consultar_protocolo.call_args.args
+    xml_enviado, _uf, amb_envio = mock_client_cls.return_value.autorizar.call_args.args
+    assert amb_consulta.value == "homologacao"
+    assert amb_envio.value == "homologacao"
+    assert _tp_amb(xml_enviado) == "2"
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.autorizada
+    assert AmbienteEnum(emissao.ambiente) == AmbienteEnum.homologacao
+
+
+@patch("app.worker.SefazClient")
+async def test_retentativa_producao_com_empresa_agora_em_homologacao_consulta_producao(mock_client_cls, db_session):
+    # Cenario inverso: enviada em PRODUCAO, resultado desconhecido, empresa
+    # voltou pra HOMOLOGACAO. A consulta tem que ir a SEFAZ de PRODUCAO --
+    # na de homologacao daria 217 e o worker reenviaria la, perdendo o
+    # destino real da nota original.
+    mock_client_cls.return_value.consultar_protocolo = AsyncMock(return_value=_consulta(True, "100", "556"))
+    mock_client_cls.return_value.autorizar = AsyncMock()
+    emissao = await _criar_emissao_nfe_pendente(
+        db_session, chave_acesso=_CHAVE_ANTERIOR, xml_nfe=_XML_ANTERIOR,
+        empresa_ambiente=AmbienteEnum.homologacao, ambiente=AmbienteEnum.producao,
+    )
+
+    assert await processar_uma_pendente_nfe(db_session, get_settings()) is True
+
+    mock_client_cls.return_value.autorizar.assert_not_called()
+    assert mock_client_cls.return_value.consultar_protocolo.call_args.args[2].value == "producao"
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.autorizada
+    assert emissao.xml_nfe == _XML_ANTERIOR
+    assert AmbienteEnum(emissao.ambiente) == AmbienteEnum.producao
+
+
+@patch("app.worker.SefazClient")
+async def test_linha_com_chave_mas_sem_ambiente_nao_fala_com_a_sefaz(mock_client_cls, db_session):
+    # Invariante quebrada (chave sem ambiente): NAO cai pro ambiente atual da
+    # empresa -- isso reabriria exatamente o risco de consultar/enviar no
+    # ambiente errado. Rejeita para analise manual.
+    mock_client_cls.return_value.consultar_protocolo = AsyncMock()
+    mock_client_cls.return_value.autorizar = AsyncMock()
+    emissao = await _criar_emissao_nfe_pendente(db_session, chave_acesso=_CHAVE_ANTERIOR, xml_nfe=_XML_ANTERIOR)
+    emissao.ambiente = None
+    await db_session.commit()
+
+    assert await processar_uma_pendente_nfe(db_session, get_settings()) is True
+
+    mock_client_cls.return_value.consultar_protocolo.assert_not_called()
+    mock_client_cls.return_value.autorizar.assert_not_called()
+    await db_session.refresh(emissao)
+    assert emissao.status == StatusEmissao.rejeitada
+    assert json.loads(emissao.erros)[0]["codigo"] == "AMBIENTE_DESCONHECIDO"
+    assert emissao.chave_acesso == _CHAVE_ANTERIOR
+    assert emissao.xml_nfe == _XML_ANTERIOR
+    assert emissao.ambiente is None
 
 
 def _nao_deveria_recalcular(*args, **kwargs):
