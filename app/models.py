@@ -256,6 +256,19 @@ class Cliente(Base):
     )
 
 
+class ModeloDescricao(Base):
+    __tablename__ = "modelos_descricao"
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    empresa_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("empresas.id"), nullable=False)
+    # Nulo = modelo geral (aparece pra qualquer cliente); preenchido = so
+    # aparece quando esse cliente especifico esta selecionado na emissao.
+    cliente_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("clientes.id"), nullable=True)
+    titulo: Mapped[str] = mapped_column(String(80), nullable=False)
+    texto: Mapped[str] = mapped_column(String(2000), nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_agora, nullable=False)
+
+
 class Emissao(Base):
     __tablename__ = "emissoes"
     __table_args__ = (
