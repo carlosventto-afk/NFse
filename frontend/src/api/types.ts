@@ -29,6 +29,15 @@ export interface Cliente {
 
 export type ClienteForm = Omit<Cliente, "id" | "ativo"> & { ativo?: boolean };
 
+export interface ModeloDescricao {
+  id: string;
+  cliente_id: string | null;
+  titulo: string;
+  texto: string;
+}
+
+export type ModeloDescricaoForm = Omit<ModeloDescricao, "id">;
+
 export interface Emissao {
   id: string;
   origem: string;
