@@ -168,6 +168,21 @@ class ClienteOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ModeloDescricaoCriarIn(BaseModel):
+    titulo: str = Field(max_length=80)
+    texto: str = Field(max_length=TAMANHO_DESCRICAO)
+    cliente_id: uuid.UUID | None = None
+
+
+class ModeloDescricaoOut(BaseModel):
+    id: uuid.UUID
+    cliente_id: uuid.UUID | None
+    titulo: str
+    texto: str
+
+    model_config = {"from_attributes": True}
+
+
 class EmpresaVinculadaOut(BaseModel):
     empresa_id: uuid.UUID
     cnpj: str

@@ -21,6 +21,8 @@ def test_todas_as_rotas_esperadas_estao_registradas():
         "/api/convites/aceitar",
         "/api/clientes",
         "/api/clientes/{cliente_id}",
+        "/api/modelos-descricao",
+        "/api/modelos-descricao/{modelo_id}",
         "/api/empresas",
         "/api/empresas/mim",
         "/api/empresas/numeracao",
