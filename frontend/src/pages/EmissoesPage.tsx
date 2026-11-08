@@ -330,6 +330,7 @@ export default function EmissoesPage() {
                           <MenuAcoes
                             itens={[
                               { rotulo: "XML", onClick: () => baixar(urlXml(emissao.id), `NFSe_${emissao.serie}_${emissao.numero}.xml`) },
+                              { rotulo: "Resposta SEFIN", onClick: () => baixar(urlRespostaBruta(emissao.id), `RESPOSTA_${emissao.serie}_${emissao.numero}.json`) },
                               { rotulo: "Cancelar", perigo: true, onClick: () => setCancelandoId(emissao.id) },
                               // Autorizada em producao so pode ser excluida pelo admin da
                               // plataforma (ver _pode_excluir no backend) -- esconde o item
