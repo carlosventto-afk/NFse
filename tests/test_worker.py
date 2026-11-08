@@ -90,6 +90,12 @@ async def test_processar_uma_pendente_marca_autorizada_em_sucesso(db_session, mo
     assert emissao.status == StatusEmissao.autorizada
     assert emissao.chave_acesso == "1" * 50
     assert emissao.xml_nfse == b"<NFSe>autorizada</NFSe>"
+    # Regressao: emissao 70000/136 ficou autorizada sem nenhuma evidencia da
+    # resposta de sucesso guardada -- so sobrava a resposta da ultima
+    # rejeicao anterior (ou nada, numa primeira tentativa). Sem isto, nao da
+    # pra saber depois por que um sucesso especifico veio sem XML.
+    assert emissao.resposta_bruta is not None
+    assert json.loads(emissao.resposta_bruta)["chaveAcesso"] == "1" * 50
 
 
 @pytest.mark.asyncio

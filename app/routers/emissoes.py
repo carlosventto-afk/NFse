@@ -22,7 +22,7 @@ from app.schemas import (
     CancelarEmissaoIn, EmissaoLoteOut, EmissaoManualIn, EmissaoOut, EmissoesIdsIn, ExclusaoLoteOut,
 )
 from app.security import ContextoAutenticado, exigir_admin_empresa, get_empresa_ativa
-from nfse_core import SefinClient
+from nfse_core import SefinClient, ler_resposta_emissao
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,9 @@ async def listar_emissoes(
     return list((await session.execute(stmt)).scalars().all())
 
 
-async def _obter_xml(emissao: Emissao, empresa: Empresa, settings: Settings) -> tuple[bytes, str] | None:
+async def _obter_xml(
+    emissao: Emissao, empresa: Empresa, settings: Settings, session: AsyncSession,
+) -> tuple[bytes, str] | None:
     # Autorizada: devolve o XML oficial da NFS-e. No provedor Spedy esse XML
     # nunca fica guardado no nosso banco — a Spedy assina do lado dela —
     # entao busca sob demanda em /service-invicoes/{id}/xml (mesmo padrao do
@@ -125,7 +127,37 @@ async def _obter_xml(emissao: Emissao, empresa: Empresa, settings: Settings) -> 
             return xml, nome_arquivo
         if emissao.xml_nfse:
             return emissao.xml_nfse, nome_arquivo
-        return None
+        # Nota ja autorizada (tem chave) mas o XML nao foi gravado no momento
+        # da emissao -- confirmado ao vivo que a resposta de sucesso as vezes
+        # chega sem o campo do XML (ou a descompressao falha). Busca ao vivo
+        # por GET /nfse/{chave}, mesmo padrao de sob-demanda do PDF oficial
+        # (fetch_danfse_pdf) -- e grava de volta pra nao precisar buscar de
+        # novo da proxima vez.
+        if not emissao.chave_acesso:
+            return None
+        try:
+            pfx_base64 = decifrar(empresa.certificado_pfx_cifrado, settings.fernet_key)
+            senha = (
+                decifrar(empresa.certificado_senha_cifrada, settings.fernet_key)
+                if empresa.certificado_senha_cifrada
+                else None
+            )
+            cliente = SefinClient(AmbienteEnum(empresa.ambiente).value, pfx_base64, senha)
+            try:
+                bruta = await cliente.consultar_nfse(emissao.chave_acesso)
+            finally:
+                await cliente.close()
+            xml = ler_resposta_emissao(bruta).xml_nfse
+        except Exception:
+            logger.warning(
+                "falha ao buscar o XML ao vivo na SEFIN para a emissao %s", emissao.id, exc_info=True,
+            )
+            return None
+        if not xml:
+            return None
+        emissao.xml_nfse = xml
+        await session.commit()
+        return xml, nome_arquivo
     # Rejeitada: nao existe NFS-e — devolve o XML da DPS que foi assinado e
     # submetido, util pra conferir o que exatamente foi enviado/recusado. So
     # existe no provedor direto (a Spedy nunca expoe a DPS pro cliente).
@@ -146,7 +178,7 @@ async def baixar_xml(
         raise HTTPException(status_code=404)
 
     empresa = await session.get(Empresa, emissao.empresa_id)
-    resultado = await _obter_xml(emissao, empresa, settings)
+    resultado = await _obter_xml(emissao, empresa, settings, session)
     if resultado is None:
         raise HTTPException(status_code=404, detail="XML nao disponivel para esta emissao")
     conteudo, nome_arquivo = resultado
@@ -173,7 +205,7 @@ async def baixar_xmls_em_lote(
         empresa = await session.get(Empresa, contexto.empresa_id)
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zip_arquivo:
             for emissao in emissoes:
-                resultado = await _obter_xml(emissao, empresa, settings)
+                resultado = await _obter_xml(emissao, empresa, settings, session)
                 if resultado is None:
                     continue
                 conteudo, nome_arquivo = resultado

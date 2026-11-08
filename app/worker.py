@@ -281,6 +281,13 @@ async def processar_uma_pendente(session: AsyncSession, settings: Settings | Non
         emissao.status = StatusEmissao.autorizada
         emissao.chave_acesso = resultado.chave_acesso
         emissao.xml_nfse = resultado.xml_nfse
+        # Grava mesmo no caminho feliz: se a SEFIN mandar a chave sem o campo
+        # do XML (ou a descompressao falhar), resultado.xml_nfse fica None e,
+        # sem isto, nao sobra nenhuma evidencia de por que -- so a proxima
+        # tentativa (que pode nunca acontecer, a nota ja esta autorizada)
+        # sobrescreveria. Confirmado ao vivo (emissao 70000/136): sem isto, o
+        # campo so guardava a resposta da ultima REJEICAO anterior ao sucesso.
+        emissao.resposta_bruta = json.dumps(bruta, ensure_ascii=False)
     else:
         emissao.status = StatusEmissao.rejeitada
         emissao.erros = resultado.erros_json()

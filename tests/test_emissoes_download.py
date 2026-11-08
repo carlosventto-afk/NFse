@@ -1,4 +1,6 @@
+import base64
 import functools
+import gzip
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
@@ -103,6 +105,108 @@ async def test_baixar_xml_devolve_dps_de_emissao_rejeitada(db_session):
         assert resposta.content == b"<DPS>rejeitada</DPS>"
         assert resposta.headers["content-type"].startswith("application/xml")
         assert "DPS_1_2.xml" in resposta.headers["content-disposition"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_baixar_xml_busca_ao_vivo_quando_autorizada_sem_xml_gravado(db_session, monkeypatch):
+    # Regressao: emissao 70000/136 ficou autorizada (chave presente) mas sem
+    # xml_nfse gravado -- a resposta de sucesso da SEFIN pode vir sem o campo
+    # do XML, ou a descompressao falhar, e ate agora nao havia nenhum jeito de
+    # recuperar o documento depois disso. Mesmo padrao de busca sob demanda
+    # ja usado pro PDF oficial (fetch_danfse_pdf).
+    fernet_key = get_settings().fernet_key
+    empresa, usuario = await criar_empresa_titular(
+        db_session,
+        certificado_pfx_cifrado=cifrar("pfx-fake", fernet_key),
+        certificado_senha_cifrada=cifrar("senha-fake", fernet_key),
+    )
+    emissao = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.manual, status=StatusEmissao.autorizada,
+        serie="70000", numero=136, chave_acesso="3" * 50, xml_nfse=None,
+        tomador_cpf_cnpj="98765432100", tomador_nome="Cliente",
+        descricao="Lavagem", valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    db_session.add(emissao)
+    await db_session.commit()
+    await db_session.refresh(emissao)
+    token = criar_token(usuario, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    xml_b64 = base64.b64encode(gzip.compress(b"<NFSe>recuperado-ao-vivo</NFSe>")).decode()
+
+    import app.routers.emissoes as emissoes_router
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def consultar_nfse(self, chave_acesso):
+            assert chave_acesso == "3" * 50
+            return {"chaveAcesso": chave_acesso, "nfseXmlGZipB64": xml_b64, "_http_status": 200}
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(emissoes_router, "SefinClient", ClienteFalso)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.get(
+                f"/api/emissoes/{emissao.id}/xml", headers={"Authorization": f"Bearer {token}"}
+            )
+        assert resposta.status_code == 200
+        assert resposta.content == b"<NFSe>recuperado-ao-vivo</NFSe>"
+    finally:
+        app.dependency_overrides.clear()
+
+    await db_session.refresh(emissao)
+    assert emissao.xml_nfse == b"<NFSe>recuperado-ao-vivo</NFSe>"
+
+
+@pytest.mark.asyncio
+async def test_baixar_xml_devolve_404_quando_busca_ao_vivo_tambem_nao_tem_xml(db_session, monkeypatch):
+    fernet_key = get_settings().fernet_key
+    empresa, usuario = await criar_empresa_titular(
+        db_session,
+        certificado_pfx_cifrado=cifrar("pfx-fake", fernet_key),
+        certificado_senha_cifrada=cifrar("senha-fake", fernet_key),
+    )
+    emissao = Emissao(
+        empresa_id=empresa.id, origem=OrigemEmissao.manual, status=StatusEmissao.autorizada,
+        serie="1", numero=1, chave_acesso="4" * 50, xml_nfse=None,
+        tomador_cpf_cnpj="98765432100", tomador_nome="Cliente",
+        descricao="Lavagem", valor=Decimal("49.90"), competencia=date(2026, 8, 1),
+    )
+    db_session.add(emissao)
+    await db_session.commit()
+    await db_session.refresh(emissao)
+    token = criar_token(usuario, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    import app.routers.emissoes as emissoes_router
+
+    class ClienteFalso:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def consultar_nfse(self, chave_acesso):
+            return {"chaveAcesso": chave_acesso, "_http_status": 200}
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(emissoes_router, "SefinClient", ClienteFalso)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.get(
+                f"/api/emissoes/{emissao.id}/xml", headers={"Authorization": f"Bearer {token}"}
+            )
+        assert resposta.status_code == 404
     finally:
         app.dependency_overrides.clear()
 
