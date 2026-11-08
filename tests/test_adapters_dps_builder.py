@@ -1,7 +1,7 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
-from app.adapters.dps_builder import DadosEmissao, montar_dps_data
+from app.adapters.dps_builder import _MARGEM_SEGURANCA_DH_EMI, DadosEmissao, montar_dps_data
 from app.models import AmbienteEnum, Empresa
 
 
@@ -142,3 +142,39 @@ def test_montar_dps_data_sem_documento_do_tomador_passa_none_adiante():
 
     assert dps_data.toma_cpf_cnpj is None
     assert dps_data.toma_nome == "Cliente Sem Documento"
+
+
+def test_montar_dps_data_sem_dh_emi_aplica_margem_de_seguranca():
+    # Regressao do E0008 "dhEmi nao pode ser posterior ao processamento":
+    # confirmado ao vivo que um dhEmi gerado bem na hora do envio (sem
+    # margem) cai no mesmo segundo (ou so ~1s antes) do que a SEFIN registra
+    # como dataHoraProcessamento, e a truncacao pra segundo em
+    # nfse_core/dps.py (isoformat(timespec="seconds")) descarta a fracao que
+    # provaria que dhEmi era mesmo anterior -- a SEFIN rejeita a ambiguidade.
+    antes = datetime.now(timezone.utc)
+    dados = DadosEmissao(
+        tomador_cpf_cnpj="98765432100", tomador_nome="Cliente Teste", tomador_email=None,
+        descricao="Lavagem", valor=Decimal("10.00"), competencia=date(2026, 8, 1),
+    )
+
+    dps_data = montar_dps_data(_empresa(), serie="1", numero=1, dados=dados)
+    depois = datetime.now(timezone.utc)
+
+    atraso = antes - dps_data.dh_emi
+    assert atraso >= timedelta(seconds=4)
+    assert (depois - _MARGEM_SEGURANCA_DH_EMI) - dps_data.dh_emi < timedelta(seconds=2)
+
+
+def test_montar_dps_data_com_dh_emi_explicito_nao_aplica_margem():
+    # dh_emi_original (fluxo de importacao Stone) ja vem de um horario
+    # historico real -- a margem de seguranca e so pro fallback "agora".
+    dh_emi_historico = datetime(2026, 9, 15, 12, 0, 0, tzinfo=timezone.utc)
+    dados = DadosEmissao(
+        tomador_cpf_cnpj="98765432100", tomador_nome="Cliente Teste", tomador_email=None,
+        descricao="Lavagem", valor=Decimal("10.00"), competencia=date(2026, 8, 1),
+        dh_emi=dh_emi_historico,
+    )
+
+    dps_data = montar_dps_data(_empresa(), serie="1", numero=1, dados=dados)
+
+    assert dps_data.dh_emi == dh_emi_historico

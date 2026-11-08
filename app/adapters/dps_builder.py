@@ -1,9 +1,22 @@
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from app.models import AmbienteEnum, Empresa, ProvedorEmissao
 from nfse_core import DpsData
+
+# dhEmi sai truncado pro segundo (nfse_core/dps.py usa isoformat(timespec=
+# "seconds")), sem precisao de fracao. Sem essa margem, um dhEmi gerado
+# "agora mesmo" pode cair no MESMO segundo (ou so 1s antes) do instante que
+# a SEFIN registra como dataHoraProcessamento -- e a validacao de "dhEmi nao
+# pode ser posterior ao processamento" (E0008) trata a ambiguidade de
+# fracao de segundo descartada a favor da rejeicao. Confirmado ao vivo
+# (08/11/2026): duas emissoes distintas, dhEmi sempre ~0.9s antes do
+# processamento, ambas rejeitadas com E0008. Atraso deliberado de alguns
+# segundos no fallback "agora" resolve sem mudar o significado de dhEmi
+# pra quem usa dh_emi_original (que vem de um horario historico real, sem
+# risco de corrida).
+_MARGEM_SEGURANCA_DH_EMI = timedelta(seconds=5)
 
 # Municipios cujo CNC (Cadastro Nacional de Contribuintes) na SEFIN Nacional
 # ainda nao tem "informacoes complementares" registradas -- confirmado ao
@@ -34,7 +47,7 @@ def montar_dps_data(empresa: Empresa, serie: str, numero: int, dados: DadosEmiss
     omitir_im = usa_endpoint_nacional_generico and empresa.municipio_ibge in MUNICIPIOS_SEM_CNC_NACIONAL
     return DpsData(
         tp_amb=1 if empresa.ambiente == AmbienteEnum.producao else 2,
-        dh_emi=dados.dh_emi or datetime.now(timezone.utc),
+        dh_emi=dados.dh_emi or (datetime.now(timezone.utc) - _MARGEM_SEGURANCA_DH_EMI),
         serie=serie,
         numero=numero,
         competencia=dados.competencia,
