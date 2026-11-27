@@ -853,6 +853,89 @@ async def test_provedor_emissao_invalido_devolve_422(db_session):
 
 
 @pytest.mark.asyncio
+async def test_admin_define_dados_fiscais_da_nfe(db_session):
+    empresa, titular = await criar_empresa_titular(db_session)
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.put(
+                "/api/empresas/mim",
+                data={**_form_edicao(), "uf": " pa ", "crt": "1", "inscricao_estadual": " 123456789 "},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 200
+        corpo = resposta.json()
+        assert corpo["uf"] == "PA"
+        assert corpo["crt"] == 1
+        assert corpo["inscricao_estadual"] == "123456789"
+    finally:
+        app.dependency_overrides.clear()
+
+    await db_session.refresh(empresa)
+    assert (empresa.uf, empresa.crt, empresa.inscricao_estadual) == ("PA", 1, "123456789")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("uf_invalida", ["PAR", "P", "P1"])
+async def test_uf_invalida_devolve_422(db_session, uf_invalida):
+    empresa, titular = await criar_empresa_titular(db_session)
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resposta = await client.put(
+                "/api/empresas/mim",
+                data={**_form_edicao(), "uf": uf_invalida},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert resposta.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+
+    await db_session.refresh(empresa)
+    assert empresa.uf is None
+
+
+@pytest.mark.asyncio
+async def test_segunda_edicao_sem_dados_fiscais_da_nfe_mantem_valor_anterior(db_session):
+    # Mesma regra de razao_social/endereco: a tela atual de "Editar empresa"
+    # nao envia uf/crt/inscricao_estadual -- salvar por ela nao pode apagar
+    # o cadastro fiscal da NF-e.
+    empresa, titular = await criar_empresa_titular(db_session)
+    token = criar_token(titular, empresa_id=empresa.id, papel=PapelUsuario.admin)
+
+    app.dependency_overrides[get_db] = functools.partial(_yield_session, db_session)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            primeira = await client.put(
+                "/api/empresas/mim",
+                data={**_form_edicao(), "uf": "PA", "crt": "3", "inscricao_estadual": "123456789"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert primeira.status_code == 200
+
+            segunda = await client.put(
+                "/api/empresas/mim",
+                data=_form_edicao(descricao_servico_padrao="Lavagem e passagem de roupa"),
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert segunda.status_code == 200
+        corpo = segunda.json()
+        assert (corpo["uf"], corpo["crt"], corpo["inscricao_estadual"]) == ("PA", 3, "123456789")
+    finally:
+        app.dependency_overrides.clear()
+
+    await db_session.refresh(empresa)
+    assert (empresa.uf, empresa.crt, empresa.inscricao_estadual) == ("PA", 3, "123456789")
+
+
+@pytest.mark.asyncio
 async def test_operador_nao_pode_editar_empresa(db_session):
     empresa, operador = await criar_empresa_titular(
         db_session, email_titular="operador-editar@teste.com", papel_vinculo=PapelUsuario.operador,
